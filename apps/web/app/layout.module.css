@@ -1,0 +1,28 @@
+.shell {
+  min-height: 100dvh;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow-x: hidden;
+}
+
+.main {
+  flex: 1;
+  width: 100%;
+  max-width: 40rem;
+  margin: 0 auto;
+  padding: 1.5rem 1rem 2.5rem;
+}
+
+@media (min-width: 768px) {
+  .main {
+    max-width: 52rem;
+    padding: 2.5rem 2rem 3.5rem;
+  }
+}
+
+@media (min-width: 1024px) {
+  .main {
+    max-width: 72rem;
+  }
+}

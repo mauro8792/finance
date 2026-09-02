@@ -1,0 +1,289 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum CategoryType {
+  EXPENSE
+  INCOME
+  BOTH
+
+  @@map("category_type_enum")
+}
+
+enum Currency {
+  ARS
+  USD
+
+  @@map("currency_enum")
+}
+
+enum AccountType {
+  CASH
+  BANK
+  FUND
+  INVESTMENT
+  HOUSING_RESERVE
+  OTHER
+
+  @@map("account_type_enum")
+}
+
+enum TransactionType {
+  EXPENSE
+  INCOME
+  TRANSFER
+  REIMBURSEMENT
+  ADJUSTMENT
+  INVESTMENT_OUTFLOW
+  INVESTMENT_PRINCIPAL_RETURN
+  INVESTMENT_RETURN
+  CURRENCY_EXCHANGE
+  HOUSING_PAYMENT
+
+  @@map("transaction_type_enum")
+}
+
+enum TransactionStatus {
+  ACTIVE
+  VOIDED
+
+  @@map("transaction_status_enum")
+}
+
+enum PaymentMethod {
+  CASH
+  DEBIT_CARD
+  CREDIT_CARD
+  BANK_TRANSFER
+  DIGITAL_WALLET
+  OTHER
+
+  @@map("payment_method_enum")
+}
+
+enum ReimbursementStatus {
+  NONE
+  PENDING
+  PARTIAL
+  COMPLETED
+
+  @@map("reimbursement_status_enum")
+}
+
+enum InvestmentType {
+  CAUCION
+  OTHER
+
+  @@map("investment_type_enum")
+}
+
+enum InvestmentStatus {
+  DRAFT
+  ACTIVE
+  MATURED
+  RENEWED
+  CANCELLED
+
+  @@map("investment_status_enum")
+}
+
+model User {
+  id           String        @id @default(uuid()) @db.Uuid
+  name         String        @db.VarChar(120)
+  email        String?       @unique @db.VarChar(255)
+  timezone     String        @default("America/Argentina/Buenos_Aires") @db.VarChar(100)
+  createdAt    DateTime      @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt    DateTime      @updatedAt @map("updated_at") @db.Timestamptz
+  accounts           Account[]
+  categories         Category[]
+  transactions       Transaction[]
+  currencyExchanges  CurrencyExchange[]
+  budgets            Budget[]
+  housingObligations HousingObligation[]
+  investments        Investment[]
+
+  @@map("users")
+}
+
+model Category {
+  id           String        @id @default(uuid()) @db.Uuid
+  userId       String        @map("user_id") @db.Uuid
+  name         String        @db.VarChar(120)
+  type         CategoryType
+  isSystem     Boolean       @default(false) @map("is_system")
+  isActive     Boolean       @default(true) @map("is_active")
+  createdAt    DateTime      @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt    DateTime      @updatedAt @map("updated_at") @db.Timestamptz
+  user         User          @relation(fields: [userId], references: [id], onDelete: Restrict)
+  transactions Transaction[]
+  budgets      Budget[]
+
+  @@unique([userId, name])
+  @@map("categories")
+}
+
+model Account {
+  id             String        @id @default(uuid()) @db.Uuid
+  userId         String        @map("user_id") @db.Uuid
+  name           String        @db.VarChar(120)
+  currency       Currency
+  type           AccountType
+  initialBalance Decimal       @default(0) @map("initial_balance") @db.Decimal(18, 2)
+  isActive       Boolean       @default(true) @map("is_active")
+  createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt      DateTime      @updatedAt @map("updated_at") @db.Timestamptz
+  user                      User               @relation(fields: [userId], references: [id], onDelete: Restrict)
+  transactions              Transaction[]
+  currencyExchangesFrom     CurrencyExchange[] @relation("CurrencyExchangeFrom")
+  currencyExchangesTo       CurrencyExchange[] @relation("CurrencyExchangeTo")
+  housingObligations        HousingObligation[]
+  housingPayments           HousingPayment[]
+  investments               Investment[]
+
+  @@map("accounts")
+}
+
+model Transaction {
+  id                    String              @id @default(uuid()) @db.Uuid
+  userId                String              @map("user_id") @db.Uuid
+  accountId             String              @map("account_id") @db.Uuid
+  categoryId            String?             @map("category_id") @db.Uuid
+  type                  TransactionType
+  status                TransactionStatus   @default(ACTIVE)
+  amount                Decimal             @db.Decimal(18, 2)
+  currency              Currency
+  description           String?             @db.VarChar(255)
+  occurredAt            DateTime            @map("occurred_at") @db.Timestamptz
+  paymentMethod         PaymentMethod?      @map("payment_method")
+  isFixed               Boolean             @default(false) @map("is_fixed")
+  reimbursementStatus   ReimbursementStatus @default(NONE) @map("reimbursement_status")
+  relatedTransactionId  String?             @map("related_transaction_id") @db.Uuid
+  metadata              Json?               @db.JsonB
+  createdAt             DateTime            @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt             DateTime            @updatedAt @map("updated_at") @db.Timestamptz
+  user                  User                @relation(fields: [userId], references: [id], onDelete: Restrict)
+  account               Account             @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  category              Category?           @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  relatedTransaction    Transaction?        @relation("RelatedTransactions", fields: [relatedTransactionId], references: [id], onDelete: Restrict)
+  relatedTransactions   Transaction[]       @relation("RelatedTransactions")
+  housingPayment        HousingPayment?
+
+  @@index([userId, occurredAt])
+  @@index([accountId, occurredAt])
+  @@index([categoryId, occurredAt])
+  @@index([userId, type, occurredAt])
+  @@index([relatedTransactionId])
+  @@map("transactions")
+}
+
+model CurrencyExchange {
+  id            String   @id @default(uuid()) @db.Uuid
+  userId        String   @map("user_id") @db.Uuid
+  fromAccountId String   @map("from_account_id") @db.Uuid
+  toAccountId   String   @map("to_account_id") @db.Uuid
+  fromCurrency  Currency @map("from_currency")
+  toCurrency    Currency @map("to_currency")
+  fromAmount    Decimal  @map("from_amount") @db.Decimal(18, 2)
+  toAmount      Decimal  @map("to_amount") @db.Decimal(18, 2)
+  exchangeRate  Decimal  @map("exchange_rate") @db.Decimal(18, 6)
+  occurredAt    DateTime @map("occurred_at") @db.Timestamptz
+  description   String?  @db.VarChar(255)
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz
+  user          User     @relation(fields: [userId], references: [id], onDelete: Restrict)
+  fromAccount   Account  @relation("CurrencyExchangeFrom", fields: [fromAccountId], references: [id], onDelete: Restrict)
+  toAccount     Account  @relation("CurrencyExchangeTo", fields: [toAccountId], references: [id], onDelete: Restrict)
+
+  @@index([userId, occurredAt])
+  @@index([fromAccountId, occurredAt])
+  @@index([toAccountId, occurredAt])
+  @@map("currency_exchanges")
+}
+
+model Budget {
+  id         String   @id @default(uuid()) @db.Uuid
+  userId     String   @map("user_id") @db.Uuid
+  categoryId String   @map("category_id") @db.Uuid
+  currency   Currency
+  amount     Decimal  @db.Decimal(18, 2)
+  year       Int
+  month      Int
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz
+  user       User     @relation(fields: [userId], references: [id], onDelete: Restrict)
+  category   Category @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+
+  @@unique([userId, categoryId, currency, year, month])
+  @@index([userId, year, month])
+  @@map("budgets")
+}
+
+model HousingObligation {
+  id                    String   @id @default(uuid()) @db.Uuid
+  userId                String   @map("user_id") @db.Uuid
+  reserveAccountId      String?  @map("reserve_account_id") @db.Uuid
+  name                  String   @db.VarChar(120)
+  currency              Currency
+  installmentAmount     Decimal  @map("installment_amount") @db.Decimal(18, 2)
+  remainingInstallments Int      @map("remaining_installments")
+  dueDay                Int?     @map("due_day")
+  isActive              Boolean  @default(true) @map("is_active")
+  createdAt             DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt             DateTime @updatedAt @map("updated_at") @db.Timestamptz
+  user                  User     @relation(fields: [userId], references: [id], onDelete: Restrict)
+  reserveAccount        Account? @relation(fields: [reserveAccountId], references: [id], onDelete: Restrict)
+  payments              HousingPayment[]
+
+  @@map("housing_obligations")
+}
+
+model HousingPayment {
+  id                  String            @id @default(uuid()) @db.Uuid
+  housingObligationId String            @map("housing_obligation_id") @db.Uuid
+  transactionId       String            @unique @map("transaction_id") @db.Uuid
+  accountId           String            @map("account_id") @db.Uuid
+  amount              Decimal           @db.Decimal(18, 2)
+  currency            Currency
+  installmentNumber   Int?              @map("installment_number")
+  paidAt              DateTime          @map("paid_at") @db.Timestamptz
+  createdAt           DateTime          @default(now()) @map("created_at") @db.Timestamptz
+  housingObligation   HousingObligation @relation(fields: [housingObligationId], references: [id], onDelete: Restrict)
+  transaction         Transaction       @relation(fields: [transactionId], references: [id], onDelete: Restrict)
+  account             Account           @relation(fields: [accountId], references: [id], onDelete: Restrict)
+
+  @@index([housingObligationId, paidAt])
+  @@map("housing_payments")
+}
+
+model Investment {
+  id                       String           @id @default(uuid()) @db.Uuid
+  userId                   String           @map("user_id") @db.Uuid
+  accountId                String           @map("account_id") @db.Uuid
+  renewedFromInvestmentId  String?          @map("renewed_from_investment_id") @db.Uuid
+  type                     InvestmentType
+  status                   InvestmentStatus
+  currency                 Currency
+  principal                Decimal          @db.Decimal(18, 2)
+  annualRate               Decimal?         @map("annual_rate") @db.Decimal(12, 6)
+  startDate                DateTime         @map("start_date") @db.Timestamptz
+  maturityDate             DateTime?        @map("maturity_date") @db.Timestamptz
+  expectedReturn           Decimal?         @map("expected_return") @db.Decimal(18, 2)
+  actualReturn             Decimal?         @map("actual_return") @db.Decimal(18, 2)
+  notes                    String?          @db.Text
+  createdAt                DateTime         @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt                DateTime         @updatedAt @map("updated_at") @db.Timestamptz
+  user                     User             @relation(fields: [userId], references: [id], onDelete: Restrict)
+  account                  Account          @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  renewedFrom              Investment?      @relation("InvestmentRenewal", fields: [renewedFromInvestmentId], references: [id], onDelete: Restrict)
+  renewals                 Investment[]     @relation("InvestmentRenewal")
+
+  @@index([userId, status])
+  @@index([userId, maturityDate])
+  @@index([accountId])
+  @@index([renewedFromInvestmentId])
+  @@map("investments")
+}

@@ -1,0 +1,296 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  width: 100%;
+  min-width: 0;
+  overflow-x: hidden;
+}
+
+.intro {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.kicker {
+  margin: 0;
+  color: #0f766e;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.title {
+  margin: 0;
+  font-size: 1.7rem;
+  line-height: 1.15;
+}
+
+.lead,
+.disclaimer,
+.formHint,
+.loading,
+.notice {
+  margin: 0;
+  color: #57534e;
+}
+
+.disclaimer {
+  padding: 0.55rem 0.75rem;
+  border-radius: 0.7rem;
+  background: #ecfdf5;
+  color: #0f766e;
+  font-weight: 650;
+}
+
+.selector {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  width: 100%;
+  min-width: 0;
+}
+
+.selectorItem,
+.selectorActive {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-width: 0;
+  min-height: 2.75rem;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid #d6d3d1;
+  border-radius: 0.85rem;
+  background: #fff;
+  color: #1c1917;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.selectorActive {
+  border-color: #0f766e;
+  background: #ecfdf5;
+  color: #0f766e;
+}
+
+.workspace {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  width: 100%;
+  min-width: 0;
+}
+
+.formColumn,
+.resultColumn {
+  min-width: 0;
+  width: 100%;
+}
+
+.form,
+.result,
+.empty {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  min-width: 0;
+  width: 100%;
+  padding: 1rem 0.95rem;
+  border-radius: 1.1rem;
+  background: #fff;
+  box-shadow: 0 1px 0 #e7e5e4;
+}
+
+.form {
+  background: #fffcf7;
+}
+
+.formTitle,
+.resultTitle,
+.sectionTitle {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.sectionTitle {
+  margin-top: 0.35rem;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+  font-weight: 650;
+}
+
+.field select,
+.field input {
+  width: 100%;
+  min-width: 0;
+  min-height: 2.75rem;
+  border: 1px solid #d6d3d1;
+  border-radius: 0.7rem;
+  background: #fff;
+  font: inherit;
+  padding: 0.4rem 0.65rem;
+}
+
+.shortcuts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.shortcut {
+  min-height: 2.35rem;
+  padding: 0 0.75rem;
+  border: 1px solid #d6d3d1;
+  border-radius: 999px;
+  background: #fff;
+  font: inherit;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.primaryCta,
+.retry {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 2.75rem;
+  border: 0;
+  border-radius: 0.75rem;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.primaryCta {
+  background: #0f766e;
+  color: #fff;
+}
+
+.primaryCta:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.primaryCta:hover:not(:disabled) {
+  background: #0d6660;
+}
+
+.formError,
+.error {
+  margin: 0;
+  padding: 0.55rem 0.75rem;
+  border-radius: 0.7rem;
+  background: #fef2f2;
+  color: #991b1b;
+}
+
+.error {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.retry {
+  background: #991b1b;
+  color: #fff;
+}
+
+.empty {
+  background: #fffcf7;
+}
+
+.empty p {
+  margin: 0;
+}
+
+.facts {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  margin: 0;
+}
+
+.facts > div {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.facts dt {
+  color: #57534e;
+  font-size: 0.85rem;
+  font-weight: 650;
+}
+
+.facts dd {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 750;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.projection {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.projection p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.bar {
+  width: 100%;
+  min-width: 0;
+  height: 0.7rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e7e5e4;
+}
+
+.barFill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: #0f766e;
+}
+
+.notice {
+  padding: 0.55rem 0.75rem;
+  border-radius: 0.7rem;
+  background: #fffcf7;
+  color: #1c1917;
+}
+
+@media (min-width: 768px) {
+  .title {
+    font-size: 2rem;
+  }
+
+  .selector {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .workspace {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    align-items: start;
+    gap: 1.25rem;
+  }
+}

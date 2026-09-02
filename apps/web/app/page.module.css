@@ -1,0 +1,35 @@
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.title {
+  margin: 0;
+  font-size: 1.75rem;
+  line-height: 1.2;
+}
+
+.lead {
+  margin: 0;
+  color: #44403c;
+  font-size: 1.05rem;
+}
+
+.status {
+  margin: 0.5rem 0 0;
+  padding: 0.85rem 1rem;
+  border-left: 3px solid #0f766e;
+  background: #fffcf7;
+  color: #44403c;
+}
+
+@media (min-width: 768px) {
+  .title {
+    font-size: 2.25rem;
+  }
+
+  .lead {
+    font-size: 1.125rem;
+  }
+}

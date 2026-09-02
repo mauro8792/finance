@@ -1,0 +1,270 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  width: 100%;
+  min-width: 0;
+  overflow-x: hidden;
+}
+
+.intro {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.kicker {
+  margin: 0;
+  color: #0f766e;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.title {
+  margin: 0;
+  font-size: 1.7rem;
+  line-height: 1.15;
+}
+
+.lead,
+.formHint,
+.loading,
+.metaLine,
+.balanceLabel {
+  margin: 0;
+  color: #57534e;
+}
+
+.primaryCta,
+.retry,
+.edit,
+.secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.75rem;
+  border: 0;
+  border-radius: 0.75rem;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.primaryCta {
+  margin-top: 0.45rem;
+  width: 100%;
+  background: #0f766e;
+  color: #fff;
+}
+
+.primaryCta:disabled,
+.secondary:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.primaryCta:hover:not(:disabled) {
+  background: #0d6660;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.85rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.card,
+.form,
+.empty,
+.error {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  min-width: 0;
+  width: 100%;
+  padding: 1rem 0.95rem;
+  border-radius: 1.1rem;
+}
+
+.card {
+  background: #fff;
+  box-shadow: 0 1px 0 #e7e5e4;
+}
+
+.form {
+  background: #fffcf7;
+}
+
+.cardHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.cardTitle {
+  margin: 0;
+  font-size: 1.15rem;
+  overflow-wrap: anywhere;
+}
+
+.badge,
+.badgeInactive {
+  flex: 0 0 auto;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.badge {
+  background: #ecfdf5;
+  color: #0f766e;
+}
+
+.badgeInactive {
+  background: #f5f5f4;
+  color: #57534e;
+}
+
+.balanceLabel {
+  font-size: 0.85rem;
+  font-weight: 650;
+}
+
+.balance {
+  margin: 0;
+  font-size: 1.45rem;
+  font-weight: 750;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.actions,
+.formActions {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.55rem;
+}
+
+.edit,
+.secondary {
+  width: 100%;
+  background: #e7e5e4;
+  color: #1c1917;
+}
+
+.empty {
+  background: #fffcf7;
+}
+
+.empty p,
+.error p,
+.inlineError p {
+  margin: 0;
+}
+
+.error,
+.inlineError,
+.formError {
+  background: #fef2f2;
+  color: #991b1b;
+}
+
+.error {
+  gap: 0.75rem;
+}
+
+.retry {
+  background: #991b1b;
+  color: #fff;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+  font-weight: 650;
+}
+
+.field select,
+.field input {
+  width: 100%;
+  min-width: 0;
+  min-height: 2.75rem;
+  border: 1px solid #d6d3d1;
+  border-radius: 0.7rem;
+  background: #fff;
+  font: inherit;
+  padding: 0.4rem 0.65rem;
+}
+
+.formTitle {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.formError {
+  margin: 0;
+  padding: 0.55rem 0.75rem;
+  border-radius: 0.7rem;
+}
+
+.formActions .primaryCta {
+  margin-top: 0;
+}
+
+.skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.skeletonBlock {
+  min-height: 8rem;
+  border-radius: 1.1rem;
+  background: linear-gradient(90deg, #e7e5e4 0%, #f5f5f4 50%, #e7e5e4 100%);
+  background-size: 200% 100%;
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0% {
+    background-position: 100% 0;
+  }
+  100% {
+    background-position: -100% 0;
+  }
+}
+
+@media (min-width: 768px) {
+  .title {
+    font-size: 2rem;
+  }
+
+  .primaryCta {
+    width: auto;
+    min-width: 14rem;
+    align-self: flex-start;
+  }
+
+  .grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .actions,
+  .formActions {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .form {
+    max-width: 28rem;
+  }
+}

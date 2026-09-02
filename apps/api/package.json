@@ -1,0 +1,37 @@
+{
+  "name": "api",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "build": "prisma generate && tsc",
+    "start": "node dist/server.js",
+    "typecheck": "prisma generate && tsc --noEmit",
+    "test": "tsx --import ./src/shared/db/apply-test-database.ts --test src/app.test.ts src/config/config.test.ts src/shared/db/prisma.test.ts src/shared/db/investment.schema.test.ts src/shared/time/month-range.test.ts src/modules/users/user.service.test.ts src/modules/categories/category.service.test.ts src/modules/accounts/account.service.test.ts src/modules/accounts/account.controller.test.ts src/modules/transactions/transaction.service.test.ts src/modules/transactions/transaction.controller.test.ts src/modules/transactions/net-expense.test.ts src/modules/currency-exchanges/currency-exchange.math.test.ts src/modules/currency-exchanges/currency-exchange.service.test.ts src/modules/currency-exchanges/currency-exchange.controller.test.ts src/modules/financial/financial.service.test.ts src/modules/financial/financial.controller.test.ts src/modules/budgets/budget.repository.test.ts src/modules/budgets/budget.service.test.ts src/modules/budgets/budget.controller.test.ts src/modules/housing/housing.service.test.ts src/modules/housing/housing.controller.test.ts src/modules/investments/investment.math.test.ts src/modules/investments/investment.service.test.ts src/modules/investments/investment.controller.test.ts src/modules/simulations/simulation.service.test.ts src/modules/simulations/simulation.controller.test.ts",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:migrate:test": "tsx --import ./src/shared/db/apply-test-database.ts ./src/shared/db/migrate-test.ts",
+    "cleanup:dev-qa": "tsx scripts/cleanup-dev-qa.ts",
+    "prisma:studio": "prisma studio",
+    "prisma:seed": "prisma db seed"
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.19.3",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "shared": "*",
+    "zod": "^4.5.4"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/node": "^26.4.0",
+    "@types/supertest": "^7.2.1",
+    "prisma": "^6.19.3",
+    "supertest": "^7.2.2",
+    "tsx": "^4.23.13",
+    "typescript": "^7.0.2"
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "name": "personal-finance",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:web": "npm run dev -w web",
+    "dev:api": "npm run dev -w api",
+    "build:web": "npm run build -w web",
+    "build:api": "npm run build -w api",
+    "build:shared": "npm run build -w shared",
+    "typecheck": "npm run build:shared && npm run typecheck --workspaces --if-present",
+    "test:api": "npm run test -w api",
+    "test:web": "npm run test -w web",
+    "db:up": "docker compose up -d",
+    "db:down": "docker compose down",
+    "db:logs": "docker compose logs -f postgres"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

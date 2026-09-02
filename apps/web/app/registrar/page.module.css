@@ -1,0 +1,44 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  width: 100%;
+  max-width: 28rem;
+  margin: -0.6rem auto -1.2rem;
+}
+
+.intro {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.title {
+  margin: 0;
+  font-size: 1.4rem;
+  line-height: 1.15;
+}
+
+.lead {
+  margin: 0;
+  color: #57534e;
+  font-size: 0.95rem;
+  line-height: 1.35;
+}
+
+@media (min-width: 768px) {
+  .page {
+    max-width: 32rem;
+    margin: 0 auto;
+    gap: 1.1rem;
+  }
+
+  .title {
+    font-size: 1.85rem;
+  }
+
+  .lead {
+    font-size: 1rem;
+    line-height: 1.5;
+  }
+}
