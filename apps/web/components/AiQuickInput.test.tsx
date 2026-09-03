@@ -64,7 +64,12 @@ class FakeSpeechRecognition {
   lang = "";
   continuous = false;
   interimResults = false;
-  onresult: ((event: { results: Array<{ 0: { transcript: string } }> }) => void) | null = null;
+  onresult:
+    | ((event: {
+        resultIndex?: number;
+        results: Array<{ isFinal?: boolean; 0: { transcript: string } }>;
+      }) => void)
+    | null = null;
   onerror: ((event: { error: string }) => void) | null = null;
   onend: (() => void) | null = null;
   start = vi.fn();
@@ -900,7 +905,13 @@ describe("AiQuickInput", () => {
     expect(screen.getByText("Escuchando…")).toBeTruthy();
     act(() => {
       FakeSpeechRecognition.latest?.onresult?.({
-        results: [{ 0: { transcript: "Gasté 24000 en supermercado con Santander" } }],
+        resultIndex: 0,
+        results: [
+          {
+            isFinal: true,
+            0: { transcript: "Gasté 24000 en supermercado con Santander" },
+          },
+        ],
       });
     });
     expect(

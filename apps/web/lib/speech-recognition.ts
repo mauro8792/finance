@@ -1,3 +1,14 @@
+export type SpeechRecognitionResultLike = {
+  isFinal?: boolean;
+  0?: { transcript?: string };
+  length?: number;
+};
+
+export type SpeechRecognitionResultEventLike = {
+  resultIndex?: number;
+  results: ArrayLike<SpeechRecognitionResultLike>;
+};
+
 export type SpeechRecognitionLike = {
   lang: string;
   continuous: boolean;
@@ -10,8 +21,13 @@ export type SpeechRecognitionLike = {
   onend: (() => void) | null;
 };
 
-export type SpeechRecognitionResultEventLike = {
-  results: ArrayLike<{ 0?: { transcript?: string } }>;
+export type SpeechSessionState = {
+  /** Texto que el usuario ya tenía antes de activar el micrófono. */
+  prefix: string;
+  /** Solo transcripts finales acumulados en esta sesión. */
+  finalTranscript: string;
+  /** Transcript parcial actual (se reemplaza, no se concatena). */
+  interimTranscript: string;
 };
 
 type SpeechWindow = Window & {
@@ -33,29 +49,67 @@ export function isSpeechRecognitionAvailable(): boolean {
   return getSpeechRecognitionConstructor() !== null;
 }
 
-export function transcriptFromResults(
-  results: SpeechRecognitionResultEventLike["results"]
-): string {
-  const parts: string[] = [];
-  for (let index = 0; index < results.length; index += 1) {
-    const piece = results[index]?.[0]?.transcript?.trim();
-    if (piece) {
-      parts.push(piece);
-    }
-  }
-  return parts.join(" ").trim();
+export function createSpeechSession(prefix = ""): SpeechSessionState {
+  return {
+    prefix: prefix.trim(),
+    finalTranscript: "",
+    interimTranscript: "",
+  };
 }
 
-export function combineSpeechTranscript(prefix: string, spoken: string): string {
-  const start = prefix.trim();
-  const next = spoken.trim();
-  if (!next) {
-    return start;
+/**
+ * Aplica un evento SpeechRecognition a la sesión.
+ * Recorre desde resultIndex: los finales se acumulan una vez;
+ * los interim reemplazan el parcial actual (no se concatenan entre sí).
+ */
+export function applySpeechResult(
+  session: SpeechSessionState,
+  event: SpeechRecognitionResultEventLike
+): SpeechSessionState {
+  const startIndex = Math.max(0, event.resultIndex ?? 0);
+  let finalTranscript = session.finalTranscript;
+  let interimTranscript = "";
+
+  for (let index = startIndex; index < event.results.length; index += 1) {
+    const result = event.results[index];
+    const piece = result?.[0]?.transcript ?? "";
+    if (!piece) {
+      continue;
+    }
+    if (result?.isFinal) {
+      finalTranscript = `${finalTranscript}${piece}`;
+    } else {
+      interimTranscript += piece;
+    }
   }
-  if (!start) {
-    return next;
+
+  return {
+    prefix: session.prefix,
+    finalTranscript,
+    interimTranscript,
+  };
+}
+
+/** Texto a mostrar en el input: prefix + finales + interim actual. */
+export function displaySpeechTranscript(session: SpeechSessionState): string {
+  const spoken = `${session.finalTranscript}${session.interimTranscript}`.trim();
+  const prefix = session.prefix.trim();
+  if (!spoken) {
+    return prefix;
   }
-  return `${start} ${next}`;
+  if (!prefix) {
+    return spoken;
+  }
+  return `${prefix} ${spoken}`;
+}
+
+/** Al terminar: conservar solo finales consolidados, limpiar interim. */
+export function finalizeSpeechSession(session: SpeechSessionState): SpeechSessionState {
+  return {
+    prefix: session.prefix,
+    finalTranscript: session.finalTranscript,
+    interimTranscript: "",
+  };
 }
 
 export function speechErrorMessage(code: string): string | null {

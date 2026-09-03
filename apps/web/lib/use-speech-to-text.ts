@@ -2,12 +2,15 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  combineSpeechTranscript,
+  applySpeechResult,
+  createSpeechSession,
+  displaySpeechTranscript,
+  finalizeSpeechSession,
   getSpeechRecognitionConstructor,
   isSpeechRecognitionAvailable,
   speechErrorMessage,
-  transcriptFromResults,
   type SpeechRecognitionLike,
+  type SpeechSessionState,
 } from "./speech-recognition";
 
 const DEFAULT_LANG = "es-AR";
@@ -16,59 +19,85 @@ export function useSpeechToText(onTranscript: (text: string) => void) {
   const [listening, setListening] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
-  const prefixRef = useRef("");
+  const sessionRef = useRef<SpeechSessionState>(createSpeechSession());
+  const startingRef = useRef(false);
   const onTranscriptRef = useRef(onTranscript);
   onTranscriptRef.current = onTranscript;
 
   const supported = isSpeechRecognitionAvailable();
 
+  const clearRecognition = useCallback(() => {
+    const recognition = recognitionRef.current;
+    if (!recognition) {
+      return;
+    }
+    recognition.onresult = null;
+    recognition.onerror = null;
+    recognition.onend = null;
+    recognitionRef.current = null;
+  }, []);
+
   const stop = useCallback(() => {
+    startingRef.current = false;
     recognitionRef.current?.stop();
   }, []);
 
-  const start = useCallback((currentText: string) => {
-    const SpeechRecognition = getSpeechRecognitionConstructor();
-    if (!SpeechRecognition) {
-      return;
-    }
-
-    recognitionRef.current?.abort();
-    setError(null);
-    prefixRef.current = currentText.trim();
-
-    const recognition = new SpeechRecognition();
-    recognition.lang = DEFAULT_LANG;
-    recognition.continuous = true;
-    recognition.interimResults = true;
-    recognition.onresult = (event) => {
-      const spoken = transcriptFromResults(event.results);
-      onTranscriptRef.current(combineSpeechTranscript(prefixRef.current, spoken));
-    };
-    recognition.onerror = (event) => {
-      setListening(false);
-      const message = speechErrorMessage(event.error);
-      if (message) {
-        setError(message);
+  const start = useCallback(
+    (currentText: string) => {
+      const SpeechRecognition = getSpeechRecognitionConstructor();
+      if (!SpeechRecognition || startingRef.current || recognitionRef.current) {
+        return;
       }
-    };
-    recognition.onend = () => {
-      setListening(false);
-      recognitionRef.current = null;
-    };
 
-    recognitionRef.current = recognition;
-    try {
-      recognition.start();
-      setListening(true);
-    } catch {
-      setListening(false);
-      setError("No se pudo dictar. Podés seguir escribiendo.");
-    }
-  }, []);
+      startingRef.current = true;
+      setError(null);
+      sessionRef.current = createSpeechSession(currentText);
+
+      const recognition = new SpeechRecognition();
+      recognition.lang = DEFAULT_LANG;
+      recognition.continuous = true;
+      recognition.interimResults = true;
+
+      recognition.onresult = (event) => {
+        sessionRef.current = applySpeechResult(sessionRef.current, event);
+        onTranscriptRef.current(displaySpeechTranscript(sessionRef.current));
+      };
+
+      recognition.onerror = (event) => {
+        startingRef.current = false;
+        setListening(false);
+        const message = speechErrorMessage(event.error);
+        if (message) {
+          setError(message);
+        }
+      };
+
+      recognition.onend = () => {
+        startingRef.current = false;
+        sessionRef.current = finalizeSpeechSession(sessionRef.current);
+        onTranscriptRef.current(displaySpeechTranscript(sessionRef.current));
+        setListening(false);
+        clearRecognition();
+      };
+
+      recognitionRef.current = recognition;
+      try {
+        recognition.start();
+        setListening(true);
+        startingRef.current = false;
+      } catch {
+        startingRef.current = false;
+        clearRecognition();
+        setListening(false);
+        setError("No se pudo dictar. Podés seguir escribiendo.");
+      }
+    },
+    [clearRecognition]
+  );
 
   const toggle = useCallback(
     (currentText: string) => {
-      if (listening) {
+      if (listening || recognitionRef.current) {
         stop();
         return;
       }
@@ -79,7 +108,15 @@ export function useSpeechToText(onTranscript: (text: string) => void) {
 
   useEffect(() => {
     return () => {
-      recognitionRef.current?.abort();
+      startingRef.current = false;
+      const recognition = recognitionRef.current;
+      if (recognition) {
+        recognition.onresult = null;
+        recognition.onerror = null;
+        recognition.onend = null;
+        recognition.abort();
+        recognitionRef.current = null;
+      }
     };
   }, []);
 
