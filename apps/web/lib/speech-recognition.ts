@@ -22,12 +22,10 @@ export type SpeechRecognitionLike = {
 };
 
 export type SpeechSessionState = {
-  /** Texto que el usuario ya tenía antes de activar el micrófono. */
-  prefix: string;
-  /** Solo transcripts finales acumulados en esta sesión. */
-  finalTranscript: string;
-  /** Transcript parcial actual (se reemplaza, no se concatena). */
-  interimTranscript: string;
+  /** Contenido del input ANTES de activar el micrófono. */
+  baseText: string;
+  /** Mejor transcripción consolidada de ESTA sesión (reemplazable). */
+  sessionTranscript: string;
 };
 
 type SpeechWindow = Window & {
@@ -49,66 +47,92 @@ export function isSpeechRecognitionAvailable(): boolean {
   return getSpeechRecognitionConstructor() !== null;
 }
 
-export function createSpeechSession(prefix = ""): SpeechSessionState {
+export function createSpeechSession(baseText = ""): SpeechSessionState {
   return {
-    prefix: prefix.trim(),
-    finalTranscript: "",
-    interimTranscript: "",
+    baseText: baseText.trim(),
+    sessionTranscript: "",
   };
 }
 
 /**
- * Aplica un evento SpeechRecognition a la sesión.
- * Recorre desde resultIndex: los finales se acumulan una vez;
- * los interim reemplazan el parcial actual (no se concatenan entre sí).
+ * Fusiona dos fragmentos finales.
+ * Si el nuevo es una revisión/acumulación de la misma frase (Chrome Android),
+ * reemplaza. Si son piernas aditivas (desktop), concatena.
  */
-export function applySpeechResult(
-  session: SpeechSessionState,
-  event: SpeechRecognitionResultEventLike
-): SpeechSessionState {
-  const startIndex = Math.max(0, event.resultIndex ?? 0);
-  let finalTranscript = session.finalTranscript;
-  let interimTranscript = "";
+export function mergeUtterance(current: string, next: string): string {
+  if (!current) {
+    return next;
+  }
+  if (!next) {
+    return current;
+  }
+  const previous = current.trim();
+  const incoming = next.trim();
+  if (!previous) {
+    return next;
+  }
+  if (!incoming) {
+    return current;
+  }
+  // Misma frase revisada/extendida: quedarse con la versión más completa.
+  if (incoming.startsWith(previous) || previous.startsWith(incoming)) {
+    return incoming.length >= previous.length ? next : current;
+  }
+  return current + next;
+}
 
-  for (let index = startIndex; index < event.results.length; index += 1) {
-    const result = event.results[index];
+/**
+ * Reconstruye el transcript de la sesión desde event.results completo.
+ * No acumula “final + final” a ciegas: cada evento redefine sessionTranscript.
+ */
+export function rebuildSessionTranscript(
+  results: SpeechRecognitionResultEventLike["results"]
+): string {
+  let finalPart = "";
+  let interimPart = "";
+
+  for (let index = 0; index < results.length; index += 1) {
+    const result = results[index];
     const piece = result?.[0]?.transcript ?? "";
     if (!piece) {
       continue;
     }
     if (result?.isFinal) {
-      finalTranscript = `${finalTranscript}${piece}`;
+      finalPart = mergeUtterance(finalPart, piece);
     } else {
-      interimTranscript += piece;
+      interimPart += piece;
     }
   }
 
+  return `${finalPart}${interimPart}`;
+}
+
+export function applySpeechResult(
+  session: SpeechSessionState,
+  event: SpeechRecognitionResultEventLike
+): SpeechSessionState {
   return {
-    prefix: session.prefix,
-    finalTranscript,
-    interimTranscript,
+    baseText: session.baseText,
+    sessionTranscript: rebuildSessionTranscript(event.results),
   };
 }
 
-/** Texto a mostrar en el input: prefix + finales + interim actual. */
 export function displaySpeechTranscript(session: SpeechSessionState): string {
-  const spoken = `${session.finalTranscript}${session.interimTranscript}`.trim();
-  const prefix = session.prefix.trim();
+  const spoken = session.sessionTranscript.trim();
+  const base = session.baseText.trim();
   if (!spoken) {
-    return prefix;
+    return base;
   }
-  if (!prefix) {
+  if (!base) {
     return spoken;
   }
-  return `${prefix} ${spoken}`;
+  return `${base} ${spoken}`;
 }
 
-/** Al terminar: conservar solo finales consolidados, limpiar interim. */
 export function finalizeSpeechSession(session: SpeechSessionState): SpeechSessionState {
   return {
-    prefix: session.prefix,
-    finalTranscript: session.finalTranscript,
-    interimTranscript: "",
+    baseText: session.baseText,
+    sessionTranscript: session.sessionTranscript.trim(),
   };
 }
 

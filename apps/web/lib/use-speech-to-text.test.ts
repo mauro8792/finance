@@ -6,7 +6,7 @@ class FakeSpeechRecognition {
   static latest: FakeSpeechRecognition | null = null;
   static startCount = 0;
   lang = "";
-  continuous = false;
+  continuous = true;
   interimResults = false;
   onresult:
     | ((event: {
@@ -46,7 +46,18 @@ describe("useSpeechToText", () => {
     expect(onTranscript).not.toHaveBeenCalled();
   });
 
-  it("replaces interim updates and keeps a single final phrase", () => {
+  it("uses continuous=false for short dictation sessions", () => {
+    vi.stubGlobal("webkitSpeechRecognition", FakeSpeechRecognition);
+    const { result } = renderHook(() => useSpeechToText(vi.fn()));
+    act(() => {
+      result.current.start("");
+    });
+    expect(FakeSpeechRecognition.latest?.continuous).toBe(false);
+    expect(FakeSpeechRecognition.latest?.interimResults).toBe(true);
+    expect(FakeSpeechRecognition.latest?.lang).toBe("es-AR");
+  });
+
+  it("Chrome Android pattern: revised finals become one phrase", () => {
     vi.stubGlobal("webkitSpeechRecognition", FakeSpeechRecognition);
     const onTranscript = vi.fn();
     const { result } = renderHook(() => useSpeechToText(onTranscript));
@@ -58,62 +69,56 @@ describe("useSpeechToText", () => {
 
     act(() => {
       recognition?.onresult?.({
-        resultIndex: 0,
-        results: [{ isFinal: false, 0: { transcript: "14" } }],
+        results: [{ isFinal: true, 0: { transcript: "$15,000" } }],
       });
     });
     act(() => {
       recognition?.onresult?.({
-        resultIndex: 0,
-        results: [{ isFinal: false, 0: { transcript: "14 mil" } }],
+        results: [
+          { isFinal: true, 0: { transcript: "$15,000" } },
+          { isFinal: true, 0: { transcript: "$15,000" } },
+        ],
       });
     });
     act(() => {
       recognition?.onresult?.({
-        resultIndex: 0,
-        results: [{ isFinal: false, 0: { transcript: "14 mil en" } }],
-      });
-    });
-    act(() => {
-      recognition?.onresult?.({
-        resultIndex: 0,
-        results: [{ isFinal: true, 0: { transcript: "14 mil en el pádel" } }],
+        results: [
+          { isFinal: true, 0: { transcript: "$15,000" } },
+          { isFinal: true, 0: { transcript: "$15,000" } },
+          { isFinal: true, 0: { transcript: "$15,000 panadería" } },
+        ],
       });
     });
 
-    expect(onTranscript).toHaveBeenLastCalledWith("14 mil en el pádel");
-    expect(onTranscript.mock.calls.map((call) => call[0])).not.toContain(
-      "14 14 mil 14 mil en 14 mil en el pádel"
-    );
+    expect(onTranscript).toHaveBeenLastCalledWith("$15,000 panadería");
+    for (const call of onTranscript.mock.calls) {
+      expect(call[0]).not.toMatch(/\$15,000\$15,000/);
+    }
   });
 
-  it("preserves prior text and consolidates on end", () => {
+  it("preserves baseText and consolidates on end", () => {
     vi.stubGlobal("webkitSpeechRecognition", FakeSpeechRecognition);
     const onTranscript = vi.fn();
     const { result } = renderHook(() => useSpeechToText(onTranscript));
 
     act(() => {
-      result.current.toggle("nota previa");
+      result.current.toggle("ayer");
     });
     const recognition = FakeSpeechRecognition.latest;
 
     act(() => {
       recognition?.onresult?.({
-        resultIndex: 0,
-        results: [
-          { isFinal: true, 0: { transcript: "pago " } },
-          { isFinal: false, 0: { transcript: "parcial" } },
-        ],
+        results: [{ isFinal: true, 0: { transcript: "gasté 15 mil en panadería" } }],
       });
     });
-    expect(onTranscript).toHaveBeenLastCalledWith("nota previa pago parcial");
+    expect(onTranscript).toHaveBeenLastCalledWith("ayer gasté 15 mil en panadería");
 
     act(() => {
-      result.current.toggle("nota previa");
+      result.current.toggle("ayer");
     });
     expect(recognition?.stop).toHaveBeenCalled();
     expect(result.current.listening).toBe(false);
-    expect(onTranscript).toHaveBeenLastCalledWith("nota previa pago");
+    expect(onTranscript).toHaveBeenLastCalledWith("ayer gasté 15 mil en panadería");
   });
 
   it("does not start two recognition instances at once", () => {

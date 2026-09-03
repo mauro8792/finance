@@ -21,6 +21,7 @@ export function useSpeechToText(onTranscript: (text: string) => void) {
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const sessionRef = useRef<SpeechSessionState>(createSpeechSession());
   const startingRef = useRef(false);
+  const activeRef = useRef(false);
   const onTranscriptRef = useRef(onTranscript);
   onTranscriptRef.current = onTranscript;
 
@@ -37,6 +38,23 @@ export function useSpeechToText(onTranscript: (text: string) => void) {
     recognitionRef.current = null;
   }, []);
 
+  const abortActive = useCallback(() => {
+    const recognition = recognitionRef.current;
+    if (!recognition) {
+      return;
+    }
+    try {
+      recognition.onresult = null;
+      recognition.onerror = null;
+      recognition.onend = null;
+      recognition.abort();
+    } catch {
+      // ignore abort races on mobile webkit
+    }
+    recognitionRef.current = null;
+    activeRef.current = false;
+  }, []);
+
   const stop = useCallback(() => {
     startingRef.current = false;
     recognitionRef.current?.stop();
@@ -45,17 +63,19 @@ export function useSpeechToText(onTranscript: (text: string) => void) {
   const start = useCallback(
     (currentText: string) => {
       const SpeechRecognition = getSpeechRecognitionConstructor();
-      if (!SpeechRecognition || startingRef.current || recognitionRef.current) {
+      if (!SpeechRecognition || startingRef.current || activeRef.current) {
         return;
       }
 
+      abortActive();
       startingRef.current = true;
       setError(null);
       sessionRef.current = createSpeechSession(currentText);
 
       const recognition = new SpeechRecognition();
       recognition.lang = DEFAULT_LANG;
-      recognition.continuous = true;
+      // Un movimiento breve: false reduce revisiones duplicadas en Chrome Android.
+      recognition.continuous = false;
       recognition.interimResults = true;
 
       recognition.onresult = (event) => {
@@ -65,6 +85,7 @@ export function useSpeechToText(onTranscript: (text: string) => void) {
 
       recognition.onerror = (event) => {
         startingRef.current = false;
+        activeRef.current = false;
         setListening(false);
         const message = speechErrorMessage(event.error);
         if (message) {
@@ -74,6 +95,7 @@ export function useSpeechToText(onTranscript: (text: string) => void) {
 
       recognition.onend = () => {
         startingRef.current = false;
+        activeRef.current = false;
         sessionRef.current = finalizeSpeechSession(sessionRef.current);
         onTranscriptRef.current(displaySpeechTranscript(sessionRef.current));
         setListening(false);
@@ -83,21 +105,23 @@ export function useSpeechToText(onTranscript: (text: string) => void) {
       recognitionRef.current = recognition;
       try {
         recognition.start();
+        activeRef.current = true;
         setListening(true);
-        startingRef.current = false;
       } catch {
-        startingRef.current = false;
+        activeRef.current = false;
         clearRecognition();
         setListening(false);
         setError("No se pudo dictar. Podés seguir escribiendo.");
+      } finally {
+        startingRef.current = false;
       }
     },
-    [clearRecognition]
+    [abortActive, clearRecognition]
   );
 
   const toggle = useCallback(
     (currentText: string) => {
-      if (listening || recognitionRef.current) {
+      if (listening || activeRef.current || recognitionRef.current) {
         stop();
         return;
       }
@@ -109,16 +133,10 @@ export function useSpeechToText(onTranscript: (text: string) => void) {
   useEffect(() => {
     return () => {
       startingRef.current = false;
-      const recognition = recognitionRef.current;
-      if (recognition) {
-        recognition.onresult = null;
-        recognition.onerror = null;
-        recognition.onend = null;
-        recognition.abort();
-        recognitionRef.current = null;
-      }
+      activeRef.current = false;
+      abortActive();
     };
-  }, []);
+  }, [abortActive]);
 
   return { supported, listening, error, start, stop, toggle };
 }
