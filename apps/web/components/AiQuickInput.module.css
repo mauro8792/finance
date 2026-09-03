@@ -60,6 +60,12 @@
   font-weight: 600;
 }
 
+.inputRow {
+  display: flex;
+  align-items: stretch;
+  gap: 0.4rem;
+}
+
 .input {
   width: 100%;
   min-height: 2.75rem;
@@ -69,12 +75,44 @@
   font: inherit;
   font-size: 1rem;
   padding: 0.45rem 0.7rem;
+  flex: 1;
+}
+
+.mic,
+.micActive {
+  flex: 0 0 2.75rem;
+  width: 2.75rem;
+  min-height: 2.75rem;
+  display: grid;
+  place-items: center;
+  border-radius: 0.7rem;
+  cursor: pointer;
+}
+
+.mic {
+  border: 1px solid #d6d3d1;
+  background: #fffcf7;
+  color: #44403c;
+}
+
+.micActive {
+  border: 1px solid #0f766e;
+  background: #0f766e;
+  color: #fff;
+}
+
+.mic:disabled,
+.micActive:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 .input:focus-visible,
 .primary:focus-visible,
 .secondary:focus-visible,
-.linkish:focus-visible {
+.linkish:focus-visible,
+.mic:focus-visible,
+.micActive:focus-visible {
   outline: 2px solid #0f766e;
   outline-offset: 2px;
 }
@@ -203,7 +241,9 @@
 
   .input,
   .primary,
-  .secondary {
+  .secondary,
+  .mic,
+  .micActive {
     min-height: 2.85rem;
   }
 }

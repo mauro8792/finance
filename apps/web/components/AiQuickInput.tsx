@@ -2,6 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useSpeechToText } from "../lib/use-speech-to-text";
 import {
   AI_QUERY_INVALIDATIONS,
   allProposalsSettled,
@@ -75,7 +76,13 @@ export function AiQuickInput() {
     setEmptyParse(false);
   }, [items, step]);
 
-  const canInterpret = text.trim().length > 0 && !parseMutation.isPending;
+  const speech = useSpeechToText((spoken) => {
+    setSuccess(null);
+    setEmptyParse(false);
+    parseMutation.reset();
+    setText(spoken);
+  });
+  const canInterpret = text.trim().length > 0 && !parseMutation.isPending && !speech.listening;
   const accounts = accountsQuery.data;
   const categories = categoriesQuery.data;
   const catalogsReady = Boolean(accounts && categories);
@@ -156,25 +163,57 @@ export function AiQuickInput() {
         <form className={styles.form} onSubmit={onInterpret}>
           <label className={styles.field} htmlFor="ai-quick-text">
             ¿Qué movimiento querés registrar?
-            <input
-              id="ai-quick-text"
-              className={styles.input}
-              type="text"
-              autoComplete="off"
-              enterKeyHint="go"
-              placeholder="Ej: gasté 75 mil en el supermercado"
-              value={text}
-              onChange={(event) => {
-                setSuccess(null);
-                setEmptyParse(false);
-                parseMutation.reset();
-                setText(event.target.value);
-              }}
-              aria-invalid={Boolean(parseError)}
-              aria-describedby={parseError ? "ai-quick-error" : undefined}
-              disabled={parseMutation.isPending}
-            />
+            <span className={styles.inputRow}>
+              <input
+                id="ai-quick-text"
+                className={styles.input}
+                type="text"
+                autoComplete="off"
+                enterKeyHint="go"
+                placeholder="Ej: gasté 75 mil en el supermercado"
+                value={text}
+                onChange={(event) => {
+                  setSuccess(null);
+                  setEmptyParse(false);
+                  parseMutation.reset();
+                  setText(event.target.value);
+                }}
+                aria-invalid={Boolean(parseError) || Boolean(speech.error)}
+                aria-describedby={
+                  parseError
+                    ? "ai-quick-error"
+                    : speech.listening
+                      ? "ai-quick-listening"
+                      : speech.error
+                        ? "ai-quick-speech-error"
+                        : undefined
+                }
+                disabled={parseMutation.isPending}
+              />
+              {speech.supported ? (
+                <button
+                  type="button"
+                  className={speech.listening ? styles.micActive : styles.mic}
+                  aria-pressed={speech.listening}
+                  aria-label={speech.listening ? "Detener dictado" : "Dictar"}
+                  onClick={() => speech.toggle(text)}
+                  disabled={parseMutation.isPending}
+                >
+                  <MicIcon listening={speech.listening} />
+                </button>
+              ) : null}
+            </span>
           </label>
+          {speech.listening ? (
+            <p id="ai-quick-listening" className={styles.hint} role="status">
+              Escuchando…
+            </p>
+          ) : null}
+          {speech.error ? (
+            <p id="ai-quick-speech-error" className={styles.error} role="alert">
+              {speech.error}
+            </p>
+          ) : null}
           {parseError ? (
             <p id="ai-quick-error" className={styles.error} role="alert">
               {parseError}
@@ -447,5 +486,20 @@ function Ambiguities({ items }: { items: string[] }) {
         ))}
       </ul>
     </div>
+  );
+}
+
+function MicIcon({ listening }: { listening: boolean }) {
+  return (
+    <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false">
+      <path
+        fill="currentColor"
+        d={
+          listening
+            ? "M12 14a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v5a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2Z"
+            : "M12 14a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v5a3 3 0 0 0 3 3Zm7-3h-2a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11Z"
+        }
+      />
+    </svg>
   );
 }

@@ -1,5 +1,4 @@
-import { AiQuickInput } from "../../components/AiQuickInput";
-import { QuickAddForm } from "../../components/QuickAddForm";
+import { RegistrarModes } from "../../components/RegistrarModes";
 import styles from "./page.module.css";
 
 export default function RegistrarPage() {
@@ -12,13 +11,7 @@ export default function RegistrarPage() {
           elegida.
         </p>
       </header>
-      <AiQuickInput />
-      <section aria-labelledby="manual-register-title" className={styles.manual}>
-        <h2 id="manual-register-title" className={styles.manualTitle}>
-          O cargalo a mano
-        </h2>
-        <QuickAddForm />
-      </section>
+      <RegistrarModes />
     </div>
   );
 }

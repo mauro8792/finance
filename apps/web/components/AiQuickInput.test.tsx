@@ -1,8 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { render, screen, waitFor, within, act } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import RegistrarPage from "../app/registrar/page";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiClientError } from "../lib/api";
 import { AiQuickInput } from "./AiQuickInput";
 import type { AIParsedTransaction } from "../lib/types";
@@ -60,6 +59,22 @@ function renderQuick() {
   return { invalidate };
 }
 
+class FakeSpeechRecognition {
+  static latest: FakeSpeechRecognition | null = null;
+  lang = "";
+  continuous = false;
+  interimResults = false;
+  onresult: ((event: { results: Array<{ 0: { transcript: string } }> }) => void) | null = null;
+  onerror: ((event: { error: string }) => void) | null = null;
+  onend: (() => void) | null = null;
+  start = vi.fn();
+  stop = vi.fn();
+  abort = vi.fn();
+  constructor() {
+    FakeSpeechRecognition.latest = this;
+  }
+}
+
 describe("AiQuickInput", () => {
   beforeEach(() => {
     getAccounts.mockReset();
@@ -88,6 +103,11 @@ describe("AiQuickInput", () => {
       transactions: [expense({ accountHint: "Santander" })],
       ambiguities: [],
     });
+  });
+
+  afterEach(() => {
+    FakeSpeechRecognition.latest = null;
+    vi.unstubAllGlobals();
   });
 
   it("renders the quick input", async () => {
@@ -864,17 +884,40 @@ describe("AiQuickInput", () => {
     expect(screen.getByRole("article", { name: "Movimiento 2" })).toBeTruthy();
   });
 
-  it("keeps the manual form available on Registrar", async () => {
-    const client = new QueryClient({
-      defaultOptions: { queries: { retry: false } },
+  it("does not show a microphone when speech recognition is unavailable", async () => {
+    renderQuick();
+    expect(await screen.findByRole("button", { name: "Interpretar" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Dictar" })).toBeNull();
+  });
+
+  it("writes dictation into the existing input", async () => {
+    vi.stubGlobal("webkitSpeechRecognition", FakeSpeechRecognition);
+    const user = userEvent.setup();
+    renderQuick();
+    const mic = await screen.findByRole("button", { name: "Dictar" });
+    await user.click(mic);
+    expect(screen.getByRole("button", { name: "Detener dictado" })).toBeTruthy();
+    expect(screen.getByText("Escuchando…")).toBeTruthy();
+    act(() => {
+      FakeSpeechRecognition.latest?.onresult?.({
+        results: [{ 0: { transcript: "Gasté 24000 en supermercado con Santander" } }],
+      });
     });
-    render(
-      <QueryClientProvider client={client}>
-        <RegistrarPage />
-      </QueryClientProvider>
-    );
-    expect(await screen.findByText("Registrar con texto")).toBeTruthy();
-    expect(screen.getByRole("heading", { name: "O cargalo a mano" })).toBeTruthy();
-    expect(await screen.findByRole("form", { name: "Registrar movimiento" })).toBeTruthy();
+    expect(
+      screen.getByDisplayValue("Gasté 24000 en supermercado con Santander")
+    ).toBeTruthy();
+  });
+
+  it("shows a speech permission error without hiding Interpretar", async () => {
+    vi.stubGlobal("webkitSpeechRecognition", FakeSpeechRecognition);
+    const user = userEvent.setup();
+    renderQuick();
+    await user.click(await screen.findByRole("button", { name: "Dictar" }));
+    act(() => {
+      FakeSpeechRecognition.latest?.onerror?.({ error: "not-allowed" });
+    });
+    expect(screen.getByText("No se pudo usar el micrófono. Podés seguir escribiendo.")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Interpretar" })).toBeTruthy();
+    expect(screen.getByLabelText("¿Qué movimiento querés registrar?")).toBeTruthy();
   });
 });
