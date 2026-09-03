@@ -5,14 +5,14 @@
 
 databases:
   - name: personal-finance-db
-    plan: basic-256mb
+    plan: free
     postgresMajorVersion: 16
 
 services:
   - type: web
     name: personal-finance-api
     runtime: node
-    plan: starter
+    plan: free
     numInstances: 1
     healthCheckPath: /health
     maxShutdownDelaySeconds: 30
@@ -35,7 +35,6 @@ services:
         value: "7"
       - key: SESSION_SECRET
         generateValue: true
-        sync: false
       - key: DATABASE_URL
         fromDatabase:
           name: personal-finance-db
