@@ -26,7 +26,7 @@ M10.6 **no** es Go-live B.
 ## Archivos de plataforma (aún no aplicar)
 
 - `render.yaml` — Blueprint API + Postgres. Sincronizarlo **crea** recursos de pago. `autoDeployTrigger: off`, `numInstances: 1`, `healthCheckPath: /health`, `TRUST_PROXY=1`.
-- `apps/web/vercel.json` — install/build del monorepo. En Vercel: Root Directory = `apps/web`. `NEXT_PUBLIC_API_URL` en el dashboard **antes** del build.
+- `apps/web/vercel.json` — install/build del monorepo + rewrite `/api/:path*` → API Render (Go-live A gratis, same-origin en Vercel). En Vercel: Root Directory = `apps/web`. `NEXT_PUBLIC_API_URL` en el dashboard **antes** del build (mismo origen del front, no `*.onrender.com`).
 
 ## Comandos
 
@@ -54,7 +54,7 @@ npm run prisma:seed -w api
 
 ## Envs
 
-Ver `apps/api/.env.example` y `apps/web/.env.example`. Producción API: `NODE_ENV=production`, `WEB_ORIGIN=https://app.<dominio>`, `SESSION_SECURE=1`, `SESSION_SECRET` ≥32 (distinto de DEV), `TRUST_PROXY=1` solo en Render, `DATABASE_URL` internal SSL. Web: únicamente `NEXT_PUBLIC_API_URL=https://api.<dominio>`.
+Ver `apps/api/.env.example` y `apps/web/.env.example`. Producción API: `NODE_ENV=production`, `WEB_ORIGIN=https://app.<dominio>` (o el origen exacto del front en Go-live A, p. ej. `https://….vercel.app`), `SESSION_SECURE=1`, `SESSION_SECRET` ≥32 (distinto de DEV), `TRUST_PROXY=1` solo en Render, `DATABASE_URL` internal SSL. Web: `NEXT_PUBLIC_API_URL` = origen del front cuando hay rewrite Vercel→Render; con dominio propio, `https://api.<dominio>`.
 
 `BOOTSTRAP_*` no van en el servicio permanente. Solo one-shot.
 

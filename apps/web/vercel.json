@@ -1,5 +1,11 @@
 {
   "installCommand": "cd ../.. && npm ci",
   "buildCommand": "cd ../.. && npm run build:shared && npm run build -w web",
-  "framework": "nextjs"
+  "framework": "nextjs",
+  "rewrites": [
+    {
+      "source": "/api/:path*",
+      "destination": "https://finance-2gxt.onrender.com/api/:path*"
+    }
+  ]
 }
