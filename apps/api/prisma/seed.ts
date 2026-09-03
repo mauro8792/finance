@@ -1,4 +1,4 @@
-import { DEFAULT_EXPENSE_CATEGORY_NAMES } from "../src/modules/categories/category.types.js";
+import { ensureSystemExpenseCategories } from "../src/modules/categories/ensure-system-categories.js";
 import { PrismaCategoryRepository } from "../src/modules/categories/category.repository.js";
 import { PrismaUserRepository } from "../src/modules/users/user.repository.js";
 import { UserService } from "../src/modules/users/user.service.js";
@@ -19,27 +19,13 @@ async function seed(): Promise<void> {
     console.log(`Seed: user already exists (${user.id}); not creating another.`);
   }
 
-  let created = 0;
-
-  for (const name of DEFAULT_EXPENSE_CATEGORY_NAMES) {
-    const existing = await categories.findByUserIdAndName(user.id, name);
-
-    if (existing) {
-      continue;
-    }
-
-    await categories.create({
-      userId: user.id,
-      name,
-      type: "EXPENSE",
-      isSystem: true,
-      isActive: true,
-    });
-    created += 1;
-  }
+  const result = await ensureSystemExpenseCategories({
+    users,
+    categories,
+  });
 
   console.log(
-    `Seed: system expense categories ready (created ${created}, total ${DEFAULT_EXPENSE_CATEGORY_NAMES.length})`
+    `Seed: system expense categories ready (created ${result.createdNames.length}, total ${result.expectedTotal})`
   );
 }
 

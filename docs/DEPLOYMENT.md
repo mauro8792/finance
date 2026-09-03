@@ -72,6 +72,23 @@ Prod: `DATABASE_URL` de prod en el entorno del one-shot (shell local o Shell de 
 
 Reset: `npm run auth:set-password -w api` (exige exactamente 1 user).
 
+## Bootstrap categorías system (one-shot)
+
+Si el user de prod existe pero faltan las categorías base EXPENSE (`is_system=true`), **no** correr `prisma db seed` (seed QA). Usar:
+
+```text
+npm run categories:ensure-system -w api -- --dry-run
+npm run categories:ensure-system -w api
+```
+
+- Exige exactamente 1 user (0 o >1 → FAIL FAST).
+- Inserta solo nombres faltantes de `DEFAULT_EXPENSE_CATEGORY_NAMES`.
+- No modifica filas existentes (no reactiva, no fuerza `isSystem`, no renombra).
+- No toca auth, cuentas ni movimientos.
+- Idempotente. Dry-run no escribe.
+
+Prod: mismo `DATABASE_URL` one-shot que bootstrap auth (shell local o Shell de Render). Confirmar dry-run antes del apply.
+
 ## Shutdown
 
 `SIGTERM` / `SIGINT`: deja de aceptar conexiones (`server.close`), desconecta Prisma, `exit 0`. Timeout ~25s → `exit 1`. Alineado con `maxShutdownDelaySeconds: 30` en Render.
