@@ -231,6 +231,30 @@ test("FinancialService gross includes ACTIVE EXPENSE and excludes other types", 
   assert.equal(await service.getMonthlyOperatingIncome(userId, YEAR, MONTH, TZ), "800.00");
 });
 
+test("FinancialService CAPITAL without categoryId is not operating income and still increases available ARS", async () => {
+  const { service, transactions, ars } = await setup();
+  await movement(transactions, {
+    accountId: ars.id,
+    categoryId: null,
+    type: "INCOME",
+    amount: "370214.59",
+    currency: "ARS",
+    occurredAt: at(YEAR, MONTH),
+    metadata: { incomeKind: "CAPITAL" },
+  });
+  await movement(transactions, {
+    accountId: ars.id,
+    type: "EXPENSE",
+    amount: "100.00",
+    currency: "ARS",
+    occurredAt: at(YEAR, MONTH),
+  });
+
+  assert.equal(await service.getMonthlyOperatingIncome(userId, YEAR, MONTH, TZ), "0.00");
+  assert.equal(await service.getMonthlyNetExpenses(userId, YEAR, MONTH, TZ), "100.00");
+  assert.equal(await service.getTotalAvailableARS(userId), "370114.59");
+});
+
 test("FinancialService HOUSING_PAYMENT is not expense or income but can reduce available ARS", async () => {
   const { service, transactions, ars } = await setup();
   await movement(transactions, {

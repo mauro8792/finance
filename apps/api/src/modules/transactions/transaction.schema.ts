@@ -27,14 +27,23 @@ export const CreateIncomeSchema = z
     amount: z.string().min(1, "El importe es obligatorio."),
     currency: z.enum(CURRENCIES, { error: "La moneda debe ser ARS o USD." }),
     accountId: z.string().uuid("El accountId debe ser un UUID."),
-    categoryId: z.string().uuid("El categoryId debe ser un UUID."),
+    categoryId: z.string().uuid("El categoryId debe ser un UUID.").optional(),
     incomeKind: z.enum(INCOME_KINDS, {
       error: "incomeKind debe ser OPERATING o CAPITAL.",
     }),
     description: z.string().max(255).optional(),
     occurredAt: z.iso.datetime({ error: "occurredAt debe ser un datetime ISO." }).optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((value, ctx) => {
+    if (value.incomeKind === "OPERATING" && !value.categoryId) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["categoryId"],
+        message: "El categoryId es obligatorio para un ingreso operativo.",
+      });
+    }
+  });
 
 export const ListTransactionsQuerySchema = z
   .object({

@@ -73,6 +73,49 @@ describe("ai-quick-input adapter", () => {
     assert.equal(canConfirmAiDraft(draft), true);
   });
 
+  it("allows CAPITAL income without category and omits categoryId in the payload", () => {
+    const draft = resolveAiDraft(
+      {
+        type: "INCOME",
+        amount: "370214.59",
+        currency: "ARS",
+        categoryHint: null,
+        accountHint: "Santander",
+        description: "Saldo inicial",
+        occurredAt: null,
+        paymentMethod: null,
+        incomeKind: "CAPITAL",
+      },
+      uniqueAccounts,
+      categories
+    );
+    assert.equal(draft.categoryId, "");
+    assert.equal(canConfirmAiDraft(draft), true);
+    const payload = toCreateRequest(draft, uniqueAccounts[0]!);
+    assert.equal(payload && "type" in payload ? payload.type : undefined, "INCOME");
+    assert.ok(payload && "incomeKind" in payload && payload.incomeKind === "CAPITAL");
+    assert.equal("categoryId" in (payload ?? {}) ? payload?.categoryId : undefined, undefined);
+  });
+
+  it("rejects OPERATING income without category", () => {
+    const draft = resolveAiDraft(
+      {
+        type: "INCOME",
+        amount: "1000.00",
+        currency: "ARS",
+        categoryHint: null,
+        accountHint: "Santander",
+        description: "Sueldo",
+        occurredAt: null,
+        paymentMethod: null,
+        incomeKind: "OPERATING",
+      },
+      uniqueAccounts,
+      categories
+    );
+    assert.equal(canConfirmAiDraft(draft), false);
+  });
+
   it("does not pick a duplicated account name", () => {
     const draft = resolveAiDraft(expense({ accountHint: "Santander" }), accounts, categories);
     assert.equal(draft.accountId, "");

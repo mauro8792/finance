@@ -10,6 +10,7 @@ import {
   PAYMENT_METHOD_LABELS,
   filterActiveAccounts,
   filterCategoriesForType,
+  isCategoryRequired,
   isValidAmount,
   localDateTimeToIso,
   normalizeAmountInput,
@@ -142,30 +143,35 @@ export function QuickAddForm({ initialValues, onSaved }: QuickAddFormProps = {})
 
   const loading = accountsQuery.isPending || categoriesQuery.isPending;
   const loadError = accountsQuery.isError || categoriesQuery.isError;
+  const categoryRequired = isCategoryRequired(kind, incomeKind);
   const canSubmit =
     !mutation.isPending &&
-    Boolean(accountId && categoryId && selectedAccount && isValidAmount(amount));
+    Boolean(accountId && selectedAccount && isValidAmount(amount)) &&
+    (!categoryRequired || Boolean(categoryId));
 
   function onSubmit(event: FormEvent) {
     event.preventDefault();
     setSuccess(null);
 
-    if (!selectedAccount || !categoryId || !isValidAmount(amount)) {
+    if (!selectedAccount || !isValidAmount(amount)) {
+      return;
+    }
+    if (categoryRequired && !categoryId) {
       return;
     }
 
-    const payloadBase = {
+    const shared = {
       amount: toApiAmount(amount),
       currency: selectedAccount.currency,
       accountId: selectedAccount.id,
-      categoryId,
       ...(description.trim() ? { description: description.trim() } : {}),
       ...(occurredAt ? { occurredAt: localDateTimeToIso(occurredAt) } : {}),
     };
 
     if (kind === "INCOME") {
       mutation.mutate({
-        ...payloadBase,
+        ...shared,
+        ...(categoryId ? { categoryId } : {}),
         type: "INCOME",
         incomeKind,
       });
@@ -173,7 +179,8 @@ export function QuickAddForm({ initialValues, onSaved }: QuickAddFormProps = {})
     }
 
     mutation.mutate({
-      ...payloadBase,
+      ...shared,
+      categoryId,
       paymentMethod,
       isFixed,
     });
@@ -272,11 +279,12 @@ export function QuickAddForm({ initialValues, onSaved }: QuickAddFormProps = {})
 
       <label className={styles.field} htmlFor="quick-add-category">
         Categoría
+        {!categoryRequired ? <span className={styles.optional}> (opcional)</span> : null}
         <select
           id="quick-add-category"
           value={categoryId}
           onChange={(event) => setCategoryId(event.target.value)}
-          required
+          required={categoryRequired}
         >
           <option value="">Elegí una categoría</option>
           {categories.map((category) => (

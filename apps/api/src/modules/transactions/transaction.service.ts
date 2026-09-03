@@ -82,13 +82,7 @@ export class TransactionService {
     const amount = parsePositiveAmount(input.amount);
     const incomeKind = requireIncomeKind(input.incomeKind);
     const account = await this.requireActiveOwnedAccount(userId, input.accountId);
-    const category = await this.requireActiveCategory(
-      userId,
-      input.categoryId,
-      INCOME_CATEGORY_TYPES,
-      "No se puede registrar un ingreso con una categoría inactiva.",
-      "Un ingreso sólo puede usar categorías INCOME o BOTH."
-    );
+    const categoryId = await this.resolveIncomeCategoryId(userId, incomeKind, input.categoryId);
     const currency = requireMatchingCurrency(input.currency, account.currency);
     const occurredAt = input.occurredAt ?? new Date();
     const description = normalizeDescription(input.description);
@@ -96,7 +90,7 @@ export class TransactionService {
     return this.transactions.create({
       userId,
       accountId: account.id,
-      categoryId: category.id,
+      categoryId,
       type: "INCOME",
       status: "ACTIVE",
       amount,
@@ -174,34 +168,13 @@ export class TransactionService {
     );
     requireMatchingCurrency(current.currency, account.currency);
 
-    const nextCategoryId = input.categoryId ?? current.categoryId;
-    if (!nextCategoryId) {
-      throw new AppError(
-        "VALIDATION_ERROR",
-        "La categoría es obligatoria.",
-        400
-      );
-    }
-
-    const categoryTypes =
-      current.type === "INCOME" ? INCOME_CATEGORY_TYPES : EXPENSE_CATEGORY_TYPES;
-    const category = await this.requireActiveCategory(
-      userId,
-      nextCategoryId,
-      categoryTypes,
-      current.type === "INCOME"
-        ? "No se puede registrar un ingreso con una categoría inactiva."
-        : "No se puede registrar un gasto con una categoría inactiva.",
-      current.type === "INCOME"
-        ? "Un ingreso sólo puede usar categorías INCOME o BOTH."
-        : "Un gasto sólo puede usar categorías EXPENSE o BOTH."
-    );
+    const categoryId = await this.resolveUpdateCategoryId(userId, current, input.categoryId);
 
     return this.transactions.update(id, {
       ...(input.amount !== undefined
         ? { amount: parsePositiveAmount(input.amount) }
         : {}),
-      categoryId: category.id,
+      categoryId,
       ...(input.description !== undefined
         ? { description: normalizeDescription(input.description ?? undefined) }
         : {}),
@@ -448,6 +421,67 @@ export class TransactionService {
     return transaction;
   }
 
+  private async resolveIncomeCategoryId(
+    userId: string,
+    incomeKind: IncomeKind,
+    categoryId: string | undefined
+  ): Promise<string | null> {
+    if (incomeKind === "CAPITAL" && !categoryId) {
+      return null;
+    }
+
+    if (!categoryId) {
+      throw new AppError(
+        "VALIDATION_ERROR",
+        "El categoryId es obligatorio para un ingreso operativo.",
+        400
+      );
+    }
+
+    const category = await this.requireActiveCategory(
+      userId,
+      categoryId,
+      INCOME_CATEGORY_TYPES,
+      "No se puede registrar un ingreso con una categoría inactiva.",
+      "Un ingreso sólo puede usar categorías INCOME o BOTH."
+    );
+    return category.id;
+  }
+
+  private async resolveUpdateCategoryId(
+    userId: string,
+    current: Transaction,
+    nextCategoryId: string | undefined
+  ): Promise<string | null> {
+    const categoryId = nextCategoryId ?? current.categoryId;
+    if (isCapitalIncome(current) && !categoryId) {
+      return null;
+    }
+
+    if (!categoryId) {
+      throw new AppError(
+        "VALIDATION_ERROR",
+        "La categoría es obligatoria.",
+        400
+      );
+    }
+
+    const categoryTypes =
+      current.type === "INCOME" ? INCOME_CATEGORY_TYPES : EXPENSE_CATEGORY_TYPES;
+    const category = await this.requireActiveCategory(
+      userId,
+      categoryId,
+      categoryTypes,
+      current.type === "INCOME"
+        ? "No se puede registrar un ingreso con una categoría inactiva."
+        : "No se puede registrar un gasto con una categoría inactiva.",
+      current.type === "INCOME"
+        ? "Un ingreso sólo puede usar categorías INCOME o BOTH."
+        : "Un gasto sólo puede usar categorías EXPENSE o BOTH."
+    );
+    return category.id;
+  }
+
   private async requireActiveOwnedAccount(userId: string, accountId: string) {
     const account = await this.accounts.findById(accountId);
 
@@ -526,6 +560,13 @@ function requireIncomeKind(incomeKind: string): IncomeKind {
     "incomeKind debe ser OPERATING o CAPITAL.",
     400
   );
+}
+
+function isCapitalIncome(transaction: Transaction): boolean {
+  if (transaction.type !== "INCOME" || !transaction.metadata || typeof transaction.metadata !== "object") {
+    return false;
+  }
+  return (transaction.metadata as { incomeKind?: unknown }).incomeKind === "CAPITAL";
 }
 
 function requireMatchingCurrency(

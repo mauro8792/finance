@@ -3,6 +3,7 @@ import { formatMoney } from "./format-money";
 import {
   filterActiveAccounts,
   filterCategoriesForType,
+  isCategoryRequired,
   PAYMENT_METHOD_LABELS,
   toLocalDateTimeInput,
 } from "./quick-add";
@@ -82,7 +83,10 @@ export function resolveAiDraft(
 }
 
 export function canConfirmAiDraft(draft: ResolvedAiDraft): boolean {
-  if (draft.kind === null || !draft.amount || !draft.accountId || !draft.categoryId) {
+  if (draft.kind === null || !draft.amount || !draft.accountId) {
+    return false;
+  }
+  if (isCategoryRequired(draft.kind, draft.incomeKind) && !draft.categoryId) {
     return false;
   }
   if (draft.kind === "INCOME" && !draft.incomeKind) {
@@ -98,11 +102,7 @@ export function toCreateRequest(
   if (!canConfirmAiDraft(draft) || !draft.kind || !draft.amount) {
     return null;
   }
-  const base = {
-    amount: draft.amount,
-    currency: account.currency,
-    accountId: account.id,
-    categoryId: draft.categoryId,
+  const extras = {
     ...(draft.description ? { description: draft.description } : {}),
     ...(draft.occurredAt ? { occurredAt: draft.occurredAt } : {}),
   };
@@ -111,14 +111,22 @@ export function toCreateRequest(
       return null;
     }
     return {
-      ...base,
       type: "INCOME",
+      amount: draft.amount,
+      currency: account.currency,
+      accountId: account.id,
+      ...(draft.categoryId ? { categoryId: draft.categoryId } : {}),
       incomeKind: draft.incomeKind,
+      ...extras,
     };
   }
   return {
-    ...base,
+    amount: draft.amount,
+    currency: account.currency,
+    accountId: account.id,
+    categoryId: draft.categoryId,
     ...(draft.paymentMethod ? { paymentMethod: draft.paymentMethod } : {}),
+    ...extras,
   };
 }
 

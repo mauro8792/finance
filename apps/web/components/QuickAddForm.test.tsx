@@ -117,6 +117,47 @@ describe("QuickAddForm", () => {
     expect(await screen.findByText("Ingreso registrado.")).toBeTruthy();
   });
 
+  it("enables Guardar for CAPITAL income without category", async () => {
+    const user = userEvent.setup();
+    getCategories.mockResolvedValueOnce([
+      { id: "cat-exp", name: "Comida", type: "EXPENSE", isActive: true },
+    ]);
+    renderForm();
+    await screen.findByRole("button", { name: "Guardar" });
+    await user.click(screen.getByRole("button", { name: "Ingreso" }));
+    await user.click(screen.getByRole("radio", { name: /Capital/i }));
+    await user.type(screen.getByPlaceholderText("0,00"), "370214,59");
+    expect(screen.getByText("No hay categorías activas para este tipo de movimiento.")).toBeTruthy();
+    const save = screen.getByRole("button", { name: "Guardar" }) as HTMLButtonElement;
+    expect(save.disabled).toBe(false);
+    await user.click(save);
+    await waitFor(() =>
+      expect(createTransaction).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: "INCOME",
+          incomeKind: "CAPITAL",
+          amount: "370214.59",
+          accountId: "acc-1",
+        })
+      )
+    );
+    expect(createTransaction.mock.calls.at(-1)?.[0].categoryId).toBeUndefined();
+  });
+
+  it("keeps Guardar disabled for OPERATING income without category", async () => {
+    const user = userEvent.setup();
+    getCategories.mockResolvedValueOnce([
+      { id: "cat-exp", name: "Comida", type: "EXPENSE", isActive: true },
+    ]);
+    renderForm();
+    await screen.findByRole("button", { name: "Guardar" });
+    await user.click(screen.getByRole("button", { name: "Ingreso" }));
+    await user.type(screen.getByPlaceholderText("0,00"), "1000");
+    expect(
+      (screen.getByRole("button", { name: "Guardar" }) as HTMLButtonElement).disabled
+    ).toBe(true);
+  });
+
   it("submits CAPITAL income", async () => {
     const user = userEvent.setup();
     renderForm();
@@ -124,7 +165,7 @@ describe("QuickAddForm", () => {
     await user.click(screen.getByRole("button", { name: "Ingreso" }));
     await user.click(screen.getByRole("radio", { name: /Capital/i }));
     await user.type(screen.getByPlaceholderText("0,00"), "500");
-    await user.selectOptions(screen.getByLabelText("Categoría"), "cat-inc");
+    await user.selectOptions(screen.getByLabelText(/Categoría/), "cat-inc");
     await user.click(screen.getByRole("button", { name: "Guardar" }));
     await waitFor(() =>
       expect(createTransaction).toHaveBeenCalledWith(

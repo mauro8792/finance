@@ -532,6 +532,38 @@ test("TransactionService creates a CAPITAL INCOME without changing initialBalanc
   assert.equal(account.initialBalance, ZERO_INITIAL_BALANCE);
 });
 
+test("TransactionService persists CAPITAL INCOME without categoryId", async () => {
+  const { service, account } = await setup();
+
+  const created = await service.createIncome(userId, {
+    amount: "370214.59",
+    currency: "ARS",
+    accountId: account.id,
+    incomeKind: "CAPITAL",
+    description: "Saldo inicial",
+  });
+
+  assert.equal(created.type, "INCOME");
+  assert.equal(created.categoryId, null);
+  assert.deepEqual(created.metadata, { incomeKind: "CAPITAL" });
+});
+
+test("TransactionService rejects OPERATING INCOME without categoryId", async () => {
+  const { service, account } = await setup();
+
+  await assert.rejects(
+    () =>
+      service.createIncome(userId, {
+        amount: "1000.00",
+        currency: "ARS",
+        accountId: account.id,
+        incomeKind: "OPERATING",
+      }),
+    (error: unknown) =>
+      error instanceof AppError && error.code === "VALIDATION_ERROR"
+  );
+});
+
 test("TransactionService rejects INCOME amount 0", async () => {
   const { service, account, incomeCategory } = await setup();
 

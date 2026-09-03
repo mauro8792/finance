@@ -131,7 +131,7 @@ export type CreateIncomeInput = {
   amount: string;
   currency: Currency;
   accountId: string;
-  categoryId: string;
+  categoryId?: string;
   incomeKind: IncomeKind;
   description?: string;
   occurredAt?: Date;

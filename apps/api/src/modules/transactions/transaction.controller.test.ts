@@ -379,6 +379,19 @@ test("POST /api/transactions rejects an invalid body", async () => {
   assert.ok(account.id);
 });
 
+test("POST /api/transactions rejects EXPENSE without categoryId", async () => {
+  const { app, account } = buildApp();
+
+  const response = await request(app).post("/api/transactions").send({
+    amount: "1500.00",
+    currency: "ARS",
+    accountId: account.id,
+  });
+
+  assert.equal(response.status, 400);
+  assert.equal(response.body.error.code, "VALIDATION_ERROR");
+});
+
 test("POST /api/transactions returns 404 for an unknown account", async () => {
   const { app, category } = buildApp();
 
@@ -428,6 +441,38 @@ test("POST /api/transactions creates a CAPITAL income", async () => {
   assert.equal(response.status, 201);
   assert.equal(response.body.type, "INCOME");
   assert.deepEqual(response.body.metadata, { incomeKind: "CAPITAL" });
+});
+
+test("POST /api/transactions creates CAPITAL income without categoryId", async () => {
+  const { app, account } = buildApp();
+
+  const response = await request(app).post("/api/transactions").send({
+    type: "INCOME",
+    amount: "370214.59",
+    currency: "ARS",
+    accountId: account.id,
+    incomeKind: "CAPITAL",
+    description: "Saldo inicial",
+  });
+
+  assert.equal(response.status, 201);
+  assert.equal(response.body.categoryId, null);
+  assert.deepEqual(response.body.metadata, { incomeKind: "CAPITAL" });
+});
+
+test("POST /api/transactions rejects OPERATING income without categoryId", async () => {
+  const { app, account } = buildApp();
+
+  const response = await request(app).post("/api/transactions").send({
+    type: "INCOME",
+    amount: "1000.00",
+    currency: "ARS",
+    accountId: account.id,
+    incomeKind: "OPERATING",
+  });
+
+  assert.equal(response.status, 400);
+  assert.equal(response.body.error.code, "VALIDATION_ERROR");
 });
 
 test("POST /api/transactions rejects an invalid incomeKind", async () => {

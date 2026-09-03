@@ -3,6 +3,7 @@ import { describe, it } from "vitest";
 import {
   filterActiveAccounts,
   filterCategoriesForType,
+  isCategoryRequired,
   isValidAmount,
   localDateTimeToIso,
   normalizeAmountInput,
@@ -45,6 +46,12 @@ describe("quick-add helpers", () => {
       filterCategoriesForType(categories, "INCOME").map((item) => item.id),
       ["c2", "c3"]
     );
+  });
+
+  it("requires category for expenses and operating income, not CAPITAL", () => {
+    assert.equal(isCategoryRequired("EXPENSE"), true);
+    assert.equal(isCategoryRequired("INCOME", "OPERATING"), true);
+    assert.equal(isCategoryRequired("INCOME", "CAPITAL"), false);
   });
 
   it("converts local datetime input without treating it as UTC", () => {

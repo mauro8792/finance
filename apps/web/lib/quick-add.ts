@@ -1,4 +1,4 @@
-import type { Account, Category, MovementKind, PaymentMethod } from "./types";
+import type { Account, Category, IncomeKind, MovementKind, PaymentMethod } from "./types";
 
 const AMOUNT_PATTERN = /^(?:0|[1-9]\d{0,15})(?:\.\d{1,2})?$/;
 
@@ -38,6 +38,16 @@ export function toApiAmount(raw: string): string {
 
 export function filterActiveAccounts(accounts: Account[]): Account[] {
   return accounts.filter((account) => account.isActive);
+}
+
+export function isCategoryRequired(
+  kind: MovementKind,
+  incomeKind?: IncomeKind | null
+): boolean {
+  if (kind === "EXPENSE") {
+    return true;
+  }
+  return incomeKind !== "CAPITAL";
 }
 
 export function filterCategoriesForType(
