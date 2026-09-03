@@ -1,6 +1,7 @@
 import type { Request, Response } from "express";
 import type { ZodType } from "zod";
 import { AppError } from "../../shared/errors/app-error.js";
+import { getAuthUserId } from "../auth/auth-request.js";
 import type { Transaction } from "../transactions/transaction.types.js";
 import type { UserRepository } from "../users/user.types.js";
 import { CreateCurrencyExchangeSchema } from "./currency-exchange.schema.js";
@@ -14,7 +15,7 @@ export class CurrencyExchangeController {
   ) {}
 
   create = async (req: Request, res: Response): Promise<void> => {
-    const userId = await this.requireUserId();
+    const userId = getAuthUserId(req);
     const body = parseBody(CreateCurrencyExchangeSchema, req.body);
     const created = await this.exchanges.create(userId, {
       fromAccountId: body.fromAccountId,
@@ -30,20 +31,6 @@ export class CurrencyExchangeController {
       in: toTransactionResponse(created.in),
     });
   };
-
-  private async requireUserId(): Promise<string> {
-    const user = await this.users.findFirst();
-
-    if (!user) {
-      throw new AppError(
-        "USER_NOT_CONFIGURED",
-        "No hay un usuario configurado.",
-        500
-      );
-    }
-
-    return user.id;
-  }
 }
 
 function parseBody<T>(schema: ZodType<T>, data: unknown): T {

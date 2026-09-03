@@ -138,6 +138,7 @@
   border-radius: 0.7rem;
   background: #fff;
   font: inherit;
+  font-size: 1rem;
   padding: 0.4rem 0.65rem;
 }
 
@@ -148,7 +149,7 @@
 }
 
 .shortcut {
-  min-height: 2.35rem;
+  min-height: 2.75rem;
   padding: 0 0.75rem;
   border: 1px solid #d6d3d1;
   border-radius: 999px;

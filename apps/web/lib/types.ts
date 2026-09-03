@@ -472,3 +472,44 @@ export type SimulationResponse =
   | { type: "MONTHS_WITHOUT_INCOME"; result: MonthsWithoutIncomeResult }
   | { type: "NEW_JOB"; result: NewJobScenarioResult }
   | { type: "HOUSING_RESERVE"; result: HousingReserveSimulationResult };
+
+export type AIParsedTransaction = {
+  type: MovementKind | null;
+  amount: string | null;
+  currency: Currency;
+  categoryHint: string | null;
+  accountHint: string | null;
+  description: string | null;
+  occurredAt: string | null;
+  paymentMethod: PaymentMethod | null;
+  incomeKind: IncomeKind | null;
+};
+
+export type ParseTransactionResponse = {
+  transactions: AIParsedTransaction[];
+  ambiguities: string[];
+};
+
+export type ParseTransactionRequest = {
+  text: string;
+};
+
+export type ChatRequest = {
+  message: string;
+};
+
+export type ChatResponse = {
+  answer: string;
+};
+
+export type AuthUser = {
+  id: string;
+  name: string;
+  email: string;
+  timezone: string;
+};
+
+export type LoginRequest = {
+  email: string;
+  password: string;
+};

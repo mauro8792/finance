@@ -1,9 +1,9 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import Link from "next/link";
 import { useMemo, useState, type FormEvent } from "react";
 import {
+  exportTransactionsCsv,
   getAccounts,
   getCategories,
   getTransactions,
@@ -42,6 +42,7 @@ import type {
   TransactionStatus,
   TransactionType,
 } from "../lib/types";
+import { EmptyState, ErrorState } from "./QueryStatus";
 import styles from "./Transactions.module.css";
 
 const MONTHS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12] as const;
@@ -72,6 +73,10 @@ export function TransactionsPage() {
   const query = useQuery({
     queryKey: ["transactions", filters],
     queryFn: () => getTransactions(filters),
+  });
+  const exportCsv = useMutation({
+    mutationFn: () => exportTransactionsCsv(filters),
+    retry: false,
   });
   const accounts = useQuery({
     queryKey: ["accounts"],
@@ -201,24 +206,39 @@ export function TransactionsPage() {
         </label>
       </div>
 
-      {query.isPending ? <TransactionsSkeleton /> : null}
+      <div className={styles.toolbar}>
+        <button
+          type="button"
+          className={styles.exportButton}
+          disabled={exportCsv.isPending}
+          onClick={() => exportCsv.mutate()}
+        >
+          {exportCsv.isPending ? "Exportando…" : "Exportar CSV"}
+        </button>
+      </div>
 
-      {query.isError ? (
+      {exportCsv.isError && !exportCsv.isPending ? (
         <div className={styles.error} role="alert">
-          <p>No pudimos cargar tus movimientos. Probá de nuevo.</p>
-          <button type="button" className={styles.retry} onClick={() => query.refetch()}>
-            Reintentar
-          </button>
+          <p>No pudimos exportar los movimientos. Probá de nuevo.</p>
         </div>
       ) : null}
 
+      {query.isPending ? <TransactionsSkeleton /> : null}
+
+      {query.isError ? (
+        <ErrorState
+          message="No pudimos cargar tus movimientos. Probá de nuevo."
+          onRetry={() => {
+            void query.refetch();
+          }}
+        />
+      ) : null}
+
       {query.data && query.data.length === 0 ? (
-        <div className={styles.empty}>
-          <p>Aún no registraste movimientos.</p>
-          <Link href="/registrar" className={styles.primaryCta}>
-            Registrar movimiento
-          </Link>
-        </div>
+        <EmptyState
+          message="Aún no registraste movimientos."
+          action={{ href: "/registrar", label: "Registrar movimiento" }}
+        />
       ) : null}
 
       {query.data && query.data.length > 0 ? (

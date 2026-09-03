@@ -12,9 +12,11 @@ async function seed(): Promise<void> {
 
   if (!user) {
     user = await new UserService(users).create({ name: "Usuario demo" });
-    console.log(`Seed: created demo user (${user.id})`);
+    console.log(
+      `Seed: created demo user (${user.id}). Password unusable until auth:bootstrap.`
+    );
   } else {
-    console.log(`Seed: user already exists (${user.id})`);
+    console.log(`Seed: user already exists (${user.id}); not creating another.`);
   }
 
   let created = 0;

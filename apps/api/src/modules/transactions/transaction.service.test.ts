@@ -16,6 +16,7 @@ import type {
   CreateCategoryInput,
   UpdateCategoryInput,
 } from "../categories/category.types.js";
+import { CSV_DELIMITER, TRANSACTION_CSV_HEADERS } from "./transaction-csv.js";
 import { TransactionService } from "./transaction.service.js";
 import { toCents } from "./transaction-balance.js";
 import type {
@@ -1933,3 +1934,174 @@ test("TransactionService rejects VOID of an individual TRANSFER leg", async () =
       error instanceof AppError && error.code === "TRANSFER_IMMUTABLE"
   );
 });
+
+test("exportCsv without filters includes owned movements and a header", async () => {
+  const { service, account, category, incomeCategory, transactions } = await setup();
+  await service.createExpense(userId, {
+    amount: "15000.00",
+    currency: "ARS",
+    accountId: account.id,
+    categoryId: category.id,
+    description: "Super",
+    occurredAt: new Date("2026-08-15T15:00:00.000Z"),
+  });
+  await service.createIncome(userId, {
+    amount: "80000.00",
+    currency: "ARS",
+    accountId: account.id,
+    categoryId: incomeCategory.id,
+    incomeKind: "OPERATING",
+    description: "Sueldo",
+    occurredAt: new Date("2026-08-01T15:00:00.000Z"),
+  });
+  const before = transactions.items.map((item) => ({
+    id: item.id,
+    amount: item.amount,
+    status: item.status,
+    updatedAt: item.updatedAt,
+  }));
+  const csv = await service.exportCsv(userId, {}, DEFAULT_USER_TIMEZONE);
+  const listed = await service.list(userId, {}, DEFAULT_USER_TIMEZONE);
+  const lines = csvLines(csv);
+  assert.equal(csv.startsWith("\uFEFF"), true);
+  assert.equal(lines[0], TRANSACTION_CSV_HEADERS.join(CSV_DELIMITER));
+  assert.equal(lines.slice(1).length, listed.length);
+  assert.match(csv, /Super/);
+  assert.match(csv, /Sueldo/);
+  assert.match(csv, /Ingreso normal/);
+  assert.doesNotMatch(csv, new RegExp(userId));
+  assert.deepEqual(
+    transactions.items.map((item) => ({
+      id: item.id,
+      amount: item.amount,
+      status: item.status,
+      updatedAt: item.updatedAt,
+    })),
+    before
+  );
+});
+
+test("exportCsv with no movements still returns a header", async () => {
+  const { service, transactions } = await setup();
+  const csv = await service.exportCsv(userId, {}, DEFAULT_USER_TIMEZONE);
+  assert.equal(csvLines(csv).length, 1);
+  assert.equal(csvLines(csv)[0], TRANSACTION_CSV_HEADERS.join(CSV_DELIMITER));
+  assert.equal(transactions.items.length, 0);
+});
+
+test("exportCsv applies date, type, account and category filters like list", async () => {
+  const { service, account, category, incomeCategory, accounts } = await setup();
+  const otherAccount = await accounts.create({
+    userId,
+    name: "Banco",
+    currency: "ARS",
+    type: "BANK",
+  });
+  await service.createExpense(userId, {
+    amount: "10.00",
+    currency: "ARS",
+    accountId: account.id,
+    categoryId: category.id,
+    description: "junio",
+    occurredAt: new Date("2026-06-15T15:00:00.000Z"),
+  });
+  await service.createExpense(userId, {
+    amount: "20.00",
+    currency: "ARS",
+    accountId: otherAccount.id,
+    categoryId: category.id,
+    description: "agosto banco",
+    occurredAt: new Date("2026-08-15T15:00:00.000Z"),
+  });
+  await service.createIncome(userId, {
+    amount: "30.00",
+    currency: "ARS",
+    accountId: account.id,
+    categoryId: incomeCategory.id,
+    incomeKind: "CAPITAL",
+    description: "capital agosto",
+    occurredAt: new Date("2026-08-20T15:00:00.000Z"),
+  });
+
+  const byMonth = await service.exportCsv(userId, { month: 6 }, DEFAULT_USER_TIMEZONE);
+  assert.match(byMonth, /junio/);
+  assert.doesNotMatch(byMonth, /agosto banco|capital agosto/);
+
+  const byYearMonth = await service.exportCsv(
+    userId,
+    { year: 2026, month: 8 },
+    DEFAULT_USER_TIMEZONE
+  );
+  assert.match(byYearMonth, /agosto banco/);
+  assert.match(byYearMonth, /capital agosto/);
+  assert.doesNotMatch(byYearMonth, /junio/);
+
+  const byType = await service.exportCsv(userId, { type: "INCOME" }, DEFAULT_USER_TIMEZONE);
+  assert.match(byType, /capital agosto/);
+  assert.doesNotMatch(byType, /junio|agosto banco/);
+
+  const byAccount = await service.exportCsv(
+    userId,
+    { accountId: otherAccount.id },
+    DEFAULT_USER_TIMEZONE
+  );
+  assert.match(byAccount, /agosto banco/);
+  assert.doesNotMatch(byAccount, /junio|capital agosto/);
+
+  const byCategory = await service.exportCsv(
+    userId,
+    { categoryId: incomeCategory.id },
+    DEFAULT_USER_TIMEZONE
+  );
+  assert.match(byCategory, /capital agosto/);
+  assert.doesNotMatch(byCategory, /junio|agosto banco/);
+
+  const combined = await service.exportCsv(
+    userId,
+    { year: 2026, month: 8, type: "EXPENSE", accountId: otherAccount.id, categoryId: category.id },
+    DEFAULT_USER_TIMEZONE
+  );
+  assert.match(combined, /agosto banco/);
+  assert.doesNotMatch(combined, /junio|capital agosto/);
+
+  const listedJune = await service.list(userId, { month: 6 }, DEFAULT_USER_TIMEZONE);
+  await service.void(userId, listedJune[0]!.id);
+  const byStatus = await service.exportCsv(userId, { status: "VOIDED" }, DEFAULT_USER_TIMEZONE);
+  assert.match(byStatus, /junio/);
+  assert.doesNotMatch(byStatus, /agosto banco|capital agosto/);
+});
+
+test("exportCsv isolates by userId", async () => {
+  const { service, account, category, accounts, transactions } = await setup();
+  await service.createExpense(userId, {
+    amount: "10.00",
+    currency: "ARS",
+    accountId: account.id,
+    categoryId: category.id,
+    description: "propio",
+  });
+  const otherUser = randomUUID();
+  const otherAccount = await accounts.create({
+    userId: otherUser,
+    name: "Ajena",
+    currency: "ARS",
+    type: "CASH",
+  });
+  await transactions.create({
+    userId: otherUser,
+    accountId: otherAccount.id,
+    categoryId: category.id,
+    type: "EXPENSE",
+    amount: "99.00",
+    currency: "ARS",
+    description: "secreto-ajeno",
+    occurredAt: new Date("2026-08-15T15:00:00.000Z"),
+  });
+  const csv = await service.exportCsv(userId, {}, DEFAULT_USER_TIMEZONE);
+  assert.match(csv, /propio/);
+  assert.doesNotMatch(csv, /secreto-ajeno/);
+});
+
+function csvLines(csv: string): string[] {
+  return csv.replace(/^\uFEFF/, "").replace(/\r\n$/, "").split("\r\n");
+}

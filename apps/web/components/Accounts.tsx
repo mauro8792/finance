@@ -17,6 +17,7 @@ import {
 } from "../lib/accounts";
 import { formatMoney } from "../lib/format-money";
 import type { Account, AccountType, Currency } from "../lib/types";
+import { EmptyState, ErrorState } from "./QueryStatus";
 import styles from "./Accounts.module.css";
 
 type Panel =
@@ -83,25 +84,19 @@ export function AccountsPage() {
       {query.isPending ? <AccountsSkeleton /> : null}
 
       {query.isError ? (
-        <div className={styles.error} role="alert">
-          <p>No pudimos cargar tus cuentas. Probá de nuevo.</p>
-          <button type="button" className={styles.retry} onClick={() => query.refetch()}>
-            Reintentar
-          </button>
-        </div>
+        <ErrorState
+          message="No pudimos cargar tus cuentas. Probá de nuevo."
+          onRetry={() => {
+            void query.refetch();
+          }}
+        />
       ) : null}
 
       {query.data && query.data.length === 0 && panel?.mode !== "create" ? (
-        <div className={styles.empty}>
-          <p>Aún no creaste cuentas.</p>
-          <button
-            type="button"
-            className={styles.primaryCta}
-            onClick={() => setPanel({ mode: "create" })}
-          >
-            Crear cuenta
-          </button>
-        </div>
+        <EmptyState
+          message="Aún no creaste cuentas."
+          action={{ label: "Crear cuenta", onClick: () => setPanel({ mode: "create" }) }}
+        />
       ) : null}
 
       {query.data && query.data.length > 0 ? (

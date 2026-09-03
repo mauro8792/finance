@@ -109,6 +109,18 @@ describe("TransfersPage", () => {
     expect(await screen.findByLabelText("Cuenta origen")).toBeTruthy();
   });
 
+  it("shows empty with a CTA when there are no active accounts", async () => {
+    getAccounts.mockResolvedValue([]);
+    renderPage();
+    expect(
+      await screen.findByText("Necesitás al menos una cuenta activa para mover dinero.")
+    ).toBeTruthy();
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.getByRole("link", { name: "Ir a Cuentas" }).getAttribute("href")).toBe(
+      "/accounts"
+    );
+  });
+
   it("shows only one form at a time", async () => {
     const user = userEvent.setup();
     getAccounts.mockResolvedValue([fondo, caja, reserva]);

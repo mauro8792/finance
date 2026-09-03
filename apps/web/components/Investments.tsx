@@ -31,6 +31,7 @@ import {
   toApiAmount,
 } from "../lib/quick-add";
 import type { Account, Currency, Investment } from "../lib/types";
+import { EmptyState, ErrorState } from "./QueryStatus";
 import styles from "./Investments.module.css";
 
 type Panel =
@@ -77,25 +78,19 @@ export function InvestmentsPage() {
       {query.isPending ? <InvestmentsSkeleton /> : null}
 
       {query.isError ? (
-        <div className={styles.error} role="alert">
-          <p>No pudimos cargar tus inversiones. Probá de nuevo.</p>
-          <button type="button" className={styles.retry} onClick={() => query.refetch()}>
-            Reintentar
-          </button>
-        </div>
+        <ErrorState
+          message="No pudimos cargar tus inversiones. Probá de nuevo."
+          onRetry={() => {
+            void query.refetch();
+          }}
+        />
       ) : null}
 
       {query.data && query.data.length === 0 && panel?.mode !== "create" ? (
-        <div className={styles.empty}>
-          <p>Aún no registraste inversiones.</p>
-          <button
-            type="button"
-            className={styles.primaryCta}
-            onClick={() => setPanel({ mode: "create" })}
-          >
-            Crear inversión
-          </button>
-        </div>
+        <EmptyState
+          message="Aún no registraste inversiones."
+          action={{ label: "Crear inversión", onClick: () => setPanel({ mode: "create" }) }}
+        />
       ) : null}
 
       {query.data && query.data.length > 0 ? (

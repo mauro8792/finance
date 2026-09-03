@@ -15,6 +15,7 @@ import {
 } from "../lib/format-money";
 import { isValidAmount, normalizeAmountInput, toApiAmount } from "../lib/quick-add";
 import type { BudgetView, Currency } from "../lib/types";
+import { EmptyState, ErrorState } from "./QueryStatus";
 import styles from "./Budgets.module.css";
 
 type BudgetsProps = {
@@ -73,21 +74,19 @@ export function Budgets({ year, month }: BudgetsProps) {
       {query.isPending ? <BudgetsSkeleton /> : null}
 
       {query.isError ? (
-        <div className={styles.error} role="alert">
-          <p>No pudimos cargar tus presupuestos. Probá de nuevo.</p>
-          <button type="button" className={styles.retry} onClick={() => query.refetch()}>
-            Reintentar
-          </button>
-        </div>
+        <ErrorState
+          message="No pudimos cargar tus presupuestos. Probá de nuevo."
+          onRetry={() => {
+            void query.refetch();
+          }}
+        />
       ) : null}
 
       {query.data && query.data.length === 0 && panel?.mode !== "create" ? (
-        <div className={styles.empty}>
-          <p>Aún no tenés presupuestos para este mes.</p>
-          <button type="button" className={styles.primaryCta} onClick={() => setPanel({ mode: "create" })}>
-            Crear presupuesto
-          </button>
-        </div>
+        <EmptyState
+          message="Aún no tenés presupuestos para este mes."
+          action={{ label: "Crear presupuesto", onClick: () => setPanel({ mode: "create" }) }}
+        />
       ) : null}
 
       {query.data && query.data.length > 0 ? (

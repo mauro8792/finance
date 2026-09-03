@@ -1,6 +1,7 @@
 import type { Request, Response } from "express";
 import type { ZodType } from "zod";
 import { AppError } from "../../shared/errors/app-error.js";
+import { getAuthUserId } from "../auth/auth-request.js";
 import type { UserRepository } from "../users/user.types.js";
 import { SimulationRequestSchema } from "./simulation.schema.js";
 import type { SimulationService } from "./simulation.service.js";
@@ -12,7 +13,7 @@ export class SimulationController {
   ) {}
 
   create = async (req: Request, res: Response): Promise<void> => {
-    const userId = await this.requireUserId();
+    const userId = getAuthUserId(req);
     const body = parseValue(SimulationRequestSchema, req.body);
 
     if (body.type === "MONTHS_WITHOUT_INCOME") {
@@ -53,18 +54,6 @@ export class SimulationController {
     });
     res.status(200).json({ type: body.type, result });
   };
-
-  private async requireUserId(): Promise<string> {
-    const user = await this.users.findFirst();
-    if (!user) {
-      throw new AppError(
-        "USER_NOT_CONFIGURED",
-        "No hay un usuario configurado.",
-        500
-      );
-    }
-    return user.id;
-  }
 }
 
 function parseValue<T>(schema: ZodType<T>, data: unknown): T {

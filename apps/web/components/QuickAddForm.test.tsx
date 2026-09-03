@@ -138,7 +138,13 @@ describe("QuickAddForm", () => {
   });
 
   it("shows a submit API error", async () => {
-    createTransaction.mockRejectedValueOnce(new Error("boom"));
+    createTransaction.mockRejectedValueOnce(
+      Object.assign(new Error("ECONNRESET"), {
+        name: "ApiClientError",
+        code: "VALIDATION_ERROR",
+        status: 500,
+      })
+    );
     const user = userEvent.setup();
     renderForm();
     await screen.findByRole("button", { name: "Guardar" });
@@ -146,15 +152,71 @@ describe("QuickAddForm", () => {
     await user.selectOptions(screen.getByLabelText("Categoría"), "cat-exp");
     await user.click(screen.getByRole("button", { name: "Guardar" }));
     expect(
-      await screen.findByText("No se pudo guardar el movimiento.")
+      await screen.findByText("No pudimos guardar el movimiento. Intentá nuevamente.")
     ).toBeTruthy();
+    expect(screen.queryByText("ECONNRESET")).toBeNull();
+    expect(screen.queryByText("VALIDATION_ERROR")).toBeNull();
+    expect((screen.getByPlaceholderText("0,00") as HTMLInputElement).value).toContain("75");
+  });
+
+  it("disables submit while saving", async () => {
+    const user = userEvent.setup();
+    createTransaction.mockReturnValue(new Promise(() => undefined));
+    renderForm();
+    await screen.findByRole("button", { name: "Guardar" });
+    await user.type(screen.getByPlaceholderText("0,00"), "75");
+    await user.selectOptions(screen.getByLabelText("Categoría"), "cat-exp");
+    await user.click(screen.getByRole("button", { name: "Guardar" }));
+    expect(screen.getByRole("button", { name: "Guardando…" })).toHaveProperty("disabled", true);
+  });
+
+  it("shows loading without empty or error", () => {
+    getAccounts.mockReturnValue(new Promise(() => undefined));
+    getCategories.mockReturnValue(new Promise(() => undefined));
+    renderForm();
+    expect(screen.getByText("Cargando cuentas y categorías…")).toBeTruthy();
+    expect(screen.queryByText("No hay cuentas activas. Creá una cuenta antes de registrar un movimiento.")).toBeNull();
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Guardar" })).toBeNull();
+  });
+
+  it("shows a friendly load error with retry", async () => {
+    const user = userEvent.setup();
+    getAccounts.mockRejectedValueOnce(
+      Object.assign(new Error("ECONNRESET"), { code: "VALIDATION_ERROR" })
+    );
+    renderForm();
+    expect(
+      await screen.findByText("No pudimos cargar las cuentas o categorías. Probá de nuevo.")
+    ).toBeTruthy();
+    expect(screen.queryByText("ECONNRESET")).toBeNull();
+    expect(screen.queryByText("VALIDATION_ERROR")).toBeNull();
+    getAccounts.mockResolvedValueOnce([
+      { id: "acc-1", name: "Santander", currency: "ARS", isActive: true },
+    ]);
+    await user.click(screen.getByRole("button", { name: "Reintentar" }));
+    expect(await screen.findByRole("button", { name: "Guardar" })).toBeTruthy();
+  });
+
+  it("treats no active accounts as empty with a CTA", async () => {
+    getAccounts.mockResolvedValueOnce([
+      { id: "acc-2", name: "Reserva", currency: "USD", isActive: false },
+    ]);
+    renderForm();
+    expect(
+      await screen.findByText("No hay cuentas activas. Creá una cuenta antes de registrar un movimiento.")
+    ).toBeTruthy();
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.getByRole("link", { name: "Ir a Cuentas" }).getAttribute("href")).toBe(
+      "/accounts"
+    );
   });
 
   it("shows an API error", async () => {
     getAccounts.mockRejectedValueOnce(new Error("falló"));
     renderForm();
     expect(
-      await screen.findByText("No se pudieron cargar las cuentas o categorías.")
+      await screen.findByText("No pudimos cargar las cuentas o categorías. Probá de nuevo.")
     ).toBeTruthy();
   });
 });

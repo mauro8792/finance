@@ -95,7 +95,9 @@ Campos:
 ```text
 id              UUID PK
 name            VARCHAR(120) NOT NULL
-email           VARCHAR(255) NULL
+email           VARCHAR(255) NOT NULL UNIQUE
+password_hash   TEXT NOT NULL
+timezone        VARCHAR(100) NOT NULL DEFAULT 'America/Argentina/Buenos_Aires'
 timezone        VARCHAR(100) NOT NULL DEFAULT 'America/Argentina/Buenos_Aires'
 created_at      TIMESTAMPTZ NOT NULL
 updated_at      TIMESTAMPTZ NOT NULL
@@ -104,12 +106,36 @@ updated_at      TIMESTAMPTZ NOT NULL
 Restricciones:
 
 ```text
-email UNIQUE cuando no sea NULL
+email UNIQUE NOT NULL
 ```
+
+`password_hash` nunca se expone. El valor crudo de la cookie de sesión no se persiste.
 
 En MVP existirá un único usuario funcional.
 
 El modelo mantiene `user_id` para evitar bloquear una evolución futura.
+
+---
+
+# 4b. Session
+
+Sesión server-side (M10.5). Tabla `sessions`.
+
+```text
+id                   UUID PK
+user_id              UUID NOT NULL FK users.id ON DELETE CASCADE
+token_hash           VARCHAR(64) NOT NULL UNIQUE
+created_at           TIMESTAMPTZ NOT NULL
+absolute_expires_at  TIMESTAMPTZ NOT NULL
+expires_at           TIMESTAMPTZ NOT NULL
+revoked_at           TIMESTAMPTZ NULL
+```
+
+Índices: `user_id`, `expires_at`.
+
+`token_hash` es HMAC-SHA256 del token de cookie (`SESSION_SECRET`). Nunca el token crudo.
+
+Semántica: `absolute_expires_at` = created_at + 7 días (inmutable). `expires_at` = idle 24 h sliding, nunca posterior a `absolute_expires_at`. Logout setea `revoked_at`.
 
 ---
 
@@ -1267,19 +1293,24 @@ Ejemplo parcial conceptual:
 
 ```prisma
 model User {
-  id        String   @id @default(uuid()) @db.Uuid
-  name      String
-  email     String?  @unique
-  timezone  String   @default("America/Argentina/Buenos_Aires")
+  id           String    @id @default(uuid()) @db.Uuid
+  name         String
+  email        String    @unique
+  passwordHash String    @map("password_hash")
+  timezone     String    @default("America/Argentina/Buenos_Aires")
+  sessions     Session[]
+  ...
+}
 
-  accounts      Account[]
-  categories    Category[]
-  transactions  Transaction[]
-  budgets       Budget[]
-  investments   Investment[]
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+model Session {
+  id                String    @id @default(uuid()) @db.Uuid
+  userId            String
+  tokenHash         String    @unique
+  createdAt         DateTime
+  absoluteExpiresAt DateTime
+  expiresAt         DateTime
+  revokedAt         DateTime?
+  user              User      @relation(...)
 }
 ```
 
@@ -1451,7 +1482,7 @@ inactivas
 
 No convertir USD automáticamente.
 
-Un mes entra al promedio de runway si tiene al menos un `EXPENSE` `ACTIVE` `ARS`. Un mes válido con consumo 0 aporta 0.
+Un mes entra al promedio de runway si tiene al menos un `EXPENSE` `ACTIVE` `ARS` y es un mes calendario cerrado anterior al mes del resumen. Un mes válido con consumo 0 aporta 0. El mes abierto no entra al promedio.
 
 ---
 
@@ -1484,7 +1515,7 @@ Medir antes de agregar más.
 Seed mínimo:
 
 ```text
-User demo/development
+User demo/development (mismo userId QA). Email/password vía auth:bootstrap, no en seed versionado.
 
 Categories:
 Supermercado

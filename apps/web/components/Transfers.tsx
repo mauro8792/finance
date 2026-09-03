@@ -31,6 +31,7 @@ import {
   type MoveKind,
 } from "../lib/transfers";
 import type { Account } from "../lib/types";
+import { EmptyState, ErrorState } from "./QueryStatus";
 import styles from "./Transfers.module.css";
 
 export function TransfersPage() {
@@ -74,19 +75,20 @@ export function TransfersPage() {
       ) : null}
 
       {query.isError ? (
-        <div className={styles.error} role="alert">
-          <p>No pudimos cargar tus cuentas. Probá de nuevo.</p>
-          <button type="button" className={styles.retry} onClick={() => query.refetch()}>
-            Reintentar
-          </button>
-        </div>
+        <ErrorState
+          message="No pudimos cargar tus cuentas. Probá de nuevo."
+          onRetry={() => {
+            void query.refetch();
+          }}
+        />
       ) : null}
 
       {query.data ? (
         filterActiveAccounts(query.data).length === 0 ? (
-          <div className={styles.empty}>
-            <p>Necesitás al menos una cuenta activa para mover dinero.</p>
-          </div>
+          <EmptyState
+            message="Necesitás al menos una cuenta activa para mover dinero."
+            action={{ href: "/accounts", label: "Ir a Cuentas" }}
+          />
         ) : kind === "TRANSFER" ? (
           <TransferForm accounts={query.data} />
         ) : (

@@ -1,6 +1,7 @@
 import type { Request, Response } from "express";
 import type { ZodType } from "zod";
 import { AppError } from "../../shared/errors/app-error.js";
+import { getAuthUserId } from "../auth/auth-request.js";
 import type { UserRepository } from "../users/user.types.js";
 import {
   AccountIdParamsSchema,
@@ -16,28 +17,28 @@ export class AccountController {
     private readonly users: UserRepository
   ) {}
 
-  list = async (_req: Request, res: Response): Promise<void> => {
-    const userId = await this.requireUserId();
+  list = async (req: Request, res: Response): Promise<void> => {
+    const userId = getAuthUserId(req);
     const items = await this.accounts.list(userId);
     res.status(200).json(items.map(toAccountResponse));
   };
 
   create = async (req: Request, res: Response): Promise<void> => {
-    const userId = await this.requireUserId();
+    const userId = getAuthUserId(req);
     const body = parseBody(CreateAccountSchema, req.body);
     const created = await this.accounts.create(userId, body);
     res.status(201).json(toAccountResponse(created));
   };
 
   getBalance = async (req: Request, res: Response): Promise<void> => {
-    const userId = await this.requireUserId();
+    const userId = getAuthUserId(req);
     const { id } = parseBody(AccountIdParamsSchema, req.params);
     const result = await this.accounts.getBalance(userId, id);
     res.status(200).json(result);
   };
 
   update = async (req: Request, res: Response): Promise<void> => {
-    const userId = await this.requireUserId();
+    const userId = getAuthUserId(req);
     const { id } = parseBody(AccountIdParamsSchema, req.params);
     const body = parseBody(UpdateAccountSchema, req.body);
     const updated = await this.accounts.update(userId, id, body);
@@ -45,32 +46,18 @@ export class AccountController {
   };
 
   activate = async (req: Request, res: Response): Promise<void> => {
-    const userId = await this.requireUserId();
+    const userId = getAuthUserId(req);
     const { id } = parseBody(AccountIdParamsSchema, req.params);
     const updated = await this.accounts.activate(userId, id);
     res.status(200).json(toAccountResponse(updated));
   };
 
   deactivate = async (req: Request, res: Response): Promise<void> => {
-    const userId = await this.requireUserId();
+    const userId = getAuthUserId(req);
     const { id } = parseBody(AccountIdParamsSchema, req.params);
     const updated = await this.accounts.deactivate(userId, id);
     res.status(200).json(toAccountResponse(updated));
   };
-
-  private async requireUserId(): Promise<string> {
-    const user = await this.users.findFirst();
-
-    if (!user) {
-      throw new AppError(
-        "USER_NOT_CONFIGURED",
-        "No hay un usuario configurado.",
-        500
-      );
-    }
-
-    return user.id;
-  }
 }
 
 function parseBody<T>(schema: ZodType<T>, data: unknown): T {

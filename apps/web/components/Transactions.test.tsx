@@ -10,6 +10,7 @@ const getAccounts = vi.fn();
 const getCategories = vi.fn();
 const updateTransaction = vi.fn();
 const voidTransaction = vi.fn();
+const exportTransactionsCsv = vi.fn();
 
 vi.mock("../lib/api", () => ({
   getTransactions: (filters: unknown) => getTransactions(filters),
@@ -17,6 +18,7 @@ vi.mock("../lib/api", () => ({
   getCategories: () => getCategories(),
   updateTransaction: (id: string, payload: unknown) => updateTransaction(id, payload),
   voidTransaction: (id: string) => voidTransaction(id),
+  exportTransactionsCsv: (filters: unknown) => exportTransactionsCsv(filters),
 }));
 
 const fondo: Account = {
@@ -125,6 +127,8 @@ describe("TransactionsPage", () => {
     getCategories.mockReset();
     updateTransaction.mockReset();
     voidTransaction.mockReset();
+    exportTransactionsCsv.mockReset();
+    exportTransactionsCsv.mockResolvedValue(undefined);
     getAccounts.mockResolvedValue([fondo]);
     getCategories.mockResolvedValue([otros, capitalCat]);
   });
@@ -140,12 +144,14 @@ describe("TransactionsPage", () => {
     renderPage();
     expect(screen.getByLabelText("Cargando movimientos")).toBeTruthy();
     expect(screen.queryByText("Aún no registraste movimientos.")).toBeNull();
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 
   it("shows the empty state with a link to registrar", async () => {
     getTransactions.mockResolvedValue([]);
     renderPage();
     expect(await screen.findByText("Aún no registraste movimientos.")).toBeTruthy();
+    expect(screen.queryByRole("alert")).toBeNull();
     expect(screen.getByRole("link", { name: "Registrar movimiento" }).getAttribute("href")).toBe(
       "/registrar"
     );
@@ -282,5 +288,50 @@ describe("TransactionsPage", () => {
     expect(screen.getByText("Anulado de prueba")).toBeTruthy();
     expect(screen.getAllByText("Anulado").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Activo").length).toBeGreaterThan(0);
+  });
+
+  it("shows Exportar CSV even with an empty list", async () => {
+    getTransactions.mockResolvedValue([]);
+    renderPage();
+    expect(await screen.findByRole("button", { name: "Exportar CSV" })).toBeTruthy();
+  });
+
+  it("exports once with the active filters and blocks a second click", async () => {
+    const user = userEvent.setup();
+    getTransactions.mockResolvedValue([]);
+    let resolveExport: (() => void) | undefined;
+    exportTransactionsCsv.mockReturnValue(
+      new Promise<void>((resolve) => {
+        resolveExport = resolve;
+      })
+    );
+    renderPage();
+    await user.selectOptions(screen.getByLabelText("Mes"), "6");
+    await waitFor(() => {
+      expect(getTransactions).toHaveBeenCalledWith({ month: 6 });
+    });
+    await user.click(screen.getByRole("button", { name: "Exportar CSV" }));
+    expect(exportTransactionsCsv).toHaveBeenCalledTimes(1);
+    expect(exportTransactionsCsv).toHaveBeenCalledWith({ month: 6 });
+    expect(screen.getByRole("button", { name: "Exportando…" })).toHaveProperty("disabled", true);
+    await user.click(screen.getByRole("button", { name: "Exportando…" }));
+    expect(exportTransactionsCsv).toHaveBeenCalledTimes(1);
+    resolveExport?.();
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Exportar CSV" })).toHaveProperty(
+        "disabled",
+        false
+      );
+    });
+  });
+
+  it("shows a friendly export error", async () => {
+    const user = userEvent.setup();
+    getTransactions.mockResolvedValue([]);
+    exportTransactionsCsv.mockRejectedValueOnce(new Error("boom"));
+    renderPage();
+    await user.click(await screen.findByRole("button", { name: "Exportar CSV" }));
+    expect(await screen.findByText("No pudimos exportar los movimientos. Probá de nuevo.")).toBeTruthy();
+    expect(screen.queryByText("boom")).toBeNull();
   });
 });

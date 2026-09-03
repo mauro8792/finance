@@ -34,6 +34,7 @@
 .loading {
   margin: 0;
   color: #57534e;
+  overflow-wrap: anywhere;
 }
 
 .filters {
@@ -45,6 +46,34 @@
   padding: 0.9rem;
   border-radius: 1.1rem;
   background: #fffcf7;
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.exportButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.75rem;
+  width: auto;
+  padding: 0 1rem;
+  border: 0;
+  border-radius: 0.75rem;
+  background: #e7e5e4;
+  color: #1c1917;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.exportButton:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 .list {
@@ -221,6 +250,7 @@
   border-radius: 0.7rem;
   background: #fff;
   font: inherit;
+  font-size: 1rem;
   padding: 0.4rem 0.65rem;
 }
 
@@ -292,7 +322,7 @@
   }
 
   .filters {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .primaryCta {
@@ -308,5 +338,11 @@
 
   .form {
     max-width: 32rem;
+  }
+}
+
+@media (min-width: 1024px) {
+  .filters {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }

@@ -1,6 +1,7 @@
 .shell {
   min-height: 100dvh;
   width: 100%;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   overflow-x: hidden;
@@ -9,15 +10,22 @@
 .main {
   flex: 1;
   width: 100%;
+  min-width: 0;
   max-width: 40rem;
   margin: 0 auto;
-  padding: 1.5rem 1rem 2.5rem;
+  padding-top: 1.5rem;
+  padding-right: max(1rem, env(safe-area-inset-right, 0px));
+  padding-bottom: max(2.5rem, env(safe-area-inset-bottom, 0px));
+  padding-left: max(1rem, env(safe-area-inset-left, 0px));
 }
 
 @media (min-width: 768px) {
   .main {
     max-width: 52rem;
-    padding: 2.5rem 2rem 3.5rem;
+    padding-top: 2.5rem;
+    padding-right: max(2rem, env(safe-area-inset-right, 0px));
+    padding-bottom: max(3.5rem, env(safe-area-inset-bottom, 0px));
+    padding-left: max(2rem, env(safe-area-inset-left, 0px));
   }
 }
 

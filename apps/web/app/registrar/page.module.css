@@ -26,6 +26,19 @@
   line-height: 1.35;
 }
 
+.manual {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  padding-top: 0.35rem;
+  border-top: 1px solid #e7e5e4;
+}
+
+.manualTitle {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
 @media (min-width: 768px) {
   .page {
     max-width: 32rem;

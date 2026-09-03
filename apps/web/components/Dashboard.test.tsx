@@ -14,6 +14,7 @@ vi.mock("../lib/api", () => ({
     getFinancialSummary(year, month),
   getHousing: () => getHousing(),
   getHousingCoverage: (id: string) => getHousingCoverage(id),
+  isUnauthorizedError: () => false,
 }));
 
 const loaded: FinancialSummary = {
@@ -75,6 +76,8 @@ describe("Dashboard", () => {
     getFinancialSummary.mockReturnValue(new Promise(() => undefined));
     renderDashboard();
     expect(screen.getByText("Cargando resumen financiero")).toBeTruthy();
+    expect(screen.queryByText("No pudimos cargar tu resumen. Probá de nuevo.")).toBeNull();
+    expect(screen.queryByText("Sin configurar")).toBeNull();
   });
 
   it("renders the loaded summary metrics", async () => {
@@ -216,15 +219,19 @@ describe("Dashboard", () => {
     expect(screen.queryByText("Aún no disponible")).toBeNull();
   });
 
-  it("keeps financial metrics visible when housing fails", async () => {
+  it("keeps financial metrics visible when housing fails and retries locally", async () => {
+    const user = userEvent.setup();
     getFinancialSummary.mockResolvedValue(loaded);
-    getHousing.mockRejectedValue(new Error("fail"));
+    getHousing.mockRejectedValueOnce(new Error("fail"));
     renderDashboard();
 
     expect(await screen.findByText("$ 20.800.000,00")).toBeTruthy();
     expect(screen.getByText("10,4 meses")).toBeTruthy();
-    expect(await screen.findByText("No se pudo cargar")).toBeTruthy();
-    expect(screen.queryByText("Aún no disponible")).toBeNull();
+    expect(await screen.findByText("No pudimos cargar tu vivienda. Probá de nuevo.")).toBeTruthy();
+    expect(screen.queryByText("No pudimos cargar tu resumen. Probá de nuevo.")).toBeNull();
+    getHousing.mockResolvedValueOnce([casa]);
+    await user.click(screen.getByRole("button", { name: "Reintentar" }));
+    expect(await screen.findByText("8,00 cuotas cubiertas")).toBeTruthy();
   });
 
   it("uses the obligation currency in the housing label", async () => {

@@ -1,6 +1,7 @@
 import type { Request, Response } from "express";
 import type { ZodType } from "zod";
 import { AppError } from "../../shared/errors/app-error.js";
+import { getAuthUserId } from "../auth/auth-request.js";
 import type { UserRepository } from "../users/user.types.js";
 import {
   CreateExpenseSchema,
@@ -21,14 +22,26 @@ export class TransactionController {
   ) {}
 
   list = async (req: Request, res: Response): Promise<void> => {
-    const user = await this.requireUser();
+    const user = await this.requireUser(req);
     const query = parseBody(ListTransactionsQuerySchema, req.query);
     const items = await this.transactions.list(user.id, query, user.timezone);
     res.status(200).json(items.map(toTransactionResponse));
   };
 
+  exportCsv = async (req: Request, res: Response): Promise<void> => {
+    const user = await this.requireUser(req);
+    const query = parseBody(ListTransactionsQuerySchema, req.query);
+    const csv = await this.transactions.exportCsv(user.id, query, user.timezone);
+    const body = Buffer.from(csv, "utf8");
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader("Content-Disposition", 'attachment; filename="movimientos.csv"');
+    res.setHeader("Content-Length", String(body.length));
+    res.setHeader("Cache-Control", "no-store");
+    res.status(200).end(body);
+  };
+
   update = async (req: Request, res: Response): Promise<void> => {
-    const userId = await this.requireUserId();
+    const userId = getAuthUserId(req);
     const { id } = parseBody(TransactionIdParamsSchema, req.params);
     const body = parseBody(UpdateTransactionSchema, req.body);
     const updated = await this.transactions.update(userId, id, {
@@ -43,14 +56,14 @@ export class TransactionController {
   };
 
   void = async (req: Request, res: Response): Promise<void> => {
-    const userId = await this.requireUserId();
+    const userId = getAuthUserId(req);
     const { id } = parseBody(TransactionIdParamsSchema, req.params);
     const voided = await this.transactions.void(userId, id);
     res.status(200).json(toTransactionResponse(voided));
   };
 
   registerReimbursement = async (req: Request, res: Response): Promise<void> => {
-    const userId = await this.requireUserId();
+    const userId = getAuthUserId(req);
     const { id } = parseBody(TransactionIdParamsSchema, req.params);
     const body = parseBody(CreateReimbursementSchema, req.body);
     const created = await this.transactions.registerReimbursement(userId, id, {
@@ -63,7 +76,7 @@ export class TransactionController {
   };
 
   createTransfer = async (req: Request, res: Response): Promise<void> => {
-    const userId = await this.requireUserId();
+    const userId = getAuthUserId(req);
     const body = parseBody(CreateTransferSchema, req.body);
     const created = await this.transactions.createTransfer(userId, {
       sourceAccountId: body.sourceAccountId,
@@ -80,7 +93,7 @@ export class TransactionController {
   };
 
   createExpense = async (req: Request, res: Response): Promise<void> => {
-    const userId = await this.requireUserId();
+    const userId = getAuthUserId(req);
     const type = (req.body as { type?: unknown } | undefined)?.type;
 
     if (type === "INCOME") {
@@ -120,20 +133,11 @@ export class TransactionController {
     res.status(201).json(toTransactionResponse(created));
   };
 
-  private async requireUserId(): Promise<string> {
-    const user = await this.requireUser();
-    return user.id;
-  }
-
-  private async requireUser() {
-    const user = await this.users.findFirst();
+  private async requireUser(req: Request) {
+    const user = await this.users.findById(getAuthUserId(req));
 
     if (!user) {
-      throw new AppError(
-        "USER_NOT_CONFIGURED",
-        "No hay un usuario configurado.",
-        500
-      );
+      throw new AppError("UNAUTHENTICATED", "Necesitás iniciar sesión.", 401);
     }
 
     return user;

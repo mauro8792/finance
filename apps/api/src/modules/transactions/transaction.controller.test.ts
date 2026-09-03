@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { test } from "node:test";
 import express from "express";
+import { stubAuth } from "../../middlewares/require-auth.js";
 import request from "supertest";
 import { errorHandler } from "../../middlewares/error-handler.js";
 import type {
@@ -60,6 +61,20 @@ class MemoryUserRepository implements UserRepository {
   }
 
   async findFirst(): Promise<User | null> {
+    return this.user;
+  }
+  async findAuthByEmail(email: string) {
+    return this.user && this.user.email === email
+      ? { user: this.user, passwordHash: "invalid" }
+      : null;
+  }
+  async count() {
+    return this.user ? 1 : 0;
+  }
+  async setCredentials() {
+    if (!this.user) {
+      throw new Error("no user");
+    }
     return this.user;
   }
 }
@@ -243,7 +258,7 @@ function buildApp() {
   const user: User = {
     id: randomUUID(),
     name: "Usuario demo",
-    email: null,
+    email: "qa@example.test",
     timezone: DEFAULT_USER_TIMEZONE,
     createdAt: now,
     updatedAt: now,
@@ -301,9 +316,10 @@ function buildApp() {
     [destinationAccount.id, destinationAccount],
   ]);
 
+  const transactions = new MemoryTransactionRepository();
   const controller = new TransactionController(
     new TransactionService(
-      new MemoryTransactionRepository(),
+      transactions,
       new MemoryAccountRepository(accounts),
       new MemoryCategoryRepository(categories)
     ),
@@ -311,6 +327,7 @@ function buildApp() {
   );
 
   const app = express();
+  app.use(stubAuth(user.id));
   app.use(express.json());
   app.use("/api/transactions", createTransactionRouter(controller));
   app.use("/api/transfers", createTransferRouter(controller));
@@ -324,6 +341,7 @@ function buildApp() {
     user,
     category,
     incomeCategory,
+    transactions,
   };
 }
 
@@ -959,3 +977,158 @@ test("POST /api/transactions/:id/void rejects an individual TRANSFER leg", async
   assert.equal(response.status, 400);
   assert.equal(response.body.error.code, "TRANSFER_IMMUTABLE");
 });
+
+test("GET /api/transactions/export returns a CSV header when there are no movements", async () => {
+  const { app } = buildApp();
+
+  const response = await request(app).get("/api/transactions/export");
+
+  assert.equal(response.status, 200);
+  assert.match(String(response.headers["content-type"]), /text\/csv; charset=utf-8/i);
+  assert.match(String(response.headers["content-disposition"]), /movimientos\.csv/);
+  const raw = Buffer.isBuffer(response.body)
+    ? response.body
+    : Buffer.from(response.text, "utf8");
+  assert.deepEqual([...raw.subarray(0, 3)], [0xef, 0xbb, 0xbf]);
+  assert.equal(response.text.startsWith("\uFEFF"), true);
+  assert.match(
+    response.text,
+    /Fecha;Tipo;Categoría;Descripción;Importe;Moneda;Cuenta;Estado;Clasificación;Reembolso;Medio de pago/
+  );
+  assert.doesNotMatch(response.text, /CategorÃ­a|DescripciÃ³n|ClasificaciÃ³n/);
+  assert.equal(csvLineCount(response.text), 1);
+});
+
+test("GET /api/transactions/export applies the same filters as the list and does not mutate", async () => {
+  const { app, account, destinationAccount, category, incomeCategory, transactions, user } =
+    buildApp();
+
+  await request(app).post("/api/transactions").send({
+    amount: "10.00",
+    currency: "ARS",
+    accountId: account.id,
+    categoryId: category.id,
+    description: "Café, medialunas",
+    occurredAt: "2026-06-15T15:00:00.000Z",
+  });
+  await request(app).post("/api/transactions").send({
+    amount: "20.00",
+    currency: "ARS",
+    accountId: destinationAccount.id,
+    categoryId: category.id,
+    description: 'Dijo "hola"',
+    occurredAt: "2026-08-15T15:00:00.000Z",
+  });
+  await request(app).post("/api/transactions").send({
+    type: "INCOME",
+    amount: "30.00",
+    currency: "ARS",
+    accountId: account.id,
+    categoryId: incomeCategory.id,
+    incomeKind: "CAPITAL",
+    description: "Capital agosto",
+    occurredAt: "2026-08-20T15:00:00.000Z",
+  });
+
+  const snapshot = transactions.items.map((item) => ({
+    id: item.id,
+    amount: item.amount,
+    status: item.status,
+    description: item.description,
+  }));
+
+  const unfiltered = await request(app).get("/api/transactions/export");
+  assert.equal(unfiltered.status, 200);
+  assert.match(unfiltered.text, /Café, medialunas/);
+  assert.match(unfiltered.text, /""hola""/);
+  assert.match(unfiltered.text, /Capital agosto/);
+  assert.doesNotMatch(unfiltered.text, new RegExp(user.id));
+  assert.doesNotMatch(unfiltered.text, new RegExp(account.id));
+
+  const byMonth = await request(app).get("/api/transactions/export").query({ month: 6 });
+  assert.match(byMonth.text, /Café, medialunas/);
+  assert.doesNotMatch(byMonth.text, /hola|Capital agosto/);
+
+  const byYearMonth = await request(app)
+    .get("/api/transactions/export")
+    .query({ year: 2026, month: 8 });
+  assert.match(byYearMonth.text, /hola/);
+  assert.match(byYearMonth.text, /Capital agosto/);
+  assert.doesNotMatch(byYearMonth.text, /Café/);
+
+  const byType = await request(app).get("/api/transactions/export").query({ type: "INCOME" });
+  assert.match(byType.text, /Capital agosto/);
+  assert.doesNotMatch(byType.text, /Café|hola/);
+
+  const byAccount = await request(app)
+    .get("/api/transactions/export")
+    .query({ accountId: destinationAccount.id });
+  assert.match(byAccount.text, /hola/);
+  assert.doesNotMatch(byAccount.text, /Café|Capital agosto/);
+
+  const byCategory = await request(app)
+    .get("/api/transactions/export")
+    .query({ categoryId: incomeCategory.id });
+  assert.match(byCategory.text, /Capital agosto/);
+  assert.doesNotMatch(byCategory.text, /Café|hola/);
+
+  const combined = await request(app).get("/api/transactions/export").query({
+    year: 2026,
+    month: 8,
+    type: "EXPENSE",
+    accountId: destinationAccount.id,
+    categoryId: category.id,
+  });
+  assert.match(combined.text, /hola/);
+  assert.doesNotMatch(combined.text, /Café|Capital agosto/);
+
+  assert.deepEqual(
+    transactions.items.map((item) => ({
+      id: item.id,
+      amount: item.amount,
+      status: item.status,
+      description: item.description,
+    })),
+    snapshot
+  );
+});
+
+test("GET /api/transactions/export isolates by userId", async () => {
+  const { app, account, category, transactions } = buildApp();
+
+  await request(app).post("/api/transactions").send({
+    amount: "10.00",
+    currency: "ARS",
+    accountId: account.id,
+    categoryId: category.id,
+    description: "propio",
+  });
+  await transactions.create({
+    userId: randomUUID(),
+    accountId: account.id,
+    categoryId: category.id,
+    type: "EXPENSE",
+    amount: "99.00",
+    currency: "ARS",
+    description: "secreto-ajeno",
+    occurredAt: new Date("2026-08-15T15:00:00.000Z"),
+  });
+
+  const response = await request(app).get("/api/transactions/export");
+  assert.equal(response.status, 200);
+  assert.match(response.text, /propio/);
+  assert.doesNotMatch(response.text, /secreto-ajeno/);
+});
+
+test("GET /api/transactions/export rejects year without month", async () => {
+  const { app } = buildApp();
+
+  const response = await request(app).get("/api/transactions/export").query({ year: 2026 });
+
+  assert.equal(response.status, 400);
+  assert.equal(response.body.error.code, "VALIDATION_ERROR");
+});
+
+function csvLineCount(csv: string): number {
+  return csv.replace(/^\uFEFF/, "").replace(/\r\n$/, "").split("\r\n").length;
+}

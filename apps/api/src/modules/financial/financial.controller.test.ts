@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { test } from "node:test";
 import express from "express";
+import { stubAuth } from "../../middlewares/require-auth.js";
 import request from "supertest";
 import { errorHandler } from "../../middlewares/error-handler.js";
 import { ZERO_INITIAL_BALANCE } from "../accounts/account.types.js";
@@ -51,6 +52,20 @@ class MemoryUserRepository implements UserRepository {
   }
 
   async findFirst(): Promise<User | null> {
+    return this.user;
+  }
+  async findAuthByEmail(email: string) {
+    return this.user && this.user.email === email
+      ? { user: this.user, passwordHash: "invalid" }
+      : null;
+  }
+  async count() {
+    return this.user ? 1 : 0;
+  }
+  async setCredentials() {
+    if (!this.user) {
+      throw new Error("no user");
+    }
     return this.user;
   }
 }
@@ -178,7 +193,7 @@ function makeUser(id = randomUUID()): User {
   return {
     id,
     name: "Usuario demo",
-    email: null,
+    email: "qa@example.test",
     timezone: DEFAULT_USER_TIMEZONE,
     createdAt: now,
     updatedAt: now,
@@ -189,6 +204,7 @@ function buildApp(user = makeUser()) {
   const accounts = new MemoryAccountRepository();
   const transactions = new MemoryTransactionRepository();
   const app = express();
+  app.use(stubAuth(user.id));
   app.use(express.json());
   app.use(
     "/api/financial",
@@ -220,10 +236,18 @@ async function seedCurrentUserMonth(options?: {
     userId: user.id,
     accountId: fund.id,
     type: "INCOME",
-    amount: "7000.00",
+    amount: "8000.00",
     currency: "ARS",
     occurredAt: at(YEAR, MONTH),
     metadata: { incomeKind: "CAPITAL" },
+  });
+  await transactions.create({
+    userId: user.id,
+    accountId: fund.id,
+    type: "EXPENSE",
+    amount: "1000.00",
+    currency: "ARS",
+    occurredAt: at(YEAR, MONTH - 1),
   });
   await transactions.create({
     userId: user.id,

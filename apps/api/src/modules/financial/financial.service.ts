@@ -202,10 +202,11 @@ export class FinancialService {
       currency: ARS,
     });
 
+    // Meses calendario cerrados anteriores al year/month solicitado (el mes abierto no entra al promedio).
     const validKeys = new Set<string>();
     for (const expense of expenses) {
       const zoned = zonedYearMonth(expense.occurredAt, timeZone);
-      if (compareYearMonth(zoned.year, zoned.month, year, month) <= 0) {
+      if (compareYearMonth(zoned.year, zoned.month, year, month) < 0) {
         validKeys.add(yearMonthKey(zoned.year, zoned.month));
       }
     }

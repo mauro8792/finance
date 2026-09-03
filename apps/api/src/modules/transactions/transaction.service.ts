@@ -7,6 +7,7 @@ import {
 } from "../../shared/time/month-range.js";
 import type { AccountRepository } from "../accounts/account.types.js";
 import type { CategoryRepository } from "../categories/category.types.js";
+import { buildTransactionsCsv } from "./transaction-csv.js";
 import {
   EXPENSE_CATEGORY_TYPES,
   INCOME_CATEGORY_TYPES,
@@ -123,6 +124,23 @@ export class TransactionService {
       categoryId: input.categoryId,
       status: input.status,
       currency: input.currency,
+    });
+  }
+
+  async exportCsv(
+    userId: string,
+    input: ListTransactionsInput,
+    timeZone: string
+  ): Promise<string> {
+    const [items, accounts, categories] = await Promise.all([
+      this.list(userId, input, timeZone),
+      this.accounts.findByUserId(userId),
+      this.categories.findByUserId(userId),
+    ]);
+    return buildTransactionsCsv(items, {
+      accountNameById: Object.fromEntries(accounts.map((item) => [item.id, item.name])),
+      categoryNameById: Object.fromEntries(categories.map((item) => [item.id, item.name])),
+      timeZone,
     });
   }
 

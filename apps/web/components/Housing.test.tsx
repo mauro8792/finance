@@ -145,6 +145,8 @@ describe("HousingPage", () => {
     getHousing.mockReturnValue(new Promise(() => undefined));
     renderHousing();
     expect(screen.getByText("Cargando vivienda")).toBeTruthy();
+    expect(screen.queryByText("Aún no configuraste tu vivienda.")).toBeNull();
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 
   it("shows the empty state without treating it as an error", async () => {
@@ -390,6 +392,34 @@ describe("HousingPage", () => {
       "h-1": { coverage: coverageNormal, payments: [] },
     });
     renderHousing();
+    expect(await screen.findByText("Aún no registraste pagos.")).toBeTruthy();
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("retries coverage without hiding payment history", async () => {
+    const user = userEvent.setup();
+    getHousing.mockResolvedValue([apto]);
+    getHousingCoverage.mockRejectedValueOnce(new Error("ECONNRESET"));
+    getHousingPayments.mockResolvedValue([]);
+    renderHousing();
+    expect(await screen.findByText("No pudimos cargar la cobertura. Probá de nuevo.")).toBeTruthy();
+    expect(screen.queryByText("ECONNRESET")).toBeNull();
+    expect(screen.getByText("Aún no registraste pagos.")).toBeTruthy();
+    getHousingCoverage.mockResolvedValueOnce(coverageNormal);
+    await user.click(screen.getByRole("button", { name: "Reintentar" }));
+    expect(await screen.findByText("USD 2.000,00")).toBeTruthy();
+  });
+
+  it("retries payment history without using empty copy", async () => {
+    const user = userEvent.setup();
+    getHousing.mockResolvedValue([apto]);
+    getHousingCoverage.mockResolvedValue(coverageNormal);
+    getHousingPayments.mockRejectedValueOnce(new Error("fail"));
+    renderHousing();
+    expect(await screen.findByText("No pudimos cargar el historial. Probá de nuevo.")).toBeTruthy();
+    expect(screen.queryByText("Aún no registraste pagos.")).toBeNull();
+    getHousingPayments.mockResolvedValueOnce([]);
+    await user.click(screen.getByRole("button", { name: "Reintentar" }));
     expect(await screen.findByText("Aún no registraste pagos.")).toBeTruthy();
   });
 

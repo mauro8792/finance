@@ -38,6 +38,6 @@ export class UserService {
 }
 
 function normalizeEmail(email: string | null | undefined): string | null {
-  const value = email?.trim();
+  const value = email?.trim().toLowerCase();
   return value ? value : null;
 }

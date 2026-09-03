@@ -32,6 +32,29 @@ No define todavía contratos HTTP completos.
 
 ---
 
+# 2b. Acceso (M10.5)
+
+```text
+Abrir app
+↓
+GET /api/auth/me (credentials include)
+↓
+loading → no queries financieras, no Dashboard
+↓
+unauthenticated → /login
+authenticated → app
+```
+
+Login: `POST /api/auth/login` → cookie `pf_sid` → `GET /me` → `/`.
+
+Logout (header Salir): `POST /api/auth/logout` → cache limpia → `/login`.
+
+401 en request protegida: sesión unauthenticated, cache TanStack Query limpia, redirect `/login`. No se muestra como QueryStatus de negocio.
+
+No hay signup público.
+
+---
+
 # 2. Principios UX
 
 Los flujos deben respetar:
@@ -523,16 +546,24 @@ Flujo:
 ```text
 Quick AI Input
 ↓
-POST /api/ai/parse-transaction
+POST /api/ai/parse-transaction  { text }
 ↓
-AIService
+AiController (M8.3, sin persistir)
 ↓
-OpenAI Structured Output
+CategoryService (M8.4.1, READ ONLY)
 ↓
-Proposal
+TransactionParserService (categorías permitidas)
 ↓
-Preview
+OpenAIClient / Structured Output
+↓
+Proposal (categoryHint canónico o null)
+↓
+Preview (M8.4)
 ```
+
+El matching final `categoryHint` → Category es determinístico (nombre exacto, case-insensitive, match único).
+
+Ejemplo M8.4.1: `"gasté 15 mil en la panadería"` con categoría existente `Comida` debe proponer `categoryHint = "Comida"`, no `"panadería"`. La cuenta no se selecciona si el texto no la menciona.
 
 Preview:
 
@@ -570,6 +601,10 @@ POST /api/transactions
 La persistencia ocurre usando el flujo normal de TransactionService.
 
 OpenAI no participa en el guardado final.
+
+La UI de M8.4 vive en `/registrar` (“Registrar con texto”). Preview de una propuesta; Guardar llama `POST /api/transactions`. Editar reutiliza el formulario manual. Cancelar vuelve al input y conserva el texto.
+
+M8.5 muestra N cards apiladas. Cada propuesta tiene estado de UI (pending / editing / saved / discarded / error). Guardar y Descartar son por ítem. No hay “Guardar todos”.
 
 ---
 
@@ -621,40 +656,32 @@ Nafta
 ARS 48.000
 ```
 
-Acciones:
+Acciones M8.5:
 
 ```text
-Guardar todos
-Editar
-Eliminar propuesta
-Cancelar
+Por propuesta: Editar / Guardar / Descartar
+Cancelar el input completo
 ```
+
+No hay “Guardar todos”. La confirmación es individual porque cada propuesta puede necesitar cuenta o categoría distinta.
 
 ---
 
 # 20. Guardar múltiples movimientos AI
 
-Al confirmar todos:
+Cada propuesta confirmada:
 
 ```text
 Frontend
 ↓
-POST transactions batch
+POST /api/transactions
 ```
 
-o múltiples requests según implementación.
+No hay `POST /api/ai/confirm-all`. OpenAI no escribe DB.
 
-Debe evitarse estado parcial si se decide operación batch.
+La persistencia es independiente por movimiento. Un error al guardar el movimiento 2 no revierte el 1 ni descarta el 3. La UI permite retry o editar el que falló.
 
-Ideal:
-
-```text
-DB transaction
-```
-
-para confirmación conjunta.
-
-Si se implementan requests separados, la UI debe manejar errores individuales.
+No se usa transacción DB de lote en M8.5.
 
 ---
 
@@ -848,9 +875,9 @@ La alta de movimientos sigue en `/registrar`. Esta pantalla no crea Transactions
 
 Editar y Anular sólo para tipos que el backend permite. Piernas inmutables (TRANSFER, CURRENCY_EXCHANGE, HOUSING_PAYMENT, INVESTMENT_*) no muestran esas acciones.
 
-Mobile: Inicio · Más · Registrar. El menú Más incluye Movimientos, Cuentas, Mover dinero, Presupuestos, Vivienda, Inversiones, Simulaciones.
+Mobile: Inicio · Más · Registrar. El menú Más incluye Movimientos, Cuentas, Mover dinero, Presupuestos, Vivienda, Inversiones, Simulaciones, Asistente.
 
-Desktop: Inicio, Movimientos, Cuentas, Mover dinero, Presupuestos, Vivienda, Inversiones, Simulaciones, Registrar.
+Desktop: Inicio, Movimientos, Cuentas, Mover dinero, Presupuestos, Vivienda, Inversiones, Simulaciones, Asistente, Registrar.
 
 ---
 
@@ -1151,9 +1178,9 @@ La UI no pide saldo inicial. El capital se incorpora después como `Transaction`
 
 No se cambia `currency` desde la UI: rompería el historial de movimientos.
 
-Mobile: Inicio · Más · Registrar. El menú Más incluye Cuentas, Presupuestos, Vivienda, Inversiones, Simulaciones.
+Mobile: Inicio · Más · Registrar. El menú Más incluye Cuentas, Presupuestos, Vivienda, Inversiones, Simulaciones, Asistente.
 
-Desktop: Inicio, Cuentas, Presupuestos, Vivienda, Inversiones, Simulaciones, Registrar. Si el ancho no alcanza, se mantiene Más para no desbordar.
+Desktop: Inicio, Cuentas, Presupuestos, Vivienda, Inversiones, Simulaciones, Asistente, Registrar. Si el ancho no alcanza, se mantiene Más para no desbordar.
 
 ---
 
@@ -1863,7 +1890,7 @@ Usa:
 
 ```text
 Fondos ARS disponibles (CASH + BANK + FUND, activas)
-Promedio de hasta 3 meses válidos
+Promedio de hasta 3 meses calendario cerrados válidos anteriores al mes del resumen. El mes corriente no entra al promedio mientras esté abierto.
 ```
 
 Mes válido: al menos un `EXPENSE` `ACTIVE` `ARS`. Consumo 0 en un mes válido entra al promedio.
@@ -2095,7 +2122,7 @@ Selector: Sin ingresos | Nuevo empleo | Reserva vivienda
 CTA: Simular
 ```
 
-Mobile: cards y formularios verticales, sin tablas. El tab Más incluye Cuentas, Presupuestos, Vivienda, Inversiones, Simulaciones. Desktop: Inicio, Cuentas, Presupuestos, Vivienda, Inversiones, Simulaciones, Registrar.
+Mobile: cards y formularios verticales, sin tablas. El tab Más incluye Cuentas, Presupuestos, Vivienda, Inversiones, Simulaciones, Asistente. Desktop: Inicio, Cuentas, Presupuestos, Vivienda, Inversiones, Simulaciones, Asistente, Registrar.
 
 HTTP:
 
@@ -2106,6 +2133,46 @@ POST /api/simulations
 Body discriminado por `type`. `userId` no viaja en el cliente; el backend usa el usuario configurado. `timeZone` es la constante del producto (`America/Argentina/Buenos_Aires`), no la del navegador.
 
 El frontend no duplica fórmulas. El porcentaje de gastos se convierte de humano (`-10`) a fracción (`-0.100000`) antes del POST.
+
+---
+
+# 66.5 Asistente financiero — UI
+
+Ruta: `/assistant`
+
+```text
+Título: Asistente financiero
+Copy: Preguntá sobre tus números. La app calcula; la IA te los explica.
+CTA: Preguntar
+```
+
+Flujo:
+
+```text
+usuario escribe pregunta
+↓
+POST /api/ai/chat  { "message": "..." }
+↓
+{ "answer": "..." }
+↓
+mostrar respuesta
+```
+
+No es un chatbot con historial. Sin sidebar. Sin persistencia. Cada request es independiente. La sesión visual muestra la última pregunta y la última respuesta.
+
+Click en una pregunta sugerida completa el input; no llama al backend hasta Preguntar (o Ctrl/Cmd + Enter).
+
+Loading: “Analizando tus datos...”. El error del asistente no rompe el resto de la app.
+
+Navegación: link Asistente en desktop y en Más (mobile).
+
+M9.4 — preguntas sugeridas de simulación (parámetros completos; el click no envía):
+
+- ¿Qué pasa si no tengo ingresos por 6 meses?
+- ¿Qué pasa si consigo trabajo en 3 meses cobrando 3500000.00 por mes durante 12 meses?
+- ¿Cuánto me quedaría si separo 8 cuotas de vivienda al tipo de cambio 1400?
+
+La UI de `/simulations` sigue siendo la pantalla determinística. El asistente es otra forma de acceder a SimulationService, no un reemplazo.
 
 ---
 
@@ -2128,7 +2195,7 @@ OpenAI
 ↓
 tool call
 ↓
-FinancialService.getMonthlyNetExpenses()
+get_month_summary → FinancialService.getFinancialSummary
 ↓
 resultado
 ↓
@@ -2148,7 +2215,7 @@ Input:
 Tool:
 
 ```text
-getCategoryExpenses()
+get_transactions (categoryName)
 ```
 
 Resultado AI:
@@ -2172,7 +2239,7 @@ Input:
 Tool:
 
 ```text
-HousingService.getCoverage()
+get_housing_summary → HousingService.getCoverage()
 ```
 
 AI explica el resultado.
@@ -2210,12 +2277,17 @@ Input:
 OpenAI debe solicitar:
 
 ```text
-simulateMonthsWithoutIncome(6)
+simulate_no_income { months: 6, year, month }
 ```
 
-SimulationService calcula.
+SimulationService calcula. El assistant explica el resultado como escenario, no como hecho aplicado.
 
-OpenAI explica.
+Otros mapeos:
+
+- nuevo empleo → `simulate_new_job` (`monthsUntilJob`, `totalMonths`, `newMonthlyIncomeARS`; no inventar salario)
+- reserva de vivienda → `simulate_housing_reserve` (`targetInstallments`, `exchangeRateARSPerUSD`; no inventar FX)
+
+Si falta un parámetro obligatorio, pedir aclaración. No persistir Scenario. No mutar cuentas.
 
 ---
 
@@ -2439,7 +2511,7 @@ Acción:
 Exportar CSV
 ```
 
-Filtros activos deben poder aplicarse al export.
+Filtros activos deben poder aplicarse al export. Los query params son los mismos que el listado: `year`, `month`, `type`, `accountId`, `categoryId`, `status`. Sin filtros se exportan todos los movimientos del usuario, igual que el listado.
 
 Campos:
 
@@ -2452,7 +2524,14 @@ Importe
 Moneda
 Cuenta
 Estado
+Clasificación
+Reembolso
+Medio de pago
 ```
+
+Fecha en `YYYY-MM-DD` (calendario del timezone del usuario). Importe como decimal del dominio. Nombres de cuenta/categoría, no IDs. No se exporta `userId`.
+
+Formato del archivo: UTF-8 con BOM, delimitador `;` (compatible con Excel en español/Argentina). No se agrega la fila `sep=;` para no insertar una fila basura en Google Sheets u otros consumidores. Las comas dentro de textos se conservan; `;`, comillas y saltos de línea se escapan.
 
 ---
 

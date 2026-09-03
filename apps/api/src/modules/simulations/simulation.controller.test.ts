@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { test } from "node:test";
 import express from "express";
+import { stubAuth } from "../../middlewares/require-auth.js";
 import request from "supertest";
 import { getPrismaClient } from "../../shared/db/prisma.js";
 import { AppError } from "../../shared/errors/app-error.js";
@@ -39,12 +40,26 @@ class MemoryUserRepository implements UserRepository {
   async findFirst(): Promise<User | null> {
     return this.user;
   }
+  async findAuthByEmail(email: string) {
+    return this.user && this.user.email === email
+      ? { user: this.user, passwordHash: "invalid" }
+      : null;
+  }
+  async count() {
+    return this.user ? 1 : 0;
+  }
+  async setCredentials() {
+    if (!this.user) {
+      throw new Error("no user");
+    }
+    return this.user;
+  }
 }
 
 const user: User = {
   id: randomUUID(),
   name: "QA Simulations HTTP",
-  email: null,
+  email: "qa@example.test",
   timezone: TZ,
   createdAt: new Date(),
   updatedAt: new Date(),
@@ -155,6 +170,7 @@ function stubService() {
 
 function appWith(simulations: SimulationService) {
   const app = express();
+  app.use(stubAuth(user.id));
   app.use(express.json());
   app.use(
     "/api/simulations",
@@ -373,6 +389,7 @@ test("POST /api/simulations on PostgreSQL does not persist financial side effect
   const prisma = getPrismaClient();
   const owner = await users.create({ name: "QA Simulation M7.5 HTTP" });
   const app = express();
+  app.use(stubAuth(owner.id));
   app.use(express.json());
   app.use(
     "/api/simulations",
@@ -381,6 +398,9 @@ test("POST /api/simulations on PostgreSQL does not persist financial side effect
         create: async () => owner,
         findById: async (id: string) => (id === owner.id ? owner : null),
         findFirst: async () => owner,
+        findAuthByEmail: async () => ({ user: owner, passwordHash: "invalid" }),
+        count: async () => 1,
+        setCredentials: async () => owner,
       })
     )
   );
@@ -391,7 +411,7 @@ test("POST /api/simulations on PostgreSQL does not persist financial side effect
     name: `Banco M7.5 ${Date.now()}`,
     currency: "ARS",
     type: "BANK",
-    initialBalance: "7000000.00",
+    initialBalance: "8000000.00",
   });
   const reserve = await accounts.create({
     userId: owner.id,
@@ -400,9 +420,18 @@ test("POST /api/simulations on PostgreSQL does not persist financial side effect
     type: "HOUSING_RESERVE",
     initialBalance: "2000.00",
   });
+  const closedMonth = new Date(Date.UTC(YEAR, MONTH - 2, 15, 15, 0, 0));
   const occurredAt = new Date(Date.UTC(YEAR, MONTH - 1, 15, 15, 0, 0));
 
   try {
+    await transactions.create({
+      userId: owner.id,
+      accountId: ars.id,
+      type: "EXPENSE",
+      amount: "1000000.00",
+      currency: "ARS",
+      occurredAt: closedMonth,
+    });
     await transactions.create({
       userId: owner.id,
       accountId: ars.id,

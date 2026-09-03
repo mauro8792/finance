@@ -1,20 +1,30 @@
 .header {
   display: flex;
+  flex-wrap: nowrap;
   align-items: center;
   justify-content: space-between;
-  gap: 1rem;
-  padding: 1rem;
+  gap: 0.75rem;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  padding-top: max(1rem, env(safe-area-inset-top, 0px));
+  padding-right: max(1rem, env(safe-area-inset-right, 0px));
+  padding-bottom: 1rem;
+  padding-left: max(1rem, env(safe-area-inset-left, 0px));
   border-bottom: 1px solid #d6d3d1;
   background: #fffcf7;
-  max-width: 100%;
 }
 
 .brand {
-  display: inline-block;
+  flex: 1 1 0;
+  min-width: 0;
   max-width: 100%;
+  display: inline-block;
   font-weight: 650;
   text-decoration: none;
-  overflow-wrap: anywhere;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .brand:hover {
@@ -24,15 +34,16 @@
 
 .nav {
   display: flex;
+  flex-wrap: nowrap;
+  flex: 0 0 auto;
   align-items: center;
-  flex-wrap: wrap;
   justify-content: flex-end;
-  gap: 0.35rem;
-  min-width: 0;
+  gap: 0.25rem;
 }
 
 .homeLink {
   display: inline-flex;
+  flex: 0 0 auto;
   align-items: center;
   justify-content: center;
   min-height: 2.75rem;
@@ -40,6 +51,7 @@
   color: #44403c;
   font-weight: 650;
   text-decoration: none;
+  white-space: nowrap;
 }
 
 .homeLink:hover {
@@ -49,6 +61,7 @@
 
 .navLink {
   display: inline-flex;
+  flex: 0 0 auto;
   align-items: center;
   justify-content: center;
   min-height: 2.75rem;
@@ -58,14 +71,35 @@
   color: #fff;
   font-weight: 650;
   text-decoration: none;
+  white-space: nowrap;
 }
 
-.desktopOnly {
+.logout {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.75rem;
+  padding: 0 0.7rem;
+  border: 0;
+  border-radius: 0.75rem;
+  background: transparent;
+  color: #44403c;
+  font: inherit;
+  font-weight: 650;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.showFrom1024,
+.showFrom1280 {
   display: none;
 }
 
 .more {
   position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
 }
 
 .moreSummary {
@@ -78,6 +112,7 @@
   font-weight: 650;
   cursor: pointer;
   list-style: none;
+  white-space: nowrap;
 }
 
 .moreSummary::-webkit-details-marker {
@@ -96,6 +131,7 @@
   display: flex;
   flex-direction: column;
   min-width: 10.5rem;
+  max-width: min(18rem, calc(100vw - 1.5rem));
   padding: 0.35rem;
   border: 1px solid #d6d3d1;
   border-radius: 0.75rem;
@@ -105,7 +141,7 @@
 .moreLink {
   display: flex;
   align-items: center;
-  min-height: 2.5rem;
+  min-height: 2.75rem;
   padding: 0 0.7rem;
   border-radius: 0.55rem;
   color: #44403c;
@@ -117,27 +153,31 @@
   background: #ecfdf5;
 }
 
+.more:not([open]) .moreMenu {
+  display: none;
+}
+
 @media (max-width: 767px) {
   .header {
-    padding: 0.5rem 0.85rem;
-    gap: 0.65rem;
+    padding-top: max(0.5rem, env(safe-area-inset-top, 0px));
+    padding-right: max(0.85rem, env(safe-area-inset-right, 0px));
+    padding-bottom: 0.5rem;
+    padding-left: max(0.85rem, env(safe-area-inset-left, 0px));
+    gap: 0.5rem;
   }
 
   .brand {
     font-size: 0.95rem;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    max-width: 42%;
   }
 
   .nav {
-    gap: 0.15rem;
+    gap: 0.1rem;
   }
 
   .homeLink,
   .navLink,
   .moreSummary {
-    min-height: 2.5rem;
     padding: 0 0.55rem;
     font-size: 0.9rem;
   }
@@ -145,18 +185,29 @@
 
 @media (min-width: 1024px) {
   .header {
-    padding: 1rem 2rem;
+    padding-right: max(2rem, env(safe-area-inset-right, 0px));
+    padding-left: max(2rem, env(safe-area-inset-left, 0px));
   }
 
   .homeLink {
     padding: 0 0.55rem;
   }
 
-  .desktopOnly {
+  .showFrom1024 {
     display: inline-flex;
   }
 
-  .more {
+  .hideFrom1024 {
+    display: none;
+  }
+}
+
+@media (min-width: 1280px) {
+  .showFrom1280 {
+    display: inline-flex;
+  }
+
+  .hideFrom1280 {
     display: none;
   }
 }

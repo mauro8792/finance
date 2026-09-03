@@ -255,12 +255,13 @@
   border-radius: 0.7rem;
   background: #fff;
   font: inherit;
+  font-size: 1rem;
   padding: 0.4rem 0.65rem;
 }
 
 .formActions {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr;
   gap: 0.55rem;
 }
 
@@ -326,6 +327,10 @@
 
   .form {
     max-width: 28rem;
+  }
+
+  .formActions {
+    grid-template-columns: 1fr 1fr;
   }
 }
 

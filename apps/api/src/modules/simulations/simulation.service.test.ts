@@ -422,11 +422,20 @@ test("simulateMonthsWithoutIncome on PostgreSQL ignores real operating income an
     name: `Banco M7.2 ${Date.now()}`,
     currency: "ARS",
     type: "BANK",
-    initialBalance: "3500000.00",
+    initialBalance: "4000000.00",
   });
+  const closedMonth = new Date(Date.UTC(YEAR, MONTH - 2, 15, 15, 0, 0));
   const occurredAt = new Date(Date.UTC(YEAR, MONTH - 1, 15, 15, 0, 0));
 
   try {
+    await transactions.create({
+      userId: user.id,
+      accountId: origin.id,
+      type: "EXPENSE",
+      amount: "500000.00",
+      currency: "ARS",
+      occurredAt: closedMonth,
+    });
     await transactions.create({
       userId: user.id,
       accountId: origin.id,
@@ -820,11 +829,20 @@ test("simulateNewJobScenario on PostgreSQL ignores real operating income and doe
     name: `Banco M7.3 ${Date.now()}`,
     currency: "ARS",
     type: "BANK",
-    initialBalance: "3500000.00",
+    initialBalance: "4000000.00",
   });
+  const closedMonth = new Date(Date.UTC(YEAR, MONTH - 2, 15, 15, 0, 0));
   const occurredAt = new Date(Date.UTC(YEAR, MONTH - 1, 15, 15, 0, 0));
 
   try {
+    await transactions.create({
+      userId: user.id,
+      accountId: origin.id,
+      type: "EXPENSE",
+      amount: "500000.00",
+      currency: "ARS",
+      occurredAt: closedMonth,
+    });
     await transactions.create({
       userId: user.id,
       accountId: origin.id,

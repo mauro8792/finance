@@ -1,0 +1,209 @@
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.title {
+  margin: 0;
+  font-size: 1.05rem;
+  line-height: 1.2;
+}
+
+.lead,
+.kicker,
+.hint,
+.empty,
+.description {
+  margin: 0;
+}
+
+.lead,
+.hint,
+.empty {
+  color: #57534e;
+  font-size: 0.95rem;
+  line-height: 1.4;
+}
+
+.kicker {
+  color: #0f766e;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.form,
+.preview,
+.edit,
+.review,
+.cards,
+.emptyState {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.preview,
+.edit {
+  padding: 0.85rem 0.9rem;
+  border: 1px solid #d6d3d1;
+  border-radius: 0.9rem;
+  background: #fffcf7;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.22rem;
+  font-weight: 600;
+}
+
+.input {
+  width: 100%;
+  min-height: 2.75rem;
+  border: 1px solid #d6d3d1;
+  border-radius: 0.7rem;
+  background: #fff;
+  font: inherit;
+  font-size: 1rem;
+  padding: 0.45rem 0.7rem;
+}
+
+.input:focus-visible,
+.primary:focus-visible,
+.secondary:focus-visible,
+.linkish:focus-visible {
+  outline: 2px solid #0f766e;
+  outline-offset: 2px;
+}
+
+.type {
+  margin: 0;
+  font-weight: 700;
+}
+
+.amount {
+  margin: 0;
+  font-size: 1.45rem;
+  font-weight: 750;
+  line-height: 1.15;
+}
+
+.facts {
+  display: grid;
+  gap: 0.45rem;
+  margin: 0;
+}
+
+.facts div {
+  display: grid;
+  gap: 0.1rem;
+}
+
+.facts dt {
+  color: #78716c;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.facts dd {
+  margin: 0;
+}
+
+.notes,
+.extras {
+  padding: 0.55rem 0.7rem;
+  border-radius: 0.65rem;
+  background: #f5f0e6;
+}
+
+.notesTitle {
+  margin: 0 0 0.25rem;
+  font-weight: 700;
+  font-size: 0.88rem;
+}
+
+.notes ul,
+.extras ul {
+  margin: 0;
+  padding-left: 1.1rem;
+}
+
+.actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.45rem;
+}
+
+.multiActions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.settled {
+  opacity: 0.92;
+}
+
+.primary,
+.secondary,
+.linkish {
+  min-height: 2.75rem;
+  border-radius: 0.75rem;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.primary {
+  border: 0;
+  background: #0f766e;
+  color: #fff;
+}
+
+.primary:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.secondary {
+  border: 1px solid #d6d3d1;
+  background: #fffcf7;
+}
+
+.linkish {
+  border: 0;
+  background: transparent;
+  color: #57534e;
+}
+
+.error,
+.success {
+  margin: 0;
+  padding: 0.55rem 0.75rem;
+  border-radius: 0.7rem;
+}
+
+.error {
+  background: #fef2f2;
+  color: #991b1b;
+}
+
+.success {
+  background: #ecfdf5;
+  color: #065f46;
+}
+
+@media (min-width: 768px) {
+  .amount {
+    font-size: 1.85rem;
+  }
+
+  .input,
+  .primary,
+  .secondary {
+    min-height: 2.85rem;
+  }
+}

@@ -1,6 +1,7 @@
 import type { Request, Response } from "express";
 import type { ZodType } from "zod";
 import { AppError } from "../../shared/errors/app-error.js";
+import { getAuthUserId } from "../auth/auth-request.js";
 import type { UserRepository } from "../users/user.types.js";
 import type { Transaction } from "../transactions/transaction.types.js";
 import {
@@ -18,28 +19,28 @@ export class HousingController {
     private readonly users: UserRepository
   ) {}
 
-  list = async (_req: Request, res: Response): Promise<void> => {
-    const userId = await this.requireUserId();
+  list = async (req: Request, res: Response): Promise<void> => {
+    const userId = getAuthUserId(req);
     const items = await this.housing.list(userId);
     res.status(200).json(items.map(toHousingResponse));
   };
 
   getById = async (req: Request, res: Response): Promise<void> => {
-    const userId = await this.requireUserId();
+    const userId = getAuthUserId(req);
     const { id } = parseValue(HousingIdParamsSchema, req.params);
     const item = await this.housing.getById(userId, id);
     res.status(200).json(toHousingResponse(item));
   };
 
   create = async (req: Request, res: Response): Promise<void> => {
-    const userId = await this.requireUserId();
+    const userId = getAuthUserId(req);
     const body = parseValue(CreateHousingObligationSchema, req.body);
     const created = await this.housing.create(userId, body);
     res.status(201).json(toHousingResponse(created));
   };
 
   update = async (req: Request, res: Response): Promise<void> => {
-    const userId = await this.requireUserId();
+    const userId = getAuthUserId(req);
     const { id } = parseValue(HousingIdParamsSchema, req.params);
     const body = parseValue(UpdateHousingObligationSchema, req.body);
     const updated = await this.housing.update(userId, id, body);
@@ -47,21 +48,21 @@ export class HousingController {
   };
 
   getCoverage = async (req: Request, res: Response): Promise<void> => {
-    const userId = await this.requireUserId();
+    const userId = getAuthUserId(req);
     const { id } = parseValue(HousingIdParamsSchema, req.params);
     const coverage = await this.housing.getCoverage(userId, id);
     res.status(200).json(coverage);
   };
 
   listPayments = async (req: Request, res: Response): Promise<void> => {
-    const userId = await this.requireUserId();
+    const userId = getAuthUserId(req);
     const { id } = parseValue(HousingIdParamsSchema, req.params);
     const payments = await this.housing.listPayments(userId, id);
     res.status(200).json(payments.map(toPaymentListResponse));
   };
 
   registerPayment = async (req: Request, res: Response): Promise<void> => {
-    const userId = await this.requireUserId();
+    const userId = getAuthUserId(req);
     const { id } = parseValue(HousingIdParamsSchema, req.params);
     const body = parseValue(RegisterHousingPaymentSchema, req.body);
     const result = await this.housing.registerPayment(userId, id, {
@@ -77,18 +78,6 @@ export class HousingController {
       isActive: result.isActive,
     });
   };
-
-  private async requireUserId(): Promise<string> {
-    const user = await this.users.findFirst();
-    if (!user) {
-      throw new AppError(
-        "USER_NOT_CONFIGURED",
-        "No hay un usuario configurado.",
-        500
-      );
-    }
-    return user.id;
-  }
 }
 
 function parseValue<T>(schema: ZodType<T>, data: unknown): T {

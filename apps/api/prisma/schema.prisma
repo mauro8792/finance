@@ -95,7 +95,8 @@ enum InvestmentStatus {
 model User {
   id           String        @id @default(uuid()) @db.Uuid
   name         String        @db.VarChar(120)
-  email        String?       @unique @db.VarChar(255)
+  email        String        @unique @db.VarChar(255)
+  passwordHash String        @map("password_hash") @db.Text
   timezone     String        @default("America/Argentina/Buenos_Aires") @db.VarChar(100)
   createdAt    DateTime      @default(now()) @map("created_at") @db.Timestamptz
   updatedAt    DateTime      @updatedAt @map("updated_at") @db.Timestamptz
@@ -106,8 +107,24 @@ model User {
   budgets            Budget[]
   housingObligations HousingObligation[]
   investments        Investment[]
+  sessions           Session[]
 
   @@map("users")
+}
+
+model Session {
+  id                String    @id @default(uuid()) @db.Uuid
+  userId            String    @map("user_id") @db.Uuid
+  tokenHash         String    @unique @map("token_hash") @db.VarChar(64)
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  absoluteExpiresAt DateTime  @map("absolute_expires_at") @db.Timestamptz
+  expiresAt         DateTime  @map("expires_at") @db.Timestamptz
+  revokedAt         DateTime? @map("revoked_at") @db.Timestamptz
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("sessions")
 }
 
 model Category {

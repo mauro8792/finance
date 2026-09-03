@@ -546,11 +546,14 @@ ai/
 ├── ai.schema.ts
 ├── ai.types.ts
 ├── openai.client.ts
+├── openai.types.ts
+├── openai.errors.ts
+├── openai.config.ts
+├── ai-assistant.service.ts
 └── tools/
-    ├── get-monthly-expenses.tool.ts
-    ├── get-fund-consumption.tool.ts
-    ├── get-housing-coverage.tool.ts
-    └── calculate-runway.tool.ts
+    ├── ai-tool.registry.ts
+    ├── ai-tool.schemas.ts
+    └── ai-tool.types.ts
 ```
 
 OpenAI es infraestructura.
@@ -602,15 +605,19 @@ super 75 mil
 ```text
 Frontend
 ↓
-POST /ai/parse-transaction
+POST /api/ai/parse-transaction
 ↓
-AIController
+AiController
 ↓
-AIService
+CategoryService (READ ONLY, categorías activas del usuario)
 ↓
-OpenAI Structured Output
+TransactionParserService
 ↓
-ParsedTransaction[]
+OpenAIClient / Structured Output
+↓
+Validación allow-list de categoryHint
+↓
+Parsed proposal
 ↓
 Frontend Preview
 ↓
@@ -623,7 +630,7 @@ TransactionService
 Repository
 ```
 
-La AI no persiste directamente.
+La AI no persiste directamente. OpenAIClient no conoce Category, Transaction ni Prisma. El parser no habla con Prisma. M8.4.1 no es account-aware.
 
 ---
 
@@ -769,6 +776,7 @@ POST   /api/accounts/:id/activate
 POST   /api/accounts/:id/deactivate
 
 GET    /api/transactions
+GET    /api/transactions/export
 POST   /api/transactions
 PATCH  /api/transactions/:id
 POST   /api/transactions/:id/void
@@ -1259,12 +1267,25 @@ Ejemplo:
 
 ```ts
 class OpenAIClient {
-  parseTransactions(...)
-  chat(...)
+  generateText(...)
+  generateStructured(...)
+  createResponse(...)
 }
 ```
 
-El resto del sistema no debería depender directamente del SDK de OpenAI.
+M8.1 expone `generateText` sobre Responses API (`store: false`, timeout y retries configurables). M8.2 agrega `generateStructured` (schema Zod + `zodTextFormat`) y `TransactionParserService`. M8.3 expone `POST /api/ai/parse-transaction` (AiController → parser → OpenAIClient). M8.4.1: AiController lee categorías vía CategoryService y el parser las incluye en las instrucciones; el backend valida `categoryHint` contra esa lista. El parser no usa Prisma. OpenAIClient no conoce el dominio. El resto del sistema no debería depender directamente del SDK de OpenAI.
+
+M8.4 agrega Quick Input en `/registrar`: Interpretar → preview → Guardar (`POST /api/transactions`) / Editar (formulario existente) / Cancelar. El frontend no llama a OpenAI. El matching `categoryHint` → Category sigue siendo exacto, case-insensitive y único.
+
+M9.1: `AiToolRegistry` allowlista tools READ-ONLY que delegan en FinancialService, TransactionService, HousingService y AccountService. OpenAIClient no conoce el dominio. El registry no usa Prisma.
+
+M9.2: `POST /api/ai/chat` (`{ message }` → `{ answer }`). `AiAssistantService` llama `OpenAIClient.createResponse` con tool definitions; ejecuta tool calls vía `AiToolRegistry`; máximo 4 rondas; múltiples function calls por ronda. Sin `usage` público. Sin Conversation/Message/historial. Sin SimulationService. El primer request al provider no incluye datos financieros.
+
+M9.2.1: `averageMonthlyFundConsumption` en FinancialService usa hasta 3 meses calendario cerrados válidos anteriores al `year`/`month` del resumen. El mes abierto no entra al promedio. Dashboard, tools y SimulationService no recalculan.
+
+M9.3: UI `/assistant` (Asistente financiero). El navegador llama `POST /api/ai/chat` con `{ message }`. No llama a OpenAI. Sin historial persistido. Muestra última pregunta + última respuesta. Preguntas sugeridas factuales y, desde M9.4, de simulación con parámetros completos; el click completa el input y no dispara el request. Markdown mínimo (`**negrita**` y saltos de línea) sin HTML crudo.
+
+M9.4: `AiToolRegistry` agrega tools READ-ONLY `simulate_no_income`, `simulate_new_job` y `simulate_housing_reserve` que delegan en `SimulationService`. `userId`/`timeZone` inyectados. Sin Prisma en el registry. OpenAIClient no conoce SimulationService. Máximo 4 rondas. No persisten Scenario ni mutan estado.
 
 ---
 
@@ -1365,23 +1386,16 @@ Reglas:
 
 Backend debe tener logging básico estructurado.
 
-Puede utilizar:
-
-```text
-Pino
-```
-
-o solución equivalente.
-
-Registrar:
-
-- requests relevantes;
-- errores;
-- integrations failures.
+M10.4 usa JSON a stdout (sin Pino). Cada request registra `requestId`, `method`, `path` (sin query), `status` y `durationMs`. Los 500 inesperados loguean `requestId` y `name` del error.
 
 No loggear:
 
+- request body;
+- prompts ni respuestas AI;
+- CSV, importes ni movimientos;
 - API keys;
+- `DATABASE_URL`;
+- `Authorization` / `Cookie`;
 - secretos;
 - datos bancarios sensibles.
 
@@ -1389,32 +1403,44 @@ No loggear:
 
 # 53. Request ID
 
-Cada request debería poder tener identificador.
+Cada request tiene `requestId`.
 
-Ejemplo:
-
-```text
-requestId
-```
-
-Útil para debug.
-
-No obligatorio en primera tarea, pero recomendable.
+Se acepta `X-Request-Id` solo si es `[A-Za-z0-9._-]{1,64}`; si no, se genera un UUID. La respuesta incluye `X-Request-Id`. Se usa en logs de error. No contiene datos financieros.
 
 ---
 
 # 54. Security middleware
 
-Backend:
+M10.4 — security baseline (no es autenticación).
+
+Orden en Express:
 
 ```text
-helmet
-cors
-rate limiting
-body size limits
+trust proxy          // solo si TRUST_PROXY=1 (explícito; p. ej. Render)
+requestId
+helmet               // CORP cross-origin; sin CSP compleja
+cors                 // origin exacto + credentials
+express.json 32kb
+no-store
+request log
+csrf Origin          // POST/PUT/PATCH/DELETE
+rateLimit /api       // 120 / 15 min / IP; no aplica a /health
+rateLimit /api/ai    // 20 / 15 min / IP, adicional
+rateLimit login      // 5 / 15 min / IP en POST /api/auth/login
+router               // /health + /api/auth + requireAuth + resto /api
+notFound
+errorHandler
 ```
 
-La configuración exacta dependerá del deployment.
+Nunca devolver stack al cliente. 500 inesperado: `"Error interno del servidor."`
+
+Rate limit en memoria: **una sola instancia API** (requisito M10.6). Varias instancias necesitan store compartido (no en el primer go-live).
+
+`TRUST_PROXY=1` es explícito (p. ej. Render). No se activa por `NODE_ENV=production`. Sin trust proxy, Express no usa `X-Forwarded-For` para la IP del rate limit (evita spoofing).
+
+**Security baseline (M10.4) + autenticación (M10.5).** No desplegar información financiera real de forma pública hasta M10.6 same-site.
+
+Deuda: advisory high `deepmerge-ts` vía Prisma CLI; no se hizo `npm audit fix --force` (downgrade breaking de Prisma).
 
 ---
 
@@ -1423,43 +1449,75 @@ La configuración exacta dependerá del deployment.
 Desarrollo:
 
 ```text
-localhost web
-→
-localhost API
+WEB_ORIGIN=http://localhost:3000
 ```
+
+(default si falta y `NODE_ENV` no es production)
 
 Producción:
 
-solamente origen oficial del frontend.
+`WEB_ORIGIN` obligatorio (origen exacto del frontend, sin trailing slash). Si falta, la API no arranca.
 
-No dejar:
+Nunca `Access-Control-Allow-Origin: *`.
 
-```text
-Access-Control-Allow-Origin: *
-```
+`Access-Control-Allow-Credentials: true` cuando el Origin coincide con `WEB_ORIGIN`.
 
-en producción sin motivo.
+Frontend: `credentials: "include"` en JSON, auth y CSV.
+
+Código usa `WEB_ORIGIN`, no `FRONTEND_URL`.
 
 ---
 
 # 56. Authentication
 
-La aplicación es personal.
+M10.5: email + password (Argon2id), registro cerrado, sesiones en PostgreSQL, cookie `pf_sid` httpOnly.
 
-Para MVP no se necesita un sistema complejo de auth.
+Identidad: `req.auth.userId` de la sesión. Nunca `findFirst()` en el request path financiero. Nunca `userId` del body/query como identidad.
 
-Pero producción debe impedir acceso público a información financiera.
+Públicos: `GET /health`, `POST /api/auth/login`, `POST /api/auth/logout`, OPTIONS CORS. `GET /api/auth/me` autenticado. Todo el resto de `/api` autenticado (incluye CSV, AI, simulaciones).
 
-La estrategia se definirá antes del deployment público.
+## Cookie
 
-Opciones futuras:
+Nombre `pf_sid` (o `SESSION_COOKIE_NAME`). Valor: 32 bytes aleatorios en base64url. HttpOnly, Path=/, SameSite=Lax. Secure en production (`SESSION_SECURE=1` o `NODE_ENV=production`; `SESSION_SECURE=0` en localhost HTTP). Sin Domain amplio. La cookie pertenece al host de la API.
 
-- login simple;
-- magic link;
-- auth provider;
-- sesión segura.
+La DB guarda HMAC-SHA256 (`SESSION_SECRET`) del token, nunca el token crudo. No JWT.
 
-No implementar OAuth múltiple sin necesidad.
+## Semántica de sesión (no infinita)
+
+- `absoluteExpiresAt`: `createdAt` + `SESSION_TTL_DAYS` (default 7). Inmutable. Tope absoluto.
+- `expiresAt`: idle sliding de 24 h (`SESSION_IDLE_MS`), **nunca posterior** a `absoluteExpiresAt`.
+- Cookie `Max-Age` al login = tiempo restante hasta `absoluteExpiresAt` (hasta 7 días). El idle se enforcea en servidor.
+- Actividad dentro de 24 h extiende `expiresAt`, pero la sesión muere sí o sí a los 7 días desde el login. No hay sesiones infinitas.
+- Logout: `revokedAt` + cookie Max-Age=0.
+- Cada login crea una sesión nueva (anti session fixation).
+
+## Password
+
+Argon2id, m=19456 KiB, t=2, p=1, hashLength=32 (OWASP). Mínimo 12 caracteres. Email inexistente verifica contra dummy hash. Mensaje único: `"Email o contraseña incorrectos."`
+
+## CSRF
+
+SameSite=Lax + Origin server-side en POST/PUT/PATCH/DELETE. Origin presente debe ser `WEB_ORIGIN`. Cookie de sesión sin Origin → 403 `CSRF_REJECTED`. Sin cookie y sin Origin (tests/supertest) se permite. No double-submit en M10.5.
+
+## Bootstrap
+
+`npm run auth:bootstrap -w api` con `BOOTSTRAP_EMAIL` + `BOOTSTRAP_PASSWORD` (12+). `BOOTSTRAP_NAME` opcional (default `Usuario`).
+
+- 0 users → crea exactamente 1.
+- 1 user → actualiza email/password del existente (mismo id). QA: no crea un segundo user.
+- >1 → FAIL FAST.
+
+No imprime password ni hash. No usar `prisma db seed` en producción.
+
+Reset password MVP (sin email): `npm run auth:set-password -w api` (exige 1 user).
+
+## Deploy (M10.6)
+
+Runbook: `docs/DEPLOYMENT.md`. Stack: Web Vercel, API Render (1 instancia), DB Render Postgres. Same-site `app.<dominio>` + `api.<dominio>`. Blueprint `render.yaml` de referencia: **no aplicar hasta Go-live A**.
+
+Go-live A = app desplegable, datos no reales. Go-live B = autorizada para datos reales (no automático con M10.6).
+
+**Security baseline (M10.4) + auth (M10.5) + readiness (M10.6) ≠ Go-live B.**
 
 ---
 
@@ -1488,9 +1546,19 @@ NODE_ENV=
 PORT=
 DATABASE_URL=
 DATABASE_URL_TEST=
+WEB_ORIGIN=
+TRUST_PROXY=
+SESSION_SECRET=
+SESSION_COOKIE_NAME=pf_sid
+SESSION_TTL_DAYS=7
+SESSION_SECURE=
+BOOTSTRAP_EMAIL=
+BOOTSTRAP_PASSWORD=
+BOOTSTRAP_NAME=
 OPENAI_API_KEY=
 OPENAI_MODEL=
-FRONTEND_URL=
+OPENAI_TIMEOUT_MS=15000
+OPENAI_MAX_RETRIES=2
 ```
 
 Frontend:
@@ -1530,37 +1598,28 @@ No es obligatorio containerizar todo el proyecto desde el día uno.
 
 # 60. Deployment target
 
-Arquitectura compatible con:
+Elegido en M10.6 (aún no aplicado en la nube):
 
 ```text
-Frontend:
-Vercel o Render
-
-Backend:
-Render Web Service
-
-Database:
-Neon PostgreSQL o Render PostgreSQL
+Frontend: Vercel
+Backend:  Render Web Service (1 instancia)
+Database: Render PostgreSQL (pago para Go-live B)
+Dominio:  app.<dominio> + api.<dominio>
 ```
 
-No atar el código a ninguno.
+Código no atado a APIs propietarias de Vercel/Neon. `TRUST_PROXY=1` solo en Render.
+
+Runbook: `docs/DEPLOYMENT.md`.
 
 ---
 
 # 61. Deployment example
 
 ```text
-Vercel
-  ↓
-Next.js PWA
-  ↓
-Render
-  ↓
-Express API
-  ↓
-Neon
-  ↓
-PostgreSQL
+Vercel  → Next.js PWA → https://app.<dominio>
+Render  → Express API → https://api.<dominio>
+Render  → PostgreSQL  (internal DATABASE_URL)
+OpenAI  ← solo desde la API
 ```
 
 OpenAI:
@@ -2199,6 +2258,16 @@ M7.6 no cambia reglas financieras ni el modelo Account. Expone la UI `/accounts`
 
 M7.7 no cambia reglas financieras ni immutability. Expone la UI `/transactions` sobre `GET/PATCH /api/transactions` y `POST /api/transactions/:id/void`. El listado puede filtrar por mes, tipo, cuenta, categoría y status. No hay paginación nueva. No hay GET por id.
 
+M10.1 agrega `GET /api/transactions/export` con los mismos query params que `GET /api/transactions`. `TransactionController.exportCsv` es thin: valida el query con `ListTransactionsQuerySchema`, resuelve el usuario configurado y llama `TransactionService.exportCsv`, que reutiliza `list` y resuelve nombres de cuenta/categoría. Respuesta `text/csv; charset=utf-8` con BOM UTF-8 (bytes `EF BB BF`), delimitador `;` (Excel español/Argentina) y `Content-Disposition: attachment; filename="movimientos.csv"`. El body se envía como buffer UTF-8. No hay fila `sep=;` (rompería Google Sheets). El frontend descarga el `arrayBuffer` crudo para no perder el BOM. No muta. No incluye `userId` ni IDs internos. No usa OpenAI.
+
+M10.2 unifica loading/error/empty en el frontend con `QueryStatus` (`LoadingState`, `ErrorState`, `EmptyState`) sobre TanStack Query. No hay API nueva. Un error de Housing en el Dashboard no reemplaza `FinancialSummary` (M7.10). USER-FLOWS #83 (offline PWA) queda fuera de M10.2.
+
+M10.3 ajusta layout responsive en `apps/web` sin interfaces separadas ni sidebar. Breakpoints: mobile `<768`, tablet `768–1023`, desktop `≥1024`, desktop-wide `≥1280` (solo nav). El header no hace wrap: brand con ellipsis; nav progresiva (Inicio + Más + Registrar; a `1024` se suman Movimientos y Cuentas; a `1280` Presupuestos y Vivienda). Más sigue visible mientras queden destinos fuera de la barra. `overflow-x: hidden` en el shell es red de seguridad; el overflow se corrige en el componente. Inputs/select/textarea usan `font-size: 1rem` para evitar zoom iOS. Safe-area vía `env(safe-area-inset-*)` y `viewportFit: cover`. No cambia API, Prisma, M9, CSV ni estados M10.2.
+
+M10.4 es security baseline (Helmet, CORS exacto, 32kb, rate limits, requestId, no-store). M10.5 agrega autenticación (email+password, sesión cookie, CORS credentials). No cambian reglas financieras ni datos QA.
+
+M10.6 deja el repo listo para desplegar (Vercel + Render, 1 instancia API, bootstrap 0/1 user, SIGTERM). No crea infraestructura. No es Go-live B. Ver `docs/DEPLOYMENT.md`.
+
 M7.9 no cambia reglas de M2.3/M2.4. Expone la UI `/transfers` sobre `POST /api/transfers` y `POST /api/currency-exchanges`. No crea EXPENSE ni INCOME.
 
 M7.10 no cambia FinancialService ni HousingService. El Dashboard `/` lee `GET /api/housing` y `GET /api/housing/:id/coverage` para reemplazar el placeholder de vivienda. Muestra la primera obligación ACTIVE del listado. No recalcula coverage. Un error de Housing no tapa el resumen financiero.
@@ -2303,19 +2372,7 @@ el servidor puede iniciar, pero AI queda deshabilitada.
 
 # 89. Graceful shutdown
 
-Backend debe cerrar conexiones correctamente al recibir:
-
-```text
-SIGTERM
-SIGINT
-```
-
-Especialmente importante en Render.
-
-Cerrar:
-
-- HTTP server;
-- Prisma client.
+`SIGTERM` / `SIGINT` (Render drain): dejar de aceptar requests (`server.close`), desconectar Prisma, `exit 0`. Timeout ~25s → `exit 1`. Ver `apps/api/src/shutdown.ts` y `maxShutdownDelaySeconds: 30` en `render.yaml`.
 
 ---
 
@@ -2347,12 +2404,15 @@ No incorporar código específico de Neon en dominio.
 
 # 92. Render considerations
 
-Si se utiliza Render:
+Blueprint de referencia: `render.yaml` (no aplicar hasta Go-live A).
 
-- utilizar health check;
-- environment variables;
-- migrations durante deployment;
-- evitar estado persistente en filesystem local.
+- `healthCheckPath: /health`
+- `preDeployCommand`: `prisma migrate deploy`
+- `numInstances: 1` (rate limit en memoria)
+- `TRUST_PROXY=1`
+- `maxShutdownDelaySeconds: 30`
+- filesystem efímero
+- `autoDeployTrigger: off` hasta que se decida auto-deploy
 
 ---
 

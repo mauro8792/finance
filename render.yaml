@@ -1,0 +1,52 @@
+# Blueprint de referencia para Go-live A.
+# NO aplicar todavía: sincronizarlo con Render CREA API + Postgres de pago.
+# Región y plan se eligen en el primer apply (la región de la DB es inmutable).
+# Una sola instancia de API: el rate limiter M10.4 vive en memoria.
+
+databases:
+  - name: personal-finance-db
+    plan: basic-256mb
+    postgresMajorVersion: 16
+
+services:
+  - type: web
+    name: personal-finance-api
+    runtime: node
+    plan: starter
+    numInstances: 1
+    healthCheckPath: /health
+    maxShutdownDelaySeconds: 30
+    autoDeployTrigger: off
+    previews:
+      generation: off
+    buildCommand: npm ci --include=dev && npm run build:shared && npm run build:api
+    preDeployCommand: npm run prisma:migrate:deploy -w api
+    startCommand: npm run start -w api
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: TRUST_PROXY
+        value: "1"
+      - key: SESSION_SECURE
+        value: "1"
+      - key: SESSION_COOKIE_NAME
+        value: pf_sid
+      - key: SESSION_TTL_DAYS
+        value: "7"
+      - key: SESSION_SECRET
+        generateValue: true
+        sync: false
+      - key: DATABASE_URL
+        fromDatabase:
+          name: personal-finance-db
+          property: connectionString
+      - key: WEB_ORIGIN
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENAI_MODEL
+        sync: false
+      - key: OPENAI_TIMEOUT_MS
+        value: "15000"
+      - key: OPENAI_MAX_RETRIES
+        value: "2"

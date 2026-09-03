@@ -15,6 +15,7 @@ import type {
   TransactionRepository,
 } from "../transactions/transaction.types.js";
 import { DEFAULT_USER_TIMEZONE } from "../users/user.types.js";
+import { zonedLocalToUtc } from "../../shared/time/month-range.js";
 import { FinancialService } from "./financial.service.js";
 
 const TZ = DEFAULT_USER_TIMEZONE;
@@ -536,17 +537,24 @@ test("FinancialService totalAvailableARS only sums active CASH BANK FUND ARS", a
   assert.equal(await service.getTotalAvailableARS(userId), "150.00");
 });
 
-test("FinancialService runway uses last valid months and returns null without history or zero average", async () => {
+test("FinancialService runway uses last valid closed months and returns null without history or zero average", async () => {
   const { service, transactions, ars } = await setup();
   assert.equal(await service.calculateRunway(userId, YEAR, MONTH, TZ), null);
 
   await movement(transactions, {
     accountId: ars.id,
     type: "INCOME",
-    amount: "7000.00",
+    amount: "8000.00",
     currency: "ARS",
     occurredAt: at(YEAR, MONTH),
     metadata: { incomeKind: "CAPITAL" },
+  });
+  await movement(transactions, {
+    accountId: ars.id,
+    type: "EXPENSE",
+    amount: "1000.00",
+    currency: "ARS",
+    occurredAt: at(YEAR, MONTH - 1),
   });
   await movement(transactions, {
     accountId: ars.id,
@@ -596,7 +604,8 @@ test("FinancialService valid month with consumption 0 still enters the average",
   });
 
   const summary = await service.getFinancialSummary(userId, YEAR, MONTH, TZ);
-  assert.equal(summary.averageMonthlyFundConsumption, "500000.00");
+  assert.equal(summary.averageMonthlyFundConsumption, "450000.00");
+  assert.equal(summary.monthlyFundConsumption, "600000.00");
 });
 
 test("FinancialService CAPITAL does not reduce fund consumption", async () => {
@@ -721,4 +730,211 @@ test("FinancialService integrated month ignores transfer, exchange and capital a
   assert.equal(summary.monthlyFundConsumption, "600000.00");
   assert.equal(summary.monthlySurplus, "0.00");
   assert.equal(summary.totalAvailableARS, "9398500.00");
+});
+
+test("FinancialService runway average excludes the open month and uses up to 3 closed valid months", async () => {
+  const { service, transactions, ars } = await setup();
+  await movement(transactions, {
+    accountId: ars.id,
+    type: "INCOME",
+    amount: "26800000.00",
+    currency: "ARS",
+    occurredAt: at(2026, 6),
+    metadata: { incomeKind: "CAPITAL" },
+  });
+  await movement(transactions, {
+    accountId: ars.id,
+    type: "EXPENSE",
+    amount: "2000000.00",
+    currency: "ARS",
+    occurredAt: at(2026, 6),
+  });
+  await movement(transactions, {
+    accountId: ars.id,
+    type: "EXPENSE",
+    amount: "2000000.00",
+    currency: "ARS",
+    occurredAt: at(2026, 7),
+  });
+  await movement(transactions, {
+    accountId: ars.id,
+    type: "EXPENSE",
+    amount: "2000000.00",
+    currency: "ARS",
+    occurredAt: at(2026, 8),
+  });
+  await movement(transactions, {
+    accountId: ars.id,
+    type: "EXPENSE",
+    amount: "15000.00",
+    currency: "ARS",
+    occurredAt: at(2026, 9, 2),
+  });
+
+  const september = await service.getFinancialSummary(userId, 2026, 9, TZ);
+  assert.equal(september.monthlyGrossExpenses, "15000.00");
+  assert.equal(september.monthlyNetExpenses, "15000.00");
+  assert.equal(september.monthlyFundConsumption, "15000.00");
+  assert.equal(september.totalAvailableARS, "20785000.00");
+  assert.equal(september.averageMonthlyFundConsumption, "2000000.00");
+  assert.equal(september.runwayMonths, "10.39");
+});
+
+test("FinancialService includes a now-closed month in the runway average after month change", async () => {
+  const { service, transactions, ars } = await setup();
+  await movement(transactions, {
+    accountId: ars.id,
+    type: "INCOME",
+    amount: "26800000.00",
+    currency: "ARS",
+    occurredAt: at(2026, 6),
+    metadata: { incomeKind: "CAPITAL" },
+  });
+  await movement(transactions, {
+    accountId: ars.id,
+    type: "EXPENSE",
+    amount: "2000000.00",
+    currency: "ARS",
+    occurredAt: at(2026, 6),
+  });
+  await movement(transactions, {
+    accountId: ars.id,
+    type: "EXPENSE",
+    amount: "2000000.00",
+    currency: "ARS",
+    occurredAt: at(2026, 7),
+  });
+  await movement(transactions, {
+    accountId: ars.id,
+    type: "EXPENSE",
+    amount: "2000000.00",
+    currency: "ARS",
+    occurredAt: at(2026, 8),
+  });
+  await movement(transactions, {
+    accountId: ars.id,
+    type: "EXPENSE",
+    amount: "15000.00",
+    currency: "ARS",
+    occurredAt: at(2026, 9, 2),
+  });
+
+  const october = await service.getFinancialSummary(userId, 2026, 10, TZ);
+  assert.equal(october.monthlyGrossExpenses, "0.00");
+  assert.equal(october.totalAvailableARS, "20785000.00");
+  assert.equal(october.averageMonthlyFundConsumption, "1338333.33");
+  assert.equal(october.runwayMonths, "15.53");
+});
+
+test("FinancialService open-month spike reduces available but not the historical average", async () => {
+  const { service, transactions, ars } = await setup();
+  await movement(transactions, {
+    accountId: ars.id,
+    type: "INCOME",
+    amount: "26800000.00",
+    currency: "ARS",
+    occurredAt: at(2026, 6),
+    metadata: { incomeKind: "CAPITAL" },
+  });
+  await movement(transactions, {
+    accountId: ars.id,
+    type: "EXPENSE",
+    amount: "2000000.00",
+    currency: "ARS",
+    occurredAt: at(2026, 6),
+  });
+  await movement(transactions, {
+    accountId: ars.id,
+    type: "EXPENSE",
+    amount: "2000000.00",
+    currency: "ARS",
+    occurredAt: at(2026, 7),
+  });
+  await movement(transactions, {
+    accountId: ars.id,
+    type: "EXPENSE",
+    amount: "2000000.00",
+    currency: "ARS",
+    occurredAt: at(2026, 8),
+  });
+  await movement(transactions, {
+    accountId: ars.id,
+    type: "EXPENSE",
+    amount: "10000000.00",
+    currency: "ARS",
+    occurredAt: at(2026, 9, 2),
+  });
+
+  const september = await service.getFinancialSummary(userId, 2026, 9, TZ);
+  assert.equal(september.monthlyGrossExpenses, "10000000.00");
+  assert.equal(september.totalAvailableARS, "10800000.00");
+  assert.equal(september.averageMonthlyFundConsumption, "2000000.00");
+  assert.equal(september.runwayMonths, "5.40");
+});
+
+test("FinancialService uses fewer than 3 closed valid months and ignores an open-only history", async () => {
+  const { service, transactions, ars } = await setup();
+  await movement(transactions, {
+    accountId: ars.id,
+    type: "INCOME",
+    amount: "5000000.00",
+    currency: "ARS",
+    occurredAt: at(2026, 8),
+    metadata: { incomeKind: "CAPITAL" },
+  });
+  await movement(transactions, {
+    accountId: ars.id,
+    type: "EXPENSE",
+    amount: "2000000.00",
+    currency: "ARS",
+    occurredAt: at(2026, 8),
+  });
+  await movement(transactions, {
+    accountId: ars.id,
+    type: "EXPENSE",
+    amount: "15000.00",
+    currency: "ARS",
+    occurredAt: at(2026, 9, 2),
+  });
+
+  const oneClosed = await service.getFinancialSummary(userId, 2026, 9, TZ);
+  assert.equal(oneClosed.averageMonthlyFundConsumption, "2000000.00");
+  assert.equal(oneClosed.monthlyGrossExpenses, "15000.00");
+  assert.equal(oneClosed.totalAvailableARS, "2985000.00");
+
+  const openOnly = await service.getFinancialSummary(userId, 2026, 8, TZ);
+  assert.equal(openOnly.monthlyGrossExpenses, "2000000.00");
+  assert.equal(openOnly.averageMonthlyFundConsumption, null);
+  assert.equal(openOnly.runwayMonths, null);
+});
+
+test("FinancialService open month for runway uses the user timezone, not UTC", async () => {
+  const { service, transactions, ars } = await setup();
+  await movement(transactions, {
+    accountId: ars.id,
+    type: "INCOME",
+    amount: "5000000.00",
+    currency: "ARS",
+    occurredAt: zonedLocalToUtc(2026, 8, 31, 23, 0, 0, TZ),
+    metadata: { incomeKind: "CAPITAL" },
+  });
+  await movement(transactions, {
+    accountId: ars.id,
+    type: "EXPENSE",
+    amount: "2000000.00",
+    currency: "ARS",
+    occurredAt: zonedLocalToUtc(2026, 8, 31, 23, 0, 0, TZ),
+  });
+  await movement(transactions, {
+    accountId: ars.id,
+    type: "EXPENSE",
+    amount: "15000.00",
+    currency: "ARS",
+    occurredAt: zonedLocalToUtc(2026, 9, 1, 1, 0, 0, TZ),
+  });
+
+  const september = await service.getFinancialSummary(userId, 2026, 9, TZ);
+  assert.equal(september.monthlyGrossExpenses, "15000.00");
+  assert.equal(september.averageMonthlyFundConsumption, "2000000.00");
+  assert.equal(september.totalAvailableARS, "2985000.00");
 });

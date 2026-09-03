@@ -24,7 +24,11 @@ function isForeignKeyViolation(error: unknown): boolean {
 test("Investment schema persists a fictional caución on PostgreSQL", async () => {
   const prisma = getPrismaClient();
   const user = await prisma.user.create({
-    data: { name: "QA Investment M6.1" },
+    data: {
+      name: "QA Investment M6.1",
+      email: `${randomUUID()}@qa.invalid`,
+      passwordHash: "invalid",
+    },
   });
   const account = await prisma.account.create({
     data: {
@@ -120,7 +124,11 @@ test("Investment schema persists a fictional caución on PostgreSQL", async () =
 test("Investment schema rejects invalid principal, rate, dates and foreign keys", async () => {
   const prisma = getPrismaClient();
   const user = await prisma.user.create({
-    data: { name: "QA Investment constraints M6.1" },
+    data: {
+      name: "QA Investment constraints M6.1",
+      email: `${randomUUID()}@qa.invalid`,
+      passwordHash: "invalid",
+    },
   });
   const account = await prisma.account.create({
     data: {

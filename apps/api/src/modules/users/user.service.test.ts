@@ -17,7 +17,7 @@ class MemoryUserRepository implements UserRepository {
     const user: User = {
       id: randomUUID(),
       name: input.name,
-      email: input.email ?? null,
+      email: input.email ?? `qa-${randomUUID()}@invalid.local`,
       timezone: input.timezone ?? DEFAULT_USER_TIMEZONE,
       createdAt: now,
       updatedAt: now,
@@ -34,6 +34,25 @@ class MemoryUserRepository implements UserRepository {
   async findFirst(): Promise<User | null> {
     return this.users.values().next().value ?? null;
   }
+
+  async findAuthByEmail(email: string) {
+    const user = [...this.users.values()].find((item) => item.email === email);
+    return user ? { user, passwordHash: "invalid" } : null;
+  }
+
+  async count() {
+    return this.users.size;
+  }
+
+  async setCredentials(userId: string, email: string) {
+    const user = this.users.get(userId);
+    if (!user) {
+      throw new Error("missing");
+    }
+    const updated = { ...user, email };
+    this.users.set(userId, updated);
+    return updated;
+  }
 }
 
 test("UserService creates a user and retrieves it by id", async () => {
@@ -44,7 +63,7 @@ test("UserService creates a user and retrieves it by id", async () => {
 
   assert.equal(found?.id, created.id);
   assert.equal(found?.name, "Usuario demo");
-  assert.equal(found?.email, null);
+  assert.equal(typeof found?.email, "string");
   assert.equal(found?.timezone, DEFAULT_USER_TIMEZONE);
 });
 

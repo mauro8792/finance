@@ -1,6 +1,7 @@
 import type { Request, Response } from "express";
 import type { ZodType } from "zod";
 import { AppError } from "../../shared/errors/app-error.js";
+import { getAuthUserId } from "../auth/auth-request.js";
 import type { UserRepository } from "../users/user.types.js";
 import { FinancialSummaryQuerySchema } from "./financial.schema.js";
 import type { FinancialService } from "./financial.service.js";
@@ -13,7 +14,7 @@ export class FinancialController {
   ) {}
 
   getSummary = async (req: Request, res: Response): Promise<void> => {
-    const user = await this.requireUser();
+    const user = await this.requireUser(req);
     const query = parseQuery(FinancialSummaryQuerySchema, req.query);
     const summary = await this.financial.getFinancialSummary(
       user.id,
@@ -24,15 +25,11 @@ export class FinancialController {
     res.status(200).json(toFinancialSummaryResponse(summary));
   };
 
-  private async requireUser() {
-    const user = await this.users.findFirst();
+  private async requireUser(req: Request) {
+    const user = await this.users.findById(getAuthUserId(req));
 
     if (!user) {
-      throw new AppError(
-        "USER_NOT_CONFIGURED",
-        "No hay un usuario configurado.",
-        500
-      );
+      throw new AppError("UNAUTHENTICATED", "Necesitás iniciar sesión.", 401);
     }
 
     return user;

@@ -16,7 +16,9 @@
     "test:web": "npm run test -w web",
     "db:up": "docker compose up -d",
     "db:down": "docker compose down",
-    "db:logs": "docker compose logs -f postgres"
+    "db:logs": "docker compose logs -f postgres",
+    "start:api": "npm run start -w api",
+    "prisma:migrate:deploy": "npm run prisma:migrate:deploy -w api"
   },
   "engines": {
     "node": ">=20"

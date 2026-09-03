@@ -11,6 +11,7 @@ export function createTransactionRouter(
 ): Router {
   const router = Router();
   router.get("/", controller.list);
+  router.get("/export", controller.exportCsv);
   router.post("/", controller.createExpense);
   router.patch("/:id", controller.update);
   router.post("/:id/void", controller.void);

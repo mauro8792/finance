@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { SiteHeader } from "./SiteHeader";
 
 describe("SiteHeader", () => {
-  it("links Inicio, Movimientos, Cuentas, Mover dinero, Presupuestos, Vivienda, Inversiones, Simulaciones and Registrar", () => {
+  it("links Inicio, Movimientos, Cuentas, Mover dinero, Presupuestos, Vivienda, Inversiones, Simulaciones, Asistente and Registrar", () => {
     render(<SiteHeader />);
     expect(screen.getByRole("link", { name: "Inicio" }).getAttribute("href")).toBe("/");
     expect(screen.getByRole("link", { name: "Registrar" }).getAttribute("href")).toBe(
@@ -31,6 +31,17 @@ describe("SiteHeader", () => {
     const simulations = screen.getAllByRole("link", { name: "Simulaciones" });
     expect(simulations.length).toBeGreaterThan(0);
     expect(simulations.every((link) => link.getAttribute("href") === "/simulations")).toBe(true);
+    const assistant = screen.getAllByRole("link", { name: "Asistente" });
+    expect(assistant.length).toBeGreaterThan(0);
+    expect(assistant.every((link) => link.getAttribute("href") === "/assistant")).toBe(true);
     expect(screen.getByText("Más")).toBeTruthy();
+    expect(screen.getAllByRole("link", { name: "Movimientos" })).toHaveLength(2);
+    expect(screen.getAllByRole("link", { name: "Cuentas" })).toHaveLength(2);
+    expect(screen.getAllByRole("link", { name: "Presupuestos" })).toHaveLength(2);
+    expect(screen.getAllByRole("link", { name: "Vivienda" })).toHaveLength(2);
+    expect(screen.getAllByRole("link", { name: "Mover dinero" })).toHaveLength(1);
+    expect(screen.getAllByRole("link", { name: "Inversiones" })).toHaveLength(1);
+    expect(screen.getAllByRole("link", { name: "Simulaciones" })).toHaveLength(1);
+    expect(screen.getAllByRole("link", { name: "Asistente" })).toHaveLength(1);
   });
 });

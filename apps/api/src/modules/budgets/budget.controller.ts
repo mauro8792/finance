@@ -1,6 +1,7 @@
 import type { Request, Response } from "express";
 import type { ZodType } from "zod";
 import { AppError } from "../../shared/errors/app-error.js";
+import { getAuthUserId } from "../auth/auth-request.js";
 import type { UserRepository } from "../users/user.types.js";
 import {
   BudgetIdParamsSchema,
@@ -17,40 +18,26 @@ export class BudgetController {
   ) {}
 
   list = async (req: Request, res: Response): Promise<void> => {
-    const userId = await this.requireUserId();
+    const userId = getAuthUserId(req);
     const query = parseValue(ListBudgetsQuerySchema, req.query);
     const items = await this.budgets.listByPeriod(userId, query.year, query.month);
     res.status(200).json(items.map(toBudgetViewResponse));
   };
 
   create = async (req: Request, res: Response): Promise<void> => {
-    const userId = await this.requireUserId();
+    const userId = getAuthUserId(req);
     const body = parseValue(CreateBudgetSchema, req.body);
     const created = await this.budgets.create(userId, body);
     res.status(201).json(toBudgetViewResponse(created));
   };
 
   update = async (req: Request, res: Response): Promise<void> => {
-    const userId = await this.requireUserId();
+    const userId = getAuthUserId(req);
     const { id } = parseValue(BudgetIdParamsSchema, req.params);
     const body = parseValue(UpdateBudgetSchema, req.body);
     const updated = await this.budgets.updateAmount(userId, id, body.amount);
     res.status(200).json(toBudgetViewResponse(updated));
   };
-
-  private async requireUserId(): Promise<string> {
-    const user = await this.users.findFirst();
-
-    if (!user) {
-      throw new AppError(
-        "USER_NOT_CONFIGURED",
-        "No hay un usuario configurado.",
-        500
-      );
-    }
-
-    return user.id;
-  }
 }
 
 function parseValue<T>(schema: ZodType<T>, data: unknown): T {

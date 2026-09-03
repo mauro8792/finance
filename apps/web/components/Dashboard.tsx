@@ -2,7 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
-import { getFinancialSummary, getHousing, getHousingCoverage } from "../lib/api";
+import { getFinancialSummary, getHousing, getHousingCoverage, isUnauthorizedError } from "../lib/api";
 import {
   barSharePercent,
   currentYearMonth,
@@ -16,6 +16,7 @@ import {
 } from "../lib/format-money";
 import { firstActiveHousing } from "../lib/housing";
 import type { FinancialSummary, HousingCoverage, HousingObligation } from "../lib/types";
+import { ErrorState } from "./QueryStatus";
 import styles from "./Dashboard.module.css";
 
 type DashboardProps = {
@@ -44,13 +45,13 @@ export function Dashboard({ year, month }: DashboardProps) {
 
       {query.isPending ? <DashboardSkeleton /> : null}
 
-      {query.isError ? (
-        <div className={styles.error} role="alert">
-          <p>No pudimos cargar tu resumen. Probá de nuevo.</p>
-          <button type="button" className={styles.retry} onClick={() => query.refetch()}>
-            Reintentar
-          </button>
-        </div>
+      {query.isError && !isUnauthorizedError(query.error) ? (
+        <ErrorState
+          message="No pudimos cargar tu resumen. Probá de nuevo."
+          onRetry={() => {
+            void query.refetch();
+          }}
+        />
       ) : null}
 
       {query.data ? <DashboardBody summary={query.data} /> : null}
@@ -206,10 +207,17 @@ function HousingSummary() {
 
   if (list.isError || (selected && coverage.isError)) {
     return (
-      <div className={styles.housing}>
-        <span>Vivienda</span>
-        <strong>No se pudo cargar</strong>
-      </div>
+      <ErrorState
+        compact
+        message="No pudimos cargar tu vivienda. Probá de nuevo."
+        onRetry={() => {
+          if (list.isError) {
+            void list.refetch();
+            return;
+          }
+          void coverage.refetch();
+        }}
+      />
     );
   }
 
@@ -224,10 +232,13 @@ function HousingSummary() {
 
   if (!coverage.data) {
     return (
-      <div className={styles.housing}>
-        <span>Vivienda {selected.currency}</span>
-        <strong>No se pudo cargar</strong>
-      </div>
+      <ErrorState
+        compact
+        message="No pudimos cargar tu vivienda. Probá de nuevo."
+        onRetry={() => {
+          void coverage.refetch();
+        }}
+      />
     );
   }
 

@@ -1113,6 +1113,8 @@ Los USD reservados para vivienda no entran automáticamente en ese cálculo.
 
 Un mes es válido para el promedio si tiene al menos un `EXPENSE` `ACTIVE` `ARS`. Si ese mes tiene consumo 0, igualmente participa.
 
+El promedio usado para runway considera hasta los últimos 3 meses calendario cerrados válidos anteriores al mes calendario del resumen. El mes corriente no forma parte del promedio mientras esté abierto, aunque sus movimientos sí afectan `totalAvailableARS` y las métricas del mes.
+
 ---
 
 # 37. Scenario
@@ -1354,13 +1356,19 @@ Primero debe generar una propuesta.
 
 ```ts
 AIParsedTransaction {
-  type
-  amount
-  currency
-  category
-  description
+  type: "EXPENSE" | "INCOME" | null
+  amount: string | null
+  currency: "ARS" | "USD" | null
+  categoryHint: string | null
+  accountHint: string | null
+  description: string | null
+  occurredAt: string | null
+  paymentMethod: PaymentMethod | null
+  incomeKind: "OPERATING" | "CAPITAL" | null
 }
 ```
+
+El resultado de parseo es `{ transactions: AIParsedTransaction[], ambiguities: string[] }`. Es propuesta, no persistencia. El schema canónico está en `AI-SPEC.md`.
 
 Flujo:
 

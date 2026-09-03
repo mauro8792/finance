@@ -289,12 +289,13 @@ No convertir USD a ARS.
 
 MVP:
 
-- utilizar hasta los últimos 3 meses válidos;
+- utilizar hasta los últimos 3 meses calendario **cerrados** válidos anteriores al mes calendario solicitado (el mes del Dashboard / `year`+`month` de `getFinancialSummary`);
+- el mes corriente no forma parte del promedio mientras esté abierto, aunque sus movimientos sí afectan balances y métricas del mes;
 - un mes es válido si tiene al menos un `EXPENSE` `ACTIVE` `ARS` en el mes calendario del usuario;
 - INCOME, CAPITAL, REIMBURSEMENT, TRANSFER, CURRENCY_EXCHANGE o VOIDED no hacen válido un mes por sí solos;
 - si el mes es válido y `fundConsumption = 0`, el mes aporta 0 al promedio;
-- si sólo existe un mes válido, utilizar ese mes;
-- si no existe ningún mes válido: `averageMonthlyFundConsumption = null` y `runwayMonths = null`;
+- si sólo existe un mes cerrado válido, utilizar ese mes;
+- si no existe ningún mes cerrado válido: `averageMonthlyFundConsumption = null` y `runwayMonths = null`;
 - si el promedio resulta 0: `runwayMonths = null`.
 
 No devolver infinito.

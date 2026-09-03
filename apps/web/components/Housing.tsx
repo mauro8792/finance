@@ -38,6 +38,7 @@ import type {
   HousingObligation,
   HousingPayment,
 } from "../lib/types";
+import { EmptyState, ErrorState, LoadingState } from "./QueryStatus";
 import styles from "./Housing.module.css";
 
 type Panel =
@@ -85,25 +86,19 @@ export function HousingPage() {
       {query.isPending ? <HousingSkeleton /> : null}
 
       {query.isError ? (
-        <div className={styles.error} role="alert">
-          <p>No pudimos cargar tu vivienda. Probá de nuevo.</p>
-          <button type="button" className={styles.retry} onClick={() => query.refetch()}>
-            Reintentar
-          </button>
-        </div>
+        <ErrorState
+          message="No pudimos cargar tu vivienda. Probá de nuevo."
+          onRetry={() => {
+            void query.refetch();
+          }}
+        />
       ) : null}
 
       {query.data && query.data.length === 0 && panel?.mode !== "create" ? (
-        <div className={styles.empty}>
-          <p>Aún no configuraste tu vivienda.</p>
-          <button
-            type="button"
-            className={styles.primaryCta}
-            onClick={() => setPanel({ mode: "create" })}
-          >
-            Configurar vivienda
-          </button>
-        </div>
+        <EmptyState
+          message="Aún no configuraste tu vivienda."
+          action={{ label: "Configurar vivienda", onClick: () => setPanel({ mode: "create" }) }}
+        />
       ) : null}
 
       {query.data && query.data.length > 0 ? (
@@ -218,20 +213,29 @@ function HousingCoverageCard({ obligationId }: { obligationId: string }) {
 
   if (query.isPending) {
     return (
-      <section className={styles.coverage} aria-busy="true">
+      <section className={styles.coverage}>
         <h3 className={styles.sectionTitle}>Cobertura</h3>
-        <p>Cargando cobertura</p>
+        <LoadingState label="Cargando cobertura" />
       </section>
     );
   }
 
-  if (query.isError || !query.data) {
+  if (query.isError) {
     return (
-      <section className={styles.coverage} role="alert">
+      <section className={styles.coverage}>
         <h3 className={styles.sectionTitle}>Cobertura</h3>
-        <p>No pudimos cargar la cobertura.</p>
+        <ErrorState
+          message="No pudimos cargar la cobertura. Probá de nuevo."
+          onRetry={() => {
+            void query.refetch();
+          }}
+        />
       </section>
     );
+  }
+
+  if (!query.data) {
+    return null;
   }
 
   return <CoverageBody coverage={query.data} />;
@@ -284,18 +288,23 @@ function HousingPaymentHistory({ obligationId }: { obligationId: string }) {
 
   if (query.isPending) {
     return (
-      <section className={styles.history} aria-busy="true">
+      <section className={styles.history}>
         <h3 className={styles.sectionTitle}>Historial de pagos</h3>
-        <p>Cargando pagos</p>
+        <LoadingState label="Cargando pagos" />
       </section>
     );
   }
 
   if (query.isError) {
     return (
-      <section className={styles.history} role="alert">
+      <section className={styles.history}>
         <h3 className={styles.sectionTitle}>Historial de pagos</h3>
-        <p>No pudimos cargar el historial.</p>
+        <ErrorState
+          message="No pudimos cargar el historial. Probá de nuevo."
+          onRetry={() => {
+            void query.refetch();
+          }}
+        />
       </section>
     );
   }
@@ -306,7 +315,7 @@ function HousingPaymentHistory({ obligationId }: { obligationId: string }) {
     <section className={styles.history}>
       <h3 className={styles.sectionTitle}>Historial de pagos</h3>
       {payments.length === 0 ? (
-        <p>Aún no registraste pagos.</p>
+        <EmptyState message="Aún no registraste pagos." />
       ) : (
         <ul className={styles.paymentList}>
           {payments.map((payment) => (

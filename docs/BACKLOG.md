@@ -419,6 +419,7 @@ Decisiones cerradas:
 totalAvailableARS = CASH + BANK + FUND, ARS, isActive
 mes válido = ≥1 EXPENSE ACTIVE ARS
 consumo 0 en mes válido entra al promedio
+promedio runway = hasta 3 meses calendario cerrados anteriores al mes del resumen (M9.2.1)
 sin mes válido → average y runway null
 promedio 0 → runway null
 sin HTTP (M3.2)
@@ -827,7 +828,7 @@ Reemplazar el placeholder “Vivienda USD — Aún no disponible” por coverage
 
 ## M8.1 — OpenAIClient
 
-**P0 / TODO**
+**P0 / DONE**
 
 Wrapper server-side.
 
@@ -840,7 +841,7 @@ Wrapper server-side.
 
 ## M8.2 — Parse transaction schema
 
-**P0 / TODO**
+**P0 / DONE**
 
 Structured Output validado.
 
@@ -848,7 +849,7 @@ Structured Output validado.
 
 ## M8.3 — Parser endpoint
 
-**P0 / TODO**
+**P0 / DONE**
 
 ```text
 POST /api/ai/parse-transaction
@@ -860,17 +861,45 @@ No persistir.
 
 ## M8.4 — AI Quick Input UI
 
-**P0 / TODO**
+**P0 / DONE**
 
 Input → preview → confirm/edit/cancel.
 
 ---
 
+## M8.4.1 — Category-aware parsing
+
+**P0 / DONE**
+
+El parser recibe las categorías reales del usuario (nombres + tipo) vía `CategoryService` (READ ONLY).
+
+- La IA sólo puede sugerir una categoría existente.
+- `categoryHint` es el nombre canónico; nunca un `categoryId` inventado.
+- Matching final determinístico: exact name, case-insensitive, match único.
+- Sin categorías o sin clasificación clara: `categoryHint = null`.
+- EXPENSE sólo puede mapear a categorías `EXPENSE` o `BOTH`; INCOME a `INCOME` o `BOTH`.
+- El backend rechaza hints fuera del allow-list (null + ambigüedad `categoría no reconocida`).
+- No hay fuzzy match local ni account-aware parsing en esta tarea.
+- Una sola llamada OpenAI por parse.
+- Request del browser sigue siendo `{ "text" }`.
+- No persiste. No crea/modifica categorías.
+
+---
+
 ## M8.5 — Multiple parsed transactions
 
-**P1 / TODO**
+**P1 / DONE**
 
-Soportar múltiples propuestas.
+Soportar múltiples propuestas independientes en el mismo parse.
+
+- Una entrada → una llamada OpenAI → `transactions[]` de 0, 1 o N ítems.
+- Confirmación individual: Editar / Guardar / Descartar por propuesta.
+- No hay “Guardar todos” ni `POST /api/ai/confirm-all`.
+- Guardar usa `POST /api/transactions` por ítem.
+- Fallos parciales: lo guardado sigue guardado; el que falló permite retry/edit.
+- Category-aware M8.4.1 se aplica a cada propuesta.
+- 1 movimiento mantiene la UX de M8.4.
+- 0 movimientos: mensaje amigable y el texto se puede corregir.
 
 ---
 
@@ -878,37 +907,55 @@ Soportar múltiples propuestas.
 
 ## M9.1 — Tool layer
 
-**P0 / TODO**
+**P0 / DONE**
 
-Exponer Services como tools controladas.
+Exponer Services como tools controladas READ-ONLY.
+
+Catálogo M9.1:
+
+- `get_financial_summary`
+- `get_month_summary`
+- `get_transactions`
+- `get_housing_summary`
+- `get_accounts_summary`
+
+`AiToolRegistry` valida args (Zod strict), inyecta userId/timeZone, no habla con Prisma ni con OpenAIClient. Sin SimulationService.
 
 ---
 
 ## M9.2 — AI chat endpoint
 
-**P0 / TODO**
+**P0 / DONE**
 
 ```text
 POST /api/ai/chat
 ```
 
+`AiAssistantService` + tools M9.1. Máximo 4 rondas. Sin UI. Sin memoria. Sin SimulationService.
+
+---
+
+## M9.2.1 — Current-month runway averaging
+
+**P0 / DONE**
+
+`averageMonthlyFundConsumption` usa hasta los últimos 3 meses calendario cerrados válidos anteriores al mes del resumen. El mes corriente no entra al promedio mientras está abierto; sí afecta balances y métricas del mes. `FinancialService` es la autoridad. Tools/Dashboard/SimulationService no recalculan.
+
 ---
 
 ## M9.3 — Financial Q&A UI
 
-**P1 / TODO**
+**P1 / DONE**
 
-Chat simple.
-
-No memoria compleja.
+Ruta `/assistant` (“Asistente”). Chat simple: última pregunta + última respuesta de la sesión. Sin Conversation, historial persistido ni memoria en backend. El frontend envía sólo `{ message }` a `POST /api/ai/chat`. Preguntas sugeridas factuales (sin simulaciones).
 
 ---
 
 ## M9.4 — Simulation tools
 
-**P1 / TODO**
+**P1 / DONE**
 
-AI puede invocar SimulationService.
+Tools READ-ONLY `simulate_no_income`, `simulate_new_job`, `simulate_housing_reserve` delegan en SimulationService. Sin persistir Scenario. Sin mutar cuentas/FX/vivienda. Sin inventar salario ni FX. Escenarios etiquetados como hipotéticos.
 
 ---
 
@@ -916,62 +963,55 @@ AI puede invocar SimulationService.
 
 ## M10.1 — CSV export
 
-**P1 / TODO**
+**P1 / DONE — QA MANUAL PASS**
 
-Exportar movimientos con filtros.
+`GET /api/transactions/export` reutiliza exactamente los filtros de `GET /api/transactions`. CSV UTF-8 con BOM y delimitador `;` (Excel español/Argentina). Acción "Exportar CSV" en `/transactions`. READ-ONLY: no muta movimientos ni datos financieros.
+
+Validación manual: export sin filtros y con Mes = Agosto. Excel abre columnas, UTF-8/tildes/ñ correctos, sin IDs ni `userId`, y el CSV respeta los filtros activos.
 
 ---
 
 ## M10.2 — Empty/error/loading states
 
-**P0 / TODO**
+**P0 / DONE**
 
-Todas las pantallas principales.
+Estados de loading / error / empty en pantallas principales (Dashboard, Registrar manual, Movimientos, Cuentas, Transferencias, Presupuestos, Vivienda, Inversiones, Simulaciones). `QueryStatus` reutilizable (loading/error/empty + retry + CTA). Sin detección offline (USER-FLOWS #83). Dashboard: `$0` es dato válido; runway null sigue “Sin datos suficientes”; error de vivienda no tapa el resumen (M7.10). QuickAddForm: empty sin cuentas + CTA `/accounts`; persistencia “No pudimos guardar el movimiento.”; submit disabled. No se tocó M9 ni M10.1.
 
 ---
 
 ## M10.3 — Responsive review
 
-**P0 / TODO**
+**P0 / DONE — QA PASS**
 
-Revisar mobile/tablet/desktop.
+Misma app en mobile/tablet/desktop (sin sidebar ni bottom nav). Header de una fila, sin wrap: `<1024` Inicio · Más · Registrar; `≥1024` + Movimientos y Cuentas; `≥1280` + Presupuestos y Vivienda si entran. Más permanece mientras haya destinos ocultos (Mover dinero, Inversiones, Simulaciones, Asistente). Dashboard: métricas 1 col en mobile; secondary 1/2/3 col. Filtros de movimientos 1/2/3 col. Inputs nativos ≥16px. Safe-area en header/main. No se tocó M9, M10.1, M10.2, API ni Prisma.
 
 ---
 
 ## M10.4 — Security baseline
 
-**P0 / TODO**
+**P0 / DONE**
 
-- helmet;
-- CORS;
-- body limits;
-- validation;
-- secrets;
-- logs.
+Helmet (CORP `cross-origin` para web `:3000` → API `:3001`), CORS allowlist (`WEB_ORIGIN`; obligatorio y fail-fast en production; nunca `*`), `express.json({ limit: "32kb" })`, Zod max 2000/4000 en AI, errores sin stack, 500 genérico, requestId, logs JSON sin bodies/secrets, `Cache-Control: no-store` en `/api/*` y `/health`, rate limit 120/15min en `/api` y 20/15min en `/api/ai` (health exento, store en memoria). `TRUST_PROXY=1` solo explícito (Render). **Security baseline ≠ authentication** (la identidad `findFirst()` se reemplazó en M10.5). Deuda: `npm audit` high en Prisma CLI / `deepmerge-ts` (no se hizo `audit fix --force`).
+
+Gates canónicos `npm run typecheck -w api` y `npm run build:api`: **PASS** (tras detener `dev:api`, que bloqueaba `query_engine-windows.dll.node` en Windows).
 
 ---
 
 ## M10.5 — Auth antes de producción pública
 
-**P0 / TODO**
+**P0 / DONE**
 
-Elegir e implementar mecanismo simple de autenticación.
+Email + password propio, registro cerrado, sesión server-side en Postgres, cookie `httpOnly` `pf_sid`. `findFirst()` fuera del request path; identidad = `req.auth.userId`. CORS con credentials. CSRF: `SameSite=Lax` + `Origin === WEB_ORIGIN` en mutaciones. Login limiter 5/15 min. `/health` y login/logout públicos; el resto de `/api` autenticado. Datos QA ficticios no se migraron (mismo userId; 1 user / 2 accounts / 7 transactions). **No hay deploy público:** M10.6 debe usar web y API same-site (`app.<dominio>` + `api.<dominio>`). Reset de password: script local, sin email.
 
-No desplegar información financiera públicamente sin protección.
+Gates: typecheck API PASS, test:api 530/530, build API PASS, typecheck web PASS, test:web 240/240, build web PASS, prisma validate/generate PASS, migrations up to date. `npm audit`: 3 high `deepmerge-ts` vía Prisma CLI (no `audit fix --force`).
 
 ---
 
 ## M10.6 — Deployment
 
-**P1 / TODO**
+**P1 / DONE (readiness en repo; no Go-live A/B)**
 
-Arquitectura objetivo compatible con:
-
-```text
-Web: Vercel/Render
-API: Render
-DB: Neon/Render PostgreSQL
-```
+Stack documentado: Web Vercel, API Render (1 instancia), DB Render Postgres. Same-site `app.<dominio>` + `api.<dominio>`. `render.yaml` + `apps/web/vercel.json` de referencia (**no aplicados**: no se crearon servicios ni DB prod). Bootstrap 0→crea 1 / 1→actualiza / >1 FAIL FAST. SIGTERM/SIGINT cierra HTTP + Prisma. Runbook `docs/DEPLOYMENT.md`. Go-live A ≠ Go-live B; M10.6 **no** autoriza datos reales. Retención/PITR de backups a verificar contra el plan contratado. Datos QA ficticios no se copiaron.
 
 ---
 

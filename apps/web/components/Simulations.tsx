@@ -33,6 +33,7 @@ import type {
   SimulationResponse,
   SimulationType,
 } from "../lib/types";
+import { ErrorState, LoadingState } from "./QueryStatus";
 import styles from "./Simulations.module.css";
 
 const SCENARIOS: SimulationType[] = [
@@ -387,14 +388,12 @@ function HousingForm({
   return (
     <form className={styles.form} onSubmit={onSubmit} aria-busy={pending}>
       <h2 className={styles.formTitle}>Reserva vivienda</h2>
-      {loading ? <p className={styles.loading}>Cargando obligaciones de vivienda</p> : null}
+      {loading ? <LoadingState label="Cargando obligaciones de vivienda" /> : null}
       {loadError ? (
-        <div className={styles.error} role="alert">
-          <p>No pudimos cargar tu vivienda. Probá de nuevo.</p>
-          <button type="button" className={styles.retry} onClick={onRetry}>
-            Reintentar
-          </button>
-        </div>
+        <ErrorState
+          message="No pudimos cargar tu vivienda. Probá de nuevo."
+          onRetry={onRetry}
+        />
       ) : null}
       {!loading && !loadError && obligations.length === 0 ? (
         <p className={styles.formHint}>

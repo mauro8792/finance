@@ -1262,7 +1262,11 @@ Campos:
 - descripción;
 - importe;
 - moneda;
-- cuenta.
+- cuenta;
+- estado;
+- clasificación (OPERATING/CAPITAL cuando el movimiento es INCOME);
+- reembolso;
+- medio de pago.
 
 Exportación Excel avanzada queda para una versión posterior.
 

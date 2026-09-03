@@ -149,6 +149,18 @@ class MemoryUserRepository implements UserRepository {
   async findFirst(): Promise<User | null> {
     return this.user;
   }
+
+  async findAuthByEmail() {
+    return { user: this.user, passwordHash: "invalid" };
+  }
+
+  async count() {
+    return 1;
+  }
+
+  async setCredentials() {
+    return this.user;
+  }
 }
 
 class MemoryTransactionRepository implements TransactionRepository {
@@ -232,7 +244,7 @@ function userOf(id: string): User {
   return {
     id,
     name: "QA Budget",
-    email: null,
+    email: "qa@example.test",
     timezone: TZ,
     createdAt: now,
     updatedAt: now,

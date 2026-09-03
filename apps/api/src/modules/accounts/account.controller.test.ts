@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { test } from "node:test";
+import { stubAuth } from "../../middlewares/require-auth.js";
 import express from "express";
 import request from "supertest";
 import { getPrismaClient } from "../../shared/db/prisma.js";
@@ -46,6 +47,20 @@ class MemoryUserRepository implements UserRepository {
     return id === this.user.id ? this.user : null;
   }
   async findFirst(): Promise<User | null> {
+    return this.user;
+  }
+  async findAuthByEmail(email: string): Promise<import("../users/user.types.js").UserAuthRecord | null> {
+    return this.user && this.user.email === email
+      ? { user: this.user, passwordHash: "invalid" }
+      : null;
+  }
+  async count(): Promise<number> {
+    return this.user ? 1 : 0;
+  }
+  async setCredentials(): Promise<User> {
+    if (!this.user) {
+      throw new Error("no user");
+    }
     return this.user;
   }
 }
@@ -162,7 +177,7 @@ class MemoryTransactionRepository implements TransactionRepository {
 const user: User = {
   id: randomUUID(),
   name: "QA Accounts HTTP",
-  email: null,
+    email: "qa@example.test",
   timezone: TZ,
   createdAt: new Date(),
   updatedAt: new Date(),
@@ -170,6 +185,7 @@ const user: User = {
 
 function appWith(accounts = new MemoryAccountRepository(), transactions = new MemoryTransactionRepository()) {
   const app = express();
+  app.use(stubAuth(user.id));
   app.use(express.json());
   app.use(
     "/api/accounts",
@@ -241,8 +257,12 @@ test("POST /api/accounts QA Fondo on PostgreSQL: CAPITAL 100000 updates balance 
     create: async () => owner,
     findById: async (id: string) => (id === owner.id ? owner : null),
     findFirst: async () => owner,
+    findAuthByEmail: async () => ({ user: owner, passwordHash: "invalid" }),
+    count: async () => 1,
+    setCredentials: async () => owner,
   };
   const app = express();
+  app.use(stubAuth(owner.id));
   app.use(express.json());
   app.use(
     "/api/accounts",

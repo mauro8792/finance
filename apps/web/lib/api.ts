@@ -19,6 +19,12 @@ import type {
   Investment,
   CreateInvestmentRequest,
   MatureInvestmentRequest,
+  ParseTransactionRequest,
+  ParseTransactionResponse,
+  ChatRequest,
+  ChatResponse,
+  AuthUser,
+  LoginRequest,
   RegisterHousingPaymentRequest,
   RenewInvestmentRequest,
   RenewInvestmentResult,
@@ -31,6 +37,7 @@ import type {
   UpdateHousingRequest,
   UpdateTransactionRequest,
 } from "./types";
+import { downloadBlob } from "./download-file";
 
 export class ApiClientError extends Error {
   constructor(
@@ -41,6 +48,24 @@ export class ApiClientError extends Error {
     super(message);
     this.name = "ApiClientError";
   }
+}
+
+const AUTH_LOGIN_PATH = "/api/auth/login";
+
+let onUnauthorized: (() => void) | null = null;
+
+export function setOnUnauthorized(handler: (() => void) | null): void {
+  onUnauthorized = handler;
+}
+
+function notifyUnauthorized(path: string, status: number): void {
+  if (status === 401 && path !== AUTH_LOGIN_PATH) {
+    onUnauthorized?.();
+  }
+}
+
+export function isUnauthorizedError(error: unknown): boolean {
+  return error instanceof ApiClientError && error.status === 401 && error.code !== "INVALID_CREDENTIALS";
 }
 
 function trimTrailingSlash(url: string): string {
@@ -77,6 +102,7 @@ async function readError(response: Response): Promise<ApiClientError> {
 async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(apiUrl(path), {
     ...init,
+    credentials: "include",
     headers: {
       Accept: "application/json",
       ...(init?.body ? { "Content-Type": "application/json" } : {}),
@@ -85,7 +111,12 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
   });
 
   if (!response.ok) {
+    notifyUnauthorized(path, response.status);
     throw await readError(response);
+  }
+
+  if (response.status === 204) {
+    return undefined as T;
   }
 
   return (await response.json()) as T;
@@ -135,6 +166,25 @@ export async function getCategories(): Promise<Category[]> {
 export async function getTransactions(
   filters: TransactionListFilters = {}
 ): Promise<Transaction[]> {
+  return requestJson<Transaction[]>(`/api/transactions${transactionListQuery(filters)}`);
+}
+
+export async function exportTransactionsCsv(
+  filters: TransactionListFilters = {}
+): Promise<void> {
+  const response = await fetch(
+    apiUrl(`/api/transactions/export${transactionListQuery(filters)}`),
+    { credentials: "include" }
+  );
+  if (!response.ok) {
+    notifyUnauthorized("/api/transactions/export", response.status);
+    throw await readError(response);
+  }
+  const body = await response.arrayBuffer();
+  downloadBlob(new Blob([body], { type: "text/csv;charset=utf-8" }), "movimientos.csv");
+}
+
+function transactionListQuery(filters: TransactionListFilters): string {
   const params = new URLSearchParams();
   if (filters.month !== undefined) {
     params.set("month", String(filters.month));
@@ -155,7 +205,7 @@ export async function getTransactions(
     params.set("status", filters.status);
   }
   const query = params.toString();
-  return requestJson<Transaction[]>(`/api/transactions${query ? `?${query}` : ""}`);
+  return query ? `?${query}` : "";
 }
 
 export async function createTransaction(
@@ -315,4 +365,35 @@ export async function runSimulation(
     method: "POST",
     body: JSON.stringify(payload),
   });
+}
+
+export async function parseTransaction(
+  payload: ParseTransactionRequest
+): Promise<ParseTransactionResponse> {
+  return requestJson<ParseTransactionResponse>("/api/ai/parse-transaction", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function askAssistant(payload: ChatRequest): Promise<ChatResponse> {
+  return requestJson<ChatResponse>("/api/ai/chat", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function login(payload: LoginRequest): Promise<{ user: AuthUser }> {
+  return requestJson<{ user: AuthUser }>("/api/auth/login", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function getMe(): Promise<{ user: AuthUser }> {
+  return requestJson<{ user: AuthUser }>("/api/auth/me");
+}
+
+export async function logout(): Promise<void> {
+  await requestJson<void>("/api/auth/logout", { method: "POST" });
 }

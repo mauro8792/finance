@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import { APP_NAME } from "shared";
 import { RegisterServiceWorker } from "../components/RegisterServiceWorker";
 import { Providers } from "../components/Providers";
-import { SiteHeader } from "../components/SiteHeader";
+import { AuthGate, AuthHeader, AuthProvider } from "../components/AuthProvider";
 import "./globals.css";
 import styles from "./layout.module.css";
 
@@ -30,6 +30,7 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   themeColor: "#0f766e",
+  viewportFit: "cover",
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
@@ -38,10 +39,14 @@ export default function RootLayout({ children }: { children: ReactNode }) {
       <body>
         <RegisterServiceWorker />
         <Providers>
-          <div className={styles.shell}>
-            <SiteHeader />
-            <main className={styles.main}>{children}</main>
-          </div>
+          <AuthProvider>
+            <div className={styles.shell}>
+              <AuthHeader />
+              <main className={styles.main}>
+                <AuthGate>{children}</AuthGate>
+              </main>
+            </div>
+          </AuthProvider>
         </Providers>
       </body>
     </html>

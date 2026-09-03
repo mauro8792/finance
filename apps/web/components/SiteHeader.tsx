@@ -2,7 +2,7 @@ import Link from "next/link";
 import { APP_NAME } from "shared";
 import styles from "./SiteHeader.module.css";
 
-export function SiteHeader() {
+export function SiteHeader({ onLogout }: { onLogout?: () => void }) {
   return (
     <header className={styles.header}>
       <Link href="/" className={styles.brand}>
@@ -12,43 +12,34 @@ export function SiteHeader() {
         <Link href="/" className={styles.homeLink}>
           Inicio
         </Link>
-        <Link href="/transactions" className={`${styles.homeLink} ${styles.desktopOnly}`}>
+        <Link href="/transactions" className={`${styles.homeLink} ${styles.showFrom1024}`}>
           Movimientos
         </Link>
-        <Link href="/accounts" className={`${styles.homeLink} ${styles.desktopOnly}`}>
+        <Link href="/accounts" className={`${styles.homeLink} ${styles.showFrom1024}`}>
           Cuentas
         </Link>
-        <Link href="/transfers" className={`${styles.homeLink} ${styles.desktopOnly}`}>
-          Mover dinero
-        </Link>
-        <Link href="/budgets" className={`${styles.homeLink} ${styles.desktopOnly}`}>
+        <Link href="/budgets" className={`${styles.homeLink} ${styles.showFrom1280}`}>
           Presupuestos
         </Link>
-        <Link href="/housing" className={`${styles.homeLink} ${styles.desktopOnly}`}>
+        <Link href="/housing" className={`${styles.homeLink} ${styles.showFrom1280}`}>
           Vivienda
-        </Link>
-        <Link href="/investments" className={`${styles.homeLink} ${styles.desktopOnly}`}>
-          Inversiones
-        </Link>
-        <Link href="/simulations" className={`${styles.homeLink} ${styles.desktopOnly}`}>
-          Simulaciones
         </Link>
         <details className={styles.more}>
           <summary className={styles.moreSummary}>Más</summary>
           <div className={styles.moreMenu}>
-            <Link href="/transactions" className={styles.moreLink}>
+            <Link href="/transactions" className={`${styles.moreLink} ${styles.hideFrom1024}`}>
               Movimientos
             </Link>
-            <Link href="/accounts" className={styles.moreLink}>
+            <Link href="/accounts" className={`${styles.moreLink} ${styles.hideFrom1024}`}>
               Cuentas
             </Link>
             <Link href="/transfers" className={styles.moreLink}>
               Mover dinero
             </Link>
-            <Link href="/budgets" className={styles.moreLink}>
+            <Link href="/budgets" className={`${styles.moreLink} ${styles.hideFrom1280}`}>
               Presupuestos
             </Link>
-            <Link href="/housing" className={styles.moreLink}>
+            <Link href="/housing" className={`${styles.moreLink} ${styles.hideFrom1280}`}>
               Vivienda
             </Link>
             <Link href="/investments" className={styles.moreLink}>
@@ -57,11 +48,19 @@ export function SiteHeader() {
             <Link href="/simulations" className={styles.moreLink}>
               Simulaciones
             </Link>
+            <Link href="/assistant" className={styles.moreLink}>
+              Asistente
+            </Link>
           </div>
         </details>
         <Link href="/registrar" className={styles.navLink}>
           Registrar
         </Link>
+        {onLogout ? (
+          <button type="button" className={styles.logout} onClick={onLogout}>
+            Salir
+          </button>
+        ) : null}
       </nav>
     </header>
   );
