@@ -94,12 +94,18 @@ export function requireCurrencyExchangeDirection(
 export function balanceDirection(movement: {
   type: TransactionType;
   metadata: unknown;
-}): BalanceDirection {
+  accountId?: string | null;
+  creditCardId?: string | null;
+}): BalanceDirection | null {
   if (movement.type === "INCOME" || movement.type === "REIMBURSEMENT") {
     return "credit";
   }
 
   if (movement.type === "EXPENSE") {
+    // P0.5 F1: card-funded EXPENSE is recognized spending, not a bank debit.
+    if (movement.accountId == null) {
+      return null;
+    }
     return "debit";
   }
 
@@ -149,14 +155,17 @@ export function fromCents(cents: bigint): string {
 
 export function computeBalance(
   initialBalance: string,
-  movements: Pick<Transaction, "type" | "metadata" | "amount">[]
+  movements: Pick<Transaction, "type" | "metadata" | "amount" | "accountId">[]
 ): string {
   let cents = toCents(initialBalance);
 
   for (const movement of movements) {
+    const direction = balanceDirection(movement);
+    if (direction === null) {
+      continue;
+    }
     const amount = toCents(movement.amount);
-    cents =
-      balanceDirection(movement) === "credit" ? cents + amount : cents - amount;
+    cents = direction === "credit" ? cents + amount : cents - amount;
   }
 
   return fromCents(cents);

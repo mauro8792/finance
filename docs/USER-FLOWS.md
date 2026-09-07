@@ -974,37 +974,67 @@ status = VOIDED
 
 # 31. Compra con tarjeta de crédito
 
-Flujo cotidiano:
+## 31.1 Legacy MVP1 (LEAVE)
 
 ```text
 Registrar gasto
 ↓
 PaymentMethod = CREDIT_CARD
 ↓
+accountId de una cuenta
+↓
 Guardar
 ```
 
-El gasto se contabiliza en la fecha de compra.
+El gasto debitaba la cuenta en la fecha de compra. Esos movimientos **no se migran** en P0.
 
-Ejemplo:
+## 31.2 Flujo MVP2 (objetivo)
+
+```text
+Elegir tarjeta (CreditCard)
+↓
+Crear CreditCardPurchase (+ installments)
+↓
+Reconocer cuota(s) → EXPENSE (creditCardId, accountId null)
+↓
+Gasto del período / categoría / presupuesto
+↓
+currentCardDebt ↑  (o futureInstallmentCommitment si aún no reconocida)
+```
+
+La cuenta bancaria **no** disminuye en la compra.
+
+Ejemplo contado:
 
 ```text
 Supermercado
 ARS 75.000
-Tarjeta crédito
+Visa Santander
 ```
+
+Ejemplo cuotas: impacto mensual por cuota reconocida (`MVP2-DECISIONES-P0.md` F2/F5).
 
 ---
 
 # 32. Pago del resumen de tarjeta
 
-En MVP el pago del resumen NO debe registrarse como gasto nuevo.
+El pago **nunca** se registra como `EXPENSE` nuevo (evita doble contabilización).
 
-Objetivo:
+## MVP2 (objetivo)
 
-evitar doble contabilización.
+```text
+Elegir cuenta origen
+↓
+Elegir tarjeta
+↓
+CREDIT_CARD_PAYMENT (total o parcial)
+↓
+Saldo cuenta ↓
+currentCardDebt ↓
+Gasto del período sin cambio
+```
 
-Si se necesita reflejar salida de caja futura de forma más precisa, deberá evolucionarse el modelo de pasivos antes de implementarlo.
+Sin modelo de pasivo implementado aún en código: ver `MVP2-BACKLOG.md` P0.10.
 
 ---
 
@@ -2834,7 +2864,7 @@ Antes de implementar cálculos finales deben definirse con precisión:
 2. Semántica exacta de transferencias.
 3. Semántica exacta del capital colocado en inversión.
 4. Cómo clasificar pagos de vivienda en gasto total vs consumo del fondo. CERRADO: `HOUSING_PAYMENT` no entra en gasto bruto/neto, ingreso operativo, consumo del fondo ni budgets.
-5. Tratamiento futuro completo de tarjetas de crédito.
+5. Tratamiento futuro completo de tarjetas de crédito. CERRADO a nivel producto: `MVP2.md` + `MVP2-DECISIONES-P0.md` (F1–F8). Implementación pendiente (`MVP2-BACKLOG.md`).
 6. Asociación futura de personas a movimientos.
 
 Estas decisiones no bloquean UI inicial, pero sí deben resolverse antes de implementar métricas financieras definitivas.

@@ -79,6 +79,7 @@ class MemoryTransactionRepository implements TransactionRepository {
       id: input.id ?? randomUUID(),
       userId: input.userId,
       accountId: input.accountId,
+      creditCardId: input.creditCardId ?? null,
       categoryId: input.categoryId ?? null,
       type: input.type,
       status: input.status ?? "ACTIVE",

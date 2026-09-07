@@ -92,6 +92,15 @@ enum InvestmentStatus {
   @@map("investment_status_enum")
 }
 
+enum CreditCardFeeStatus {
+  HAS_FEE
+  WAIVED
+  POTENTIALLY_WAIVED
+  UNKNOWN
+
+  @@map("credit_card_fee_status_enum")
+}
+
 model User {
   id           String        @id @default(uuid()) @db.Uuid
   name         String        @db.VarChar(120)
@@ -107,6 +116,7 @@ model User {
   budgets            Budget[]
   housingObligations HousingObligation[]
   investments        Investment[]
+  creditCards        CreditCard[]
   sessions           Session[]
 
   @@map("users")
@@ -168,7 +178,8 @@ model Account {
 model Transaction {
   id                    String              @id @default(uuid()) @db.Uuid
   userId                String              @map("user_id") @db.Uuid
-  accountId             String              @map("account_id") @db.Uuid
+  accountId             String?             @map("account_id") @db.Uuid
+  creditCardId          String?             @map("credit_card_id") @db.Uuid
   categoryId            String?             @map("category_id") @db.Uuid
   type                  TransactionType
   status                TransactionStatus   @default(ACTIVE)
@@ -184,7 +195,8 @@ model Transaction {
   createdAt             DateTime            @default(now()) @map("created_at") @db.Timestamptz
   updatedAt             DateTime            @updatedAt @map("updated_at") @db.Timestamptz
   user                  User                @relation(fields: [userId], references: [id], onDelete: Restrict)
-  account               Account             @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  account               Account?            @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  creditCard            CreditCard?         @relation(fields: [creditCardId], references: [id], onDelete: Restrict)
   category              Category?           @relation(fields: [categoryId], references: [id], onDelete: Restrict)
   relatedTransaction    Transaction?        @relation("RelatedTransactions", fields: [relatedTransactionId], references: [id], onDelete: Restrict)
   relatedTransactions   Transaction[]       @relation("RelatedTransactions")
@@ -195,6 +207,7 @@ model Transaction {
   @@index([categoryId, occurredAt])
   @@index([userId, type, occurredAt])
   @@index([relatedTransactionId])
+  @@index([creditCardId])
   @@map("transactions")
 }
 
@@ -303,4 +316,26 @@ model Investment {
   @@index([accountId])
   @@index([renewedFromInvestmentId])
   @@map("investments")
+}
+
+model CreditCard {
+  id          String              @id @default(uuid()) @db.Uuid
+  userId      String              @map("user_id") @db.Uuid
+  name        String              @db.VarChar(120)
+  issuer      String              @db.VarChar(120)
+  brand       String              @db.VarChar(40)
+  currency    Currency
+  isActive    Boolean             @default(true) @map("is_active")
+  isPrimary   Boolean             @default(false) @map("is_primary")
+  closingDay  Int?                @map("closing_day")
+  dueDay      Int?                @map("due_day")
+  feeStatus   CreditCardFeeStatus @default(UNKNOWN) @map("fee_status")
+  createdAt   DateTime            @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime            @updatedAt @map("updated_at") @db.Timestamptz
+  user        User                @relation(fields: [userId], references: [id], onDelete: Restrict)
+  transactions Transaction[]
+
+  @@index([userId])
+  @@index([userId, isActive])
+  @@map("credit_cards")
 }

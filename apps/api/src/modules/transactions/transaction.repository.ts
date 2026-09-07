@@ -18,6 +18,7 @@ export function toCreateData(input: CreateTransactionInput) {
     ...(input.id !== undefined ? { id: input.id } : {}),
     userId: input.userId,
     accountId: input.accountId,
+    creditCardId: input.creditCardId ?? null,
     categoryId: input.categoryId ?? null,
     type: input.type,
     status: input.status ?? "ACTIVE",
@@ -57,6 +58,9 @@ export class PrismaTransactionRepository implements TransactionRepository {
         ...(query.categoryId !== undefined ? { categoryId: query.categoryId } : {}),
         ...(query.currency !== undefined ? { currency: query.currency } : {}),
         ...(query.accountId !== undefined ? { accountId: query.accountId } : {}),
+        ...(query.creditCardId !== undefined
+          ? { creditCardId: query.creditCardId }
+          : {}),
         ...(query.status !== undefined ? { status: query.status } : {}),
         ...(query.relatedTransactionId !== undefined
           ? { relatedTransactionId: query.relatedTransactionId }
@@ -154,6 +158,7 @@ export function toTransaction(record: PrismaTransaction): Transaction {
     id: record.id,
     userId: record.userId,
     accountId: record.accountId,
+    creditCardId: record.creditCardId,
     categoryId: record.categoryId,
     type: record.type as TransactionType,
     status: record.status as TransactionStatus,

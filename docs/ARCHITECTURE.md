@@ -390,6 +390,13 @@ apps/api/
 │   │   ├── budgets/
 │   │   ├── housing/
 │   │   ├── investments/
+│   │   ├── credit-cards/          # MVP2 P0.3 — CRUD CreditCard (sin deuda/transactions aún)
+│   │   │   ├── credit-card.controller.ts
+│   │   │   ├── credit-card.service.ts
+│   │   │   ├── credit-card.repository.ts
+│   │   │   ├── credit-card.routes.ts
+│   │   │   ├── credit-card.schema.ts
+│   │   │   └── credit-card.types.ts
 │   │   ├── simulations/
 │   │   │   ├── simulation.service.ts
 │   │   │   ├── simulation.types.ts

@@ -7,6 +7,7 @@ import {
 } from "../../shared/time/month-range.js";
 import type { AccountRepository } from "../accounts/account.types.js";
 import type { CategoryRepository } from "../categories/category.types.js";
+import type { CreditCardRepository } from "../credit-cards/credit-card.types.js";
 import { buildTransactionsCsv } from "./transaction-csv.js";
 import {
   EXPENSE_CATEGORY_TYPES,
@@ -38,7 +39,8 @@ export class TransactionService {
   constructor(
     private readonly transactions: TransactionRepository,
     private readonly accounts: AccountRepository,
-    private readonly categories: CategoryRepository
+    private readonly categories: CategoryRepository,
+    private readonly creditCards: CreditCardRepository | null = null
   ) {}
 
   async createExpense(
@@ -46,7 +48,18 @@ export class TransactionService {
     input: CreateExpenseInput
   ): Promise<Transaction> {
     const amount = parsePositiveAmount(input.amount);
-    const account = await this.requireActiveOwnedAccount(userId, input.accountId);
+    const hasAccount = input.accountId !== undefined && input.accountId !== "";
+    const hasCard =
+      input.creditCardId !== undefined && input.creditCardId !== "";
+
+    if (hasAccount === hasCard) {
+      throw new AppError(
+        "VALIDATION_ERROR",
+        "Un gasto debe indicar exactamente una de accountId o creditCardId.",
+        400
+      );
+    }
+
     const category = await this.requireActiveCategory(
       userId,
       input.categoryId,
@@ -54,14 +67,43 @@ export class TransactionService {
       "No se puede registrar un gasto con una categoría inactiva.",
       "Un gasto sólo puede usar categorías EXPENSE o BOTH."
     );
-    const currency = requireMatchingCurrency(input.currency, account.currency);
     const occurredAt = input.occurredAt ?? new Date();
     const description = normalizeDescription(input.description);
     const paymentMethod = requirePaymentMethod(input.paymentMethod);
 
+    if (hasCard) {
+      const card = await this.requireActiveOwnedCreditCard(
+        userId,
+        input.creditCardId!
+      );
+      const currency = requireMatchingCurrency(input.currency, card.currency);
+      return this.transactions.create({
+        userId,
+        accountId: null,
+        creditCardId: card.id,
+        categoryId: category.id,
+        type: "EXPENSE",
+        status: "ACTIVE",
+        amount,
+        currency,
+        description,
+        occurredAt,
+        paymentMethod,
+        isFixed: input.isFixed ?? false,
+        reimbursementStatus: "NONE",
+      });
+    }
+
+    const account = await this.requireActiveOwnedAccount(
+      userId,
+      input.accountId!
+    );
+    const currency = requireMatchingCurrency(input.currency, account.currency);
+
     return this.transactions.create({
       userId,
       accountId: account.id,
+      creditCardId: null,
       categoryId: category.id,
       type: "EXPENSE",
       status: "ACTIVE",
@@ -162,11 +204,17 @@ export class TransactionService {
       );
     }
 
-    const account = await this.requireActiveOwnedAccount(
-      userId,
-      current.accountId
-    );
-    requireMatchingCurrency(current.currency, account.currency);
+    if (current.accountId) {
+      const account = await this.requireActiveOwnedAccount(
+        userId,
+        current.accountId
+      );
+      requireMatchingCurrency(current.currency, account.currency);
+    } else if (current.creditCardId) {
+      // Card-funded EXPENSE: keep currency; do not require an Account.
+      const card = await this.requireOwnedCreditCard(userId, current.creditCardId);
+      requireMatchingCurrency(current.currency, card.currency);
+    }
 
     const categoryId = await this.resolveUpdateCategoryId(userId, current, input.categoryId);
 
@@ -500,6 +548,36 @@ export class TransactionService {
     return account;
   }
 
+  private async requireOwnedCreditCard(userId: string, creditCardId: string) {
+    if (!this.creditCards) {
+      throw new AppError(
+        "VALIDATION_ERROR",
+        "Las compras con tarjeta no están disponibles.",
+        400
+      );
+    }
+    const card = await this.creditCards.findById(creditCardId);
+    if (!card || card.userId !== userId) {
+      throw new AppError("NOT_FOUND", "Tarjeta no encontrada.", 404);
+    }
+    return card;
+  }
+
+  private async requireActiveOwnedCreditCard(
+    userId: string,
+    creditCardId: string
+  ) {
+    const card = await this.requireOwnedCreditCard(userId, creditCardId);
+    if (!card.isActive) {
+      throw new AppError(
+        "CREDIT_CARD_INACTIVE",
+        "No se puede registrar un consumo sobre una tarjeta inactiva.",
+        400
+      );
+    }
+    return card;
+  }
+
   private async requireActiveCategory(
     userId: string,
     categoryId: string,
@@ -580,7 +658,7 @@ function requireMatchingCurrency(
   if (requested !== accountCurrency) {
     throw new AppError(
       "CURRENCY_MISMATCH",
-      "La moneda del movimiento debe coincidir con la moneda de la cuenta.",
+      "La moneda del movimiento debe coincidir con la moneda de la cuenta o tarjeta.",
       400
     );
   }

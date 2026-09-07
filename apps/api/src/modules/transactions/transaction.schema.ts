@@ -12,14 +12,27 @@ export const CreateExpenseSchema = z
     type: z.literal("EXPENSE").optional(),
     amount: z.string().min(1, "El importe es obligatorio."),
     currency: z.enum(CURRENCIES, { error: "La moneda debe ser ARS o USD." }),
-    accountId: z.string().uuid("El accountId debe ser un UUID."),
+    accountId: z.string().uuid("El accountId debe ser un UUID.").optional(),
+    creditCardId: z.string().uuid("El creditCardId debe ser un UUID.").optional(),
     categoryId: z.string().uuid("El categoryId debe ser un UUID."),
     description: z.string().max(255).optional(),
     occurredAt: z.iso.datetime({ error: "occurredAt debe ser un datetime ISO." }).optional(),
     paymentMethod: z.enum(PAYMENT_METHODS).optional(),
     isFixed: z.boolean().optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((value, ctx) => {
+    const hasAccount = value.accountId !== undefined;
+    const hasCard = value.creditCardId !== undefined;
+    if (hasAccount === hasCard) {
+      ctx.addIssue({
+        code: "custom",
+        path: hasAccount ? ["creditCardId"] : ["accountId"],
+        message:
+          "Un gasto debe indicar exactamente una de accountId o creditCardId.",
+      });
+    }
+  });
 
 export const CreateIncomeSchema = z
   .object({

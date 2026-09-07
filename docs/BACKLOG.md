@@ -1022,8 +1022,6 @@ No implementar todavía:
 ```text
 Person
 household/shared finance
-credit card liabilities
-automatic card installments
 bank sync
 broker sync
 OCR
@@ -1035,6 +1033,8 @@ multiuser
 roles
 market predictions
 ```
+
+Tarjetas de crédito / cuotas / pagos / reintegros MVP2: ver `docs/MVP2.md`, `docs/MVP2-DECISIONES-P0.md`, `docs/MVP2-BACKLOG.md` (no están en este deferred list; tienen backlog propio). **No implementar Prisma/código P0.3+ sin aprobación.**
 
 ---
 

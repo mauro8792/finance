@@ -6,7 +6,7 @@
 
 Este documento define las reglas financieras que deben aplicarse de forma determinística.
 
-Debe respetar `VISION.md`, `DOMAIN.md`, `MVP.md`, `ARCHITECTURE.md`, `DATA-MODEL.md` y `USER-FLOWS.md`.
+Debe respetar `VISION.md`, `DOMAIN.md`, `MVP.md`, `MVP2.md`, `MVP2-DECISIONES-P0.md`, `ARCHITECTURE.md`, `DATA-MODEL.md` y `USER-FLOWS.md`.
 
 La AI puede explicar resultados, pero estas reglas pertenecen al backend.
 
@@ -107,7 +107,14 @@ Debe participar en:
 
 Si tiene reintegro, el gasto neto se reduce por los reintegros relacionados.
 
-`createExpense` exige `categoryId`.
+`createExpense` exige `categoryId` y exactamente uno de `accountId` o `creditCardId` (F1 / P0.5).
+
+| Modo | accountId | creditCardId | Banco | Period spending | currentCardDebt |
+|---|---|---|---|---|---|
+| BANK EXPENSE | set | null | −amount | +amount | 0 |
+| CARD EXPENSE P0.5 | null | set | 0 | +amount | +amount |
+
+**Recognition of spending and movement of cash are separate concerns.**
 
 Un gasto (`Transaction.type = EXPENSE`) sólo puede usar categorías con:
 
@@ -118,9 +125,11 @@ CategoryType = BOTH
 
 Debe rechazarse una categoría `INCOME`.
 
-Un movimiento nuevo no puede registrarse sobre una cuenta o categoría inactiva (`isActive = false`).
+Un movimiento nuevo no puede registrarse sobre una cuenta, tarjeta o categoría inactiva (`isActive = false`).
 
 Esas entidades se conservan sólo para historial. Para volver a usarlas hay que reactivarlas.
+
+Tarjeta inactiva: conserva histórico; no acepta nuevos consumos.
 
 ---
 
@@ -501,31 +510,75 @@ Puede agregarse tolerancia visual posteriormente sin cambiar la regla base.
 
 ---
 
-# 23. Tarjeta de crédito — MVP
+# 23. Tarjeta de crédito
 
-La compra se registra como gasto en la fecha de compra.
+Fuente: `MVP2.md`, decisiones `MVP2-DECISIONES-P0.md` (F1–F8).  
+Implementación: P0.3–P0.5 en código (ver `MVP2-BACKLOG.md`). Neon P0.5 pendiente de aprobación.
 
-`paymentMethod = CREDIT_CARD`.
+## 23.1 Modelo MVP2 (movimientos nuevos)
 
-El pago del resumen NO se registra nuevamente como gasto.
+Las tarjetas son entidades de primera clase (`CreditCard`), independientes de `Account`.
 
-MVP no modela todavía:
+Compra con tarjeta (P0.5 base, 1 pago / consumo reconocido, sin Purchase aún) → `Transaction.type = EXPENSE` con:
 
-- deuda de tarjeta;
-- fecha de cierre;
-- fecha de vencimiento;
-- cuotas futuras como pasivo;
-- límite disponible.
+- `creditCardId` obligatorio;
+- `accountId = null`.
 
-Esta simplificación debe mantenerse explícita para evitar doble contabilización.
+Gasto no tarjeta → `accountId` obligatorio; `creditCardId = null`.
+
+No usar cuentas sentinela.
+
+Efectos de la compra / cuota reconocida:
+
+- sí: gasto reconocido, categoría, presupuesto del período;
+- no: saldo bancario / disponible.
+
+`currentCardDebt` (P0.5 mínimo) = suma de `EXPENSE` ACTIVE vinculados a la tarjeta.  
+Aún no restan pagos ni reintegros a tarjeta (P0.10+).
+
+Pago de tarjeta → `Transaction.type = CREDIT_CARD_PAYMENT`:
+
+- `accountId` origen + `creditCardId` destino;
+- disminuye saldo de cuenta y `currentCardDebt`;
+- no es gasto del período.
+
+Distinguir:
+
+- `currentCardDebt` — reconocidos aún no pagados;
+- `futureInstallmentCommitment` — cuotas no reconocidas (P0.7+; en P0.5 siempre 0);
+- `totalOutstandingCommitment` = suma de ambos.
+
+Reintegros acreditados: destino banco (`REIMBURSEMENT` + `accountId`) o tarjeta (`REIMBURSEMENT` + `creditCardId`, `accountId` null).  
+`ExpectedRefund` no mueve confirmado hasta acreditación explícita.
+
+Sin `closingDay`: proyección limitada; no afirmar “próximo resumen” cierto.
+
+`CreditCardStatement` no es fuente de deuda: `currentCardDebt` se deriva de eventos (`EXPENSE` reconocidos, `CREDIT_CARD_PAYMENT`, reintegros a tarjeta, cargos explícitos). Cambiar `actualAmount` del statement **no** altera la deuda en silencio (`MVP2-DECISIONES-P0.md` F9).
+
+**Limitación temporal P0.5:** runway puede incluir CARD EXPENSE en gasto mensual histórico, pero no proyecta el futuro `CREDIT_CARD_PAYMENT` (aún no existe).
+
+## 23.2 Legacy MVP1
+
+Movimientos con `paymentMethod = CREDIT_CARD` **sin** el modelo de entidad tarjeta (típicamente con `accountId` y sin `creditCardId` MVP2):
+
+- conservan semántica MVP1 (gasto que debita la cuenta);
+- no se migran, no se recalculan, no se reinterpretan en P0 (LEAVE);
+- no forman `currentCardDebt` del modelo nuevo.
+
+El pago del resumen **nunca** debe registrarse otra vez como `EXPENSE` (ni en legacy ni en MVP2).
 
 ---
 
-# 24. Gastos en cuotas — MVP
+# 24. Gastos en cuotas (tarjeta)
 
-Una compra en cuotas puede registrarse inicialmente cuando cada cuota impacta como gasto, o como movimientos planificados futuros si esa feature se diseña después.
+Modelo: `CreditCardPurchase` → `CreditCardInstallment` 1..N → `Transaction EXPENSE` opcional al reconocer.
 
-MVP no debe inventar automáticamente cuotas futuras sin especificación adicional.
+No crear N `EXPENSE` huérfanos sin purchase padre.
+
+Criterio de impacto mensual: solo la cuota reconocida en el período entra en gasto bruto/neto y presupuestos.  
+Ejemplo: 600.000 en 6 cuotas → 100.000 por período de reconocimiento, nunca 600.000 en el mes de compra.
+
+El reconocimiento mueve valor de `futureInstallmentCommitment` a `currentCardDebt`.
 
 ---
 

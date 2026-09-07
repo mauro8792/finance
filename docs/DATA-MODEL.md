@@ -241,6 +241,61 @@ Se deriva de movimientos.
 
 ---
 
+# 6.1 CreditCard (MVP2 P0.3)
+
+Tabla:
+
+```text
+credit_cards
+```
+
+Campos:
+
+```text
+id            UUID PK
+user_id       UUID FK users.id NOT NULL
+name          VARCHAR(120) NOT NULL
+issuer        VARCHAR(120) NOT NULL
+brand         VARCHAR(40) NOT NULL
+currency      currency_enum NOT NULL
+is_active     BOOLEAN NOT NULL DEFAULT true
+is_primary    BOOLEAN NOT NULL DEFAULT false
+closing_day   INTEGER NULL  -- CHECK 1..31
+due_day       INTEGER NULL  -- CHECK 1..31
+fee_status    credit_card_fee_status_enum NOT NULL DEFAULT 'UNKNOWN'
+created_at    TIMESTAMPTZ NOT NULL
+updated_at    TIMESTAMPTZ NOT NULL
+```
+
+```text
+credit_card_fee_status_enum:
+HAS_FEE
+WAIVED
+POTENTIALLY_WAIVED
+UNKNOWN
+```
+
+Índices:
+
+```text
+INDEX (user_id)
+INDEX (user_id, is_active)
+UNIQUE partial (user_id) WHERE is_primary = true
+```
+
+Reglas:
+
+- Sin PAN/CVV ni datos sensibles de tarjeta.
+- `closing_day` / `due_day` opcionales → configuración incompleta permitida.
+- `configComplete` se deriva en API (`closing_day` y `due_day` presentes); no se persiste.
+- Una sola principal por usuario (índice parcial + servicio).
+- Desactivar no borra; si era principal, `is_primary` pasa a false.
+- P0.3: entidad CreditCard.
+- P0.4: `transactions.credit_card_id` nullable (sin semántica financiera activa hasta P0.5).
+- P0.5: `transactions.account_id` nullable; EXPENSE tarjeta F1 activo en dominio (Neon pendiente).
+
+---
+
 # 7. Category
 
 Tabla:
@@ -294,7 +349,12 @@ Campos:
 ```text
 id                       UUID PK
 user_id                  UUID FK users.id NOT NULL
-account_id               UUID FK accounts.id NOT NULL
+account_id               UUID FK accounts.id NULL
+                         -- P0.5: nullable. EXPENSE tarjeta: NULL + credit_card_id NOT NULL.
+                         -- EXPENSE banco y demás tipos MVP1: NOT NULL en dominio.
+credit_card_id           UUID FK credit_cards.id NULL
+                         -- P0.5: relación real MVP2. Legacy payment_method=CREDIT_CARD ≠ esto (F4).
+
 category_id              UUID FK categories.id NULL
 
 type                     transaction_type_enum NOT NULL
@@ -319,6 +379,16 @@ created_at               TIMESTAMPTZ NOT NULL
 updated_at               TIMESTAMPTZ NOT NULL
 ```
 
+Estado **P0.5 (schema + dominio):** `account_id` nullable; `credit_card_id` nullable.  
+EXPENSE banco: `accountId` + `creditCardId` null → debita banco.  
+EXPENSE tarjeta: `creditCardId` + `accountId` null → gasto/presupuesto/deuda; **no** debita banco.  
+XOR garantizado en service/Zod; sin CHECK DB global (otros tipos tienen semánticas distintas).  
+Migración: `ALTER COLUMN account_id DROP NOT NULL` — sin UPDATE/backfill. Neon pendiente de aprobación.
+
+Estado **P0.4:** sólo columna `credit_card_id` (sin F1 runtime).
+
+Estado **anterior en producción (MVP1 / post-P0.3):** sin `credit_card_id`.
+
 ---
 
 # 9. TransactionType
@@ -336,6 +406,7 @@ INVESTMENT_PRINCIPAL_RETURN
 INVESTMENT_RETURN
 CURRENCY_EXCHANGE
 HOUSING_PAYMENT
+CREDIT_CARD_PAYMENT   -- MVP2; enum pendiente de migración
 ```
 
 El tipo determina el efecto económico.
@@ -350,6 +421,8 @@ El tipo determina el efecto económico.
 ```
 
 `INVESTMENT_OUTFLOW` es débito. `INVESTMENT_PRINCIPAL_RETURN` e `INVESTMENT_RETURN` son crédito. `category_id` null. Metadata: `{ "investmentId": "<uuid>" }`.
+
+`CREDIT_CARD_PAYMENT` es débito de `account_id` (origen). Requiere `credit_card_id`. No es gasto operativo ni de presupuesto. Reduce `currentCardDebt`.
 
 Los importes se guardan siempre positivos.
 
@@ -416,10 +489,19 @@ amount > 0
 Regla de Service:
 
 ```text
-transaction.currency == account.currency
+transaction.currency == account.currency   -- si accountId set
+transaction.currency == creditCard.currency -- si creditCardId set (P0.5)
 ```
 
 excepto operaciones explícitas de cambio de moneda.
+
+EXPENSE (P0.5 F1) — exactamente uno:
+
+```text
+(accountId != null && creditCardId == null)
+  XOR
+(accountId == null && creditCardId != null)
+```
 
 Regla:
 
@@ -430,7 +512,8 @@ category.user_id == transaction.user_id
 Regla:
 
 ```text
-account.user_id == transaction.user_id
+account.user_id == transaction.user_id   -- si accountId set
+credit_card.user_id == transaction.user_id -- si creditCardId set
 ```
 
 Regla de Service para nuevos movimientos:
@@ -1166,22 +1249,55 @@ Idealmente las cuentas nuevas comienzan en:
 
 # 37. Credit card rule
 
-Una compra con tarjeta de crédito se registra como gasto en la fecha de compra.
+## 37.1 Legacy MVP1 (LEAVE)
 
-Ejemplo:
+Históricamente:
 
 ```text
-03/09
-Supermercado
-ARS 75.000
-PaymentMethod = CREDIT_CARD
+EXPENSE + paymentMethod = CREDIT_CARD + accountId
 ```
 
-El pago posterior del resumen NO debe volver a registrarse como gasto.
+El gasto debitaba la cuenta en la fecha de compra. Esos movimientos **permanecen** con esa semántica. No migrar ni reinterpretar en P0.
 
-Esto evita doble contabilización.
+El pago del resumen **nunca** debe registrarse otra vez como gasto.
 
-En MVP no se modelará una cuenta de pasivo de tarjeta completa.
+## 37.2 Modelo MVP2 (objetivo)
+
+Entidades (conceptual; Prisma pendiente):
+
+```text
+credit_cards
+credit_card_purchases
+credit_card_installments
+credit_card_statements
+expected_refunds / promotions
+```
+
+Compra / cuota reconocida:
+
+```text
+EXPENSE
+credit_card_id NOT NULL
+account_id NULL
+```
+
+Impacta gasto/categoría/presupuesto; no saldo bancario.
+
+Cuotas: `Purchase` → `Installment` 1..N → `EXPENSE` al reconocer (impacto mensual).
+
+Pago:
+
+```text
+CREDIT_CARD_PAYMENT
+account_id origen
+credit_card_id destino
+```
+
+Métricas: `currentCardDebt`, `futureInstallmentCommitment`, `totalOutstandingCommitment` — ver `MVP2-DECISIONES-P0.md`.
+
+Sin `closing_day`: proyección limitada (no “próximo resumen” cierto).
+
+`CreditCardStatement` agrupa el ciclo y puede guardar `projectedAmount` / `actualAmount`, pero **no** es fuente de `currentCardDebt`. La deuda se deriva de movimientos reconocidos; editar `actualAmount` no modifica la deuda en silencio (F9).
 
 ---
 

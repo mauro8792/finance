@@ -133,6 +133,7 @@ function toTransactionResponse(transaction: Transaction) {
   return {
     id: transaction.id,
     accountId: transaction.accountId,
+    creditCardId: transaction.creditCardId,
     categoryId: transaction.categoryId,
     type: transaction.type,
     status: transaction.status,

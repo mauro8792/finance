@@ -362,9 +362,31 @@ enum PaymentMethod {
 }
 ```
 
-El medio de pago es informativo.
+El medio de pago es informativo para medios no modelados como entidad.
 
-No implica una integración con ese medio.
+`CREDIT_CARD` como solo `PaymentMethod` es el modelo **legacy MVP1**.  
+En MVP2 la tarjeta es entidad `CreditCard`; el gasto nuevo usa `creditCardId` + `accountId = null` (ver `MVP2-DECISIONES-P0.md` F1/F4).
+
+No implica integración con el emisor/banco.
+
+---
+
+# 12.1 CreditCard (MVP2)
+
+Entidad de primera clase, distinta de `Account`.
+
+Representa consumos/deuda y compromisos futuros, no dinero disponible.
+
+Conceptos derivados (no confundir):
+
+- `currentCardDebt`
+- `futureInstallmentCommitment`
+- `totalOutstandingCommitment`
+
+Compra: `CreditCardPurchase` → `CreditCardInstallment` → `Transaction EXPENSE` al reconocer.  
+Pago: `TransactionType.CREDIT_CARD_PAYMENT`.
+
+Detalle: `MVP2.md`, `MVP2-DECISIONES-P0.md`. Implementación: `MVP2-BACKLOG.md`.
 
 ---
 
@@ -395,6 +417,13 @@ y relacionarla mediante:
 ```text
 relatedTransactionId
 ```
+
+## Destinos de acreditación (MVP2)
+
+- **Banco:** `accountId` set → aumenta saldo; reduce neto confirmado.
+- **Tarjeta:** `creditCardId` set, `accountId` null → reduce `currentCardDebt`; reduce neto confirmado; no aumenta banco.
+
+Un `ExpectedRefund` (promoción pendiente) **no** es reintegro acreditado y no mueve confirmado hasta confirmación del usuario.
 
 ---
 

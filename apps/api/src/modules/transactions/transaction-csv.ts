@@ -90,7 +90,7 @@ export function transactionToCsvRow(
     transaction.description ?? "",
     transaction.amount,
     transaction.currency,
-    lookups.accountNameById[transaction.accountId] ?? "",
+    lookups.accountNameById[transaction.accountId ?? ""] ?? "",
     STATUS_LABELS[transaction.status],
     incomeKindLabel(transaction),
     REIMBURSEMENT_LABELS[transaction.reimbursementStatus],

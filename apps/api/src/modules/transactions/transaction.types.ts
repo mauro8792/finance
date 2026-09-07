@@ -58,7 +58,8 @@ export type IncomeKind = (typeof INCOME_KINDS)[number];
 export type Transaction = {
   id: string;
   userId: string;
-  accountId: string;
+  accountId: string | null;
+  creditCardId: string | null;
   categoryId: string | null;
   type: TransactionType;
   status: TransactionStatus;
@@ -78,7 +79,8 @@ export type Transaction = {
 export type CreateTransactionInput = {
   id?: string;
   userId: string;
-  accountId: string;
+  accountId: string | null;
+  creditCardId?: string | null;
   categoryId?: string | null;
   type: TransactionType;
   status?: TransactionStatus;
@@ -119,7 +121,8 @@ export type CreateReimbursementInput = {
 export type CreateExpenseInput = {
   amount: string;
   currency: Currency;
-  accountId: string;
+  accountId?: string;
+  creditCardId?: string;
   categoryId: string;
   description?: string;
   occurredAt?: Date;
@@ -175,6 +178,7 @@ export type FindTransactionsQuery = {
   categoryId?: string;
   currency?: Currency;
   accountId?: string;
+  creditCardId?: string;
   status?: TransactionStatus;
   relatedTransactionId?: string;
 };
