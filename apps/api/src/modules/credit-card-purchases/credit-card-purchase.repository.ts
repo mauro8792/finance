@@ -12,7 +12,7 @@ import type {
   CreditCardPurchase,
   CreditCardPurchaseRepository,
   CreditCardPurchaseStatus,
-  PurchaseWithInstallment,
+  PurchaseWithInstallments,
 } from "./credit-card-purchase.types.js";
 
 export class PrismaCreditCardPurchaseRepository
@@ -20,9 +20,9 @@ export class PrismaCreditCardPurchaseRepository
 {
   constructor(private readonly prisma = getPrismaClient()) {}
 
-  async createCashPurchaseAtomic(
+  async createPurchaseAtomic(
     input: CreatePurchaseAtomicInput
-  ): Promise<PurchaseWithInstallment> {
+  ): Promise<PurchaseWithInstallments> {
     const records = await this.prisma.$transaction(async (tx) => {
       const purchase = await tx.creditCardPurchase.create({
         data: {
@@ -44,68 +44,93 @@ export class PrismaCreditCardPurchaseRepository
         data: toCreateData(input.transaction),
       });
 
-      const installment = await tx.creditCardInstallment.create({
-        data: {
-          id: input.installment.id,
-          purchaseId: input.installment.purchaseId,
-          installmentNumber: input.installment.installmentNumber,
-          amount: input.installment.amount,
-          status: input.installment.status,
-          recognizedTransactionId: input.installment.recognizedTransactionId,
-          recognizedAt: input.installment.recognizedAt,
-        },
-      });
+      const installments = [];
+      for (const item of input.installments) {
+        const recognizedTransactionId =
+          item.status === "RECOGNIZED" ? transaction.id : null;
+        const installment = await tx.creditCardInstallment.create({
+          data: {
+            id: item.id,
+            purchaseId: item.purchaseId,
+            installmentNumber: item.installmentNumber,
+            amount: item.amount,
+            status: item.status,
+            scheduledFor: item.scheduledFor,
+            recognizedTransactionId,
+            recognizedAt: item.recognizedAt,
+          },
+        });
+        installments.push(installment);
+      }
 
-      return { purchase, installment, transactionId: transaction.id };
+      return { purchase, installments, transactionId: transaction.id };
     });
 
+    const mapped = records.installments.map(toInstallment);
     return {
       purchase: toPurchase(records.purchase),
-      installment: toInstallment(records.installment),
-      transactionId: records.transactionId,
+      installments: mapped,
+      recognizedTransactionId: records.transactionId,
     };
   }
 
-  async findById(id: string): Promise<PurchaseWithInstallment | null> {
+  async findById(id: string): Promise<PurchaseWithInstallments | null> {
     const purchase = await this.prisma.creditCardPurchase.findUnique({
       where: { id },
       include: { installments: { orderBy: { installmentNumber: "asc" } } },
     });
-    if (!purchase) {
+    if (!purchase || purchase.installments.length === 0) {
       return null;
     }
-    const installment = purchase.installments[0];
-    if (!installment) {
-      return null;
-    }
-    return {
-      purchase: toPurchase(purchase),
-      installment: toInstallment(installment),
-      transactionId: installment.recognizedTransactionId ?? "",
-    };
+    return toPurchaseWithInstallments(purchase);
   }
 
-  async findByUserId(userId: string): Promise<PurchaseWithInstallment[]> {
+  async findByUserId(userId: string): Promise<PurchaseWithInstallments[]> {
     const purchases = await this.prisma.creditCardPurchase.findMany({
       where: { userId },
       include: { installments: { orderBy: { installmentNumber: "asc" } } },
       orderBy: { purchasedAt: "desc" },
     });
 
-    return purchases.flatMap((purchase) => {
-      const installment = purchase.installments[0];
-      if (!installment) {
-        return [];
-      }
-      return [
-        {
-          purchase: toPurchase(purchase),
-          installment: toInstallment(installment),
-          transactionId: installment.recognizedTransactionId ?? "",
-        },
-      ];
-    });
+    return purchases
+      .filter((purchase) => purchase.installments.length > 0)
+      .map(toPurchaseWithInstallments);
   }
+
+  async findPendingInstallmentAmountsByCreditCardId(
+    userId: string,
+    creditCardId: string
+  ): Promise<Array<{ amount: string; status: CreditCardInstallmentStatus }>> {
+    const rows = await this.prisma.creditCardInstallment.findMany({
+      where: {
+        status: "PENDING",
+        purchase: {
+          userId,
+          creditCardId,
+          status: "ACTIVE",
+        },
+      },
+      select: { amount: true, status: true },
+    });
+    return rows.map((row) => ({
+      amount: row.amount.toFixed(2),
+      status: row.status as CreditCardInstallmentStatus,
+    }));
+  }
+}
+
+function toPurchaseWithInstallments(
+  purchase: PrismaPurchase & { installments: PrismaInstallment[] }
+): PurchaseWithInstallments {
+  const installments = purchase.installments.map(toInstallment);
+  const recognized = installments.find(
+    (item) => item.status === "RECOGNIZED" && item.recognizedTransactionId
+  );
+  return {
+    purchase: toPurchase(purchase),
+    installments,
+    recognizedTransactionId: recognized?.recognizedTransactionId ?? null,
+  };
 }
 
 function toPurchase(record: PrismaPurchase): CreditCardPurchase {
@@ -133,6 +158,7 @@ function toInstallment(record: PrismaInstallment): CreditCardInstallment {
     installmentNumber: record.installmentNumber,
     amount: record.amount.toFixed(2),
     status: record.status as CreditCardInstallmentStatus,
+    scheduledFor: record.scheduledFor,
     recognizedTransactionId: record.recognizedTransactionId,
     recognizedAt: record.recognizedAt,
     createdAt: record.createdAt,

@@ -342,25 +342,37 @@ totalOutstandingCommitment = currentCardDebt + futureInstallmentCommitment
 | P0.4 `transactions.credit_card_id` nullable | DONE (código + Neon); sin semántica financiera activa |
 | P0.5 F1 accountId null / no débito bancario | DONE definitivo (código + Neon + API smoke) |
 | P0.6 Purchase contado 1/1 | DONE definitivo (código + Neon + API) |
+| P0.7 Purchase N cuotas + future commitment | DONE definitivo (código + Neon + API) |
 | `CREDIT_CARD_PAYMENT` | No iniciado |
 
-### Modelado P0.6 (opción B)
+### Modelado P0.6–P0.7 (opción B)
 
 ```text
 CreditCardPurchase
-  -> CreditCardInstallment (1/1, RECOGNIZED)
-      -> Transaction EXPENSE (accountId null, creditCardId set)
+  -> CreditCardInstallment 1..N
+      -> Transaction EXPENSE opcional (solo RECOGNIZED)
 ```
 
-FK canónica: `CreditCardInstallment.recognizedTransactionId` → `transactions.id` (UNIQUE).  
-Purchase **no** tiene `transactionId` (evitar romper el 1:N de P0.7).
+P0.7 create:
+- #1 RECOGNIZED + EXPENSE inmediato (regla temporal hasta ciclos/closingDay)
+- #2..N PENDING (`scheduled_for` = purchaseDate + (n-1) meses, clamp EOM)
+- Cap: installmentsCount ≤ 60
+- Redondeo minor-units: remainder en última cuota; SUM(installments) === totalAmount
 
-`currentCardDebt` sigue = SUM ACTIVE EXPENSE con `creditCardId` (P0.5).  
-Nunca sumar `purchase.totalAmount` ni installment aparte.
+FK canónica: `CreditCardInstallment.recognizedTransactionId` → `transactions.id` (UNIQUE).  
+Purchase **no** tiene `transactionId`.
+
+```text
+currentCardDebt = SUM ACTIVE EXPENSE creditCardId
+futureInstallmentCommitment = SUM PENDING installment.amount (purchase ACTIVE)
+totalOutstandingCommitment = current + future
+```
+
+Nunca sumar `purchase.totalAmount`.
 
 Void de purchase: diferido a P0.15.
 
-### Matriz de impacto P0.5 (anti-doble-conteo)
+### Matriz de impacto P0.5–P0.7 (anti-doble-conteo)
 
 Recognition of spending and movement of cash are separate concerns.
 
@@ -369,6 +381,7 @@ Recognition of spending and movement of cash are separate concerns.
 | Bank EXPENSE | +amount | −amount | 0 | 0 |
 | Card EXPENSE P0.5 | +amount | 0 | +amount | 0 |
 | Purchase 1 pago P0.6 (vía EXPENSE) | +amount | 0 | +amount | 0 |
+| Purchase 600k/6 P0.7 al crear | +100k | 0 | +100k | +500k |
 
 Purchase/Installment solos: impacto financiero = 0. Solo el Transaction reconoce gasto/deuda.
 
@@ -399,7 +412,7 @@ Post-P0.5 (código local / test; Neon hasta aprobación):
 1. **Runtime F1 activo** para creates nuevos vía API (`accountId` XOR `creditCardId`).
 2. **`account_id`:** nullable en schema + migración test; Neon pendiente.
 3. **`REIMBURSEMENT`:** solo acredita cuenta (falta F6-B).
-4. Sin Purchase/installments/statements/`CREDIT_CARD_PAYMENT` (P0.6+).
+4. Sin statements/`CREDIT_CARD_PAYMENT`/reconocimiento P0.8 (P0.7 crea schedule PENDING solamente).
 
 Ninguno de estos se “arregla” en silencio: requieren aprobación de Prisma/implementación.
 

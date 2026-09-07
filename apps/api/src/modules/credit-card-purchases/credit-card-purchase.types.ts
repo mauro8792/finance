@@ -1,7 +1,9 @@
 import type { Currency } from "shared";
+import type { CreateTransactionInput } from "../transactions/transaction.types.js";
 
 export const CREDIT_CARD_PURCHASE_STATUSES = ["ACTIVE", "VOIDED"] as const;
-export type CreditCardPurchaseStatus = (typeof CREDIT_CARD_PURCHASE_STATUSES)[number];
+export type CreditCardPurchaseStatus =
+  (typeof CREDIT_CARD_PURCHASE_STATUSES)[number];
 
 export const CREDIT_CARD_INSTALLMENT_STATUSES = [
   "PENDING",
@@ -19,6 +21,7 @@ export type CreditCardPurchase = {
   description: string | null;
   currency: Currency;
   totalAmount: string;
+  /** Nominal/base per-installment; last installment may differ by rounding. */
   installmentAmount: string;
   installmentsCount: number;
   purchasedAt: Date;
@@ -33,11 +36,22 @@ export type CreditCardInstallment = {
   installmentNumber: number;
   amount: string;
   status: CreditCardInstallmentStatus;
+  scheduledFor: Date;
   recognizedTransactionId: string | null;
   recognizedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
 };
+
+export type PurchaseWithInstallments = {
+  purchase: CreditCardPurchase;
+  installments: CreditCardInstallment[];
+  /** First RECOGNIZED installment's transaction id (P0.7 create always sets #1). */
+  recognizedTransactionId: string | null;
+};
+
+/** @deprecated Use PurchaseWithInstallments */
+export type PurchaseWithInstallment = PurchaseWithInstallments;
 
 export type CreatePurchaseAtomicInput = {
   purchase: {
@@ -53,43 +67,28 @@ export type CreatePurchaseAtomicInput = {
     purchasedAt: Date;
     status: CreditCardPurchaseStatus;
   };
-  installment: {
+  installments: Array<{
     id: string;
     purchaseId: string;
     installmentNumber: number;
     amount: string;
     status: CreditCardInstallmentStatus;
-    recognizedTransactionId: string;
-    recognizedAt: Date;
-  };
-  transaction: {
-    id: string;
-    userId: string;
-    accountId: null;
-    creditCardId: string;
-    categoryId: string;
-    type: "EXPENSE";
-    status: "ACTIVE";
-    amount: string;
-    currency: Currency;
-    description: string | null;
-    occurredAt: Date;
-    paymentMethod: null;
-    isFixed: false;
-    reimbursementStatus: "NONE";
-  };
+    scheduledFor: Date;
+    recognizedTransactionId: string | null;
+    recognizedAt: Date | null;
+  }>;
+  /** Transaction for the initially recognized installment (#1 in P0.7). */
+  transaction: CreateTransactionInput;
 };
 
-export type PurchaseWithInstallment = {
-  purchase: CreditCardPurchase;
-  installment: CreditCardInstallment;
-  transactionId: string;
-};
-
-export type CreditCardPurchaseRepository = {
-  createCashPurchaseAtomic(
+export interface CreditCardPurchaseRepository {
+  createPurchaseAtomic(
     input: CreatePurchaseAtomicInput
-  ): Promise<PurchaseWithInstallment>;
-  findById(id: string): Promise<PurchaseWithInstallment | null>;
-  findByUserId(userId: string): Promise<PurchaseWithInstallment[]>;
-};
+  ): Promise<PurchaseWithInstallments>;
+  findById(id: string): Promise<PurchaseWithInstallments | null>;
+  findByUserId(userId: string): Promise<PurchaseWithInstallments[]>;
+  findPendingInstallmentAmountsByCreditCardId(
+    userId: string,
+    creditCardId: string
+  ): Promise<Array<{ amount: string; status: CreditCardInstallmentStatus }>>;
+}

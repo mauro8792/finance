@@ -5,9 +5,14 @@ import type { CategoryRepository } from "../categories/category.types.js";
 import type { CreditCardRepository } from "../credit-cards/credit-card.types.js";
 import { EXPENSE_CATEGORY_TYPES } from "../transactions/transaction.types.js";
 import { parsePositiveAmount } from "../transactions/transaction.service.js";
+import {
+  buildInstallmentSchedule,
+  MAX_CREDIT_CARD_INSTALLMENTS,
+  splitInstallmentAmounts,
+} from "./credit-card-purchase.math.js";
 import type {
   CreditCardPurchaseRepository,
-  PurchaseWithInstallment,
+  PurchaseWithInstallments,
 } from "./credit-card-purchase.types.js";
 
 export type CreateCreditCardPurchaseRequest = {
@@ -21,9 +26,10 @@ export type CreateCreditCardPurchaseRequest = {
 };
 
 /**
- * P0.6: cash purchase (1 installment) atomically creates
- * Purchase + Installment(1/1, RECOGNIZED) + EXPENSE.
- * Financial impact comes only from the Transaction.
+ * P0.7: N-installment purchase.
+ * Create atomically: Purchase + N Installments + EXPENSE for installment #1 only.
+ * #1 RECOGNIZED immediately; #2..N PENDING (future commitment).
+ * Temporary recognition rule until P0.8 / closingDay cycles.
  * Void endpoint deferred to P0.15.
  */
 export class CreditCardPurchaseService {
@@ -33,11 +39,11 @@ export class CreditCardPurchaseService {
     private readonly categories: CategoryRepository
   ) {}
 
-  async list(userId: string): Promise<PurchaseWithInstallment[]> {
+  async list(userId: string): Promise<PurchaseWithInstallments[]> {
     return this.purchases.findByUserId(userId);
   }
 
-  async getById(userId: string, id: string): Promise<PurchaseWithInstallment> {
+  async getById(userId: string, id: string): Promise<PurchaseWithInstallments> {
     const item = await this.purchases.findById(id);
     if (!item || item.purchase.userId !== userId) {
       throw new AppError("NOT_FOUND", "Compra no encontrada.", 404);
@@ -48,17 +54,21 @@ export class CreditCardPurchaseService {
   async create(
     userId: string,
     input: CreateCreditCardPurchaseRequest
-  ): Promise<PurchaseWithInstallment> {
+  ): Promise<PurchaseWithInstallments> {
     const installmentsCount = input.installmentsCount ?? 1;
-    if (installmentsCount !== 1) {
+    if (
+      !Number.isInteger(installmentsCount) ||
+      installmentsCount < 1 ||
+      installmentsCount > MAX_CREDIT_CARD_INSTALLMENTS
+    ) {
       throw new AppError(
         "VALIDATION_ERROR",
-        "En P0.6 installmentsCount debe ser 1.",
+        `installmentsCount debe ser un entero entre 1 y ${MAX_CREDIT_CARD_INSTALLMENTS}.`,
         400
       );
     }
 
-    const amount = parsePositiveAmount(String(input.totalAmount));
+    const totalAmount = parsePositiveAmount(String(input.totalAmount));
     const card = await this.requireActiveOwnedCard(userId, input.creditCardId);
     const currency = requireMatchingCurrency(input.currency, card.currency);
     const category = await this.requireActiveExpenseCategory(
@@ -68,11 +78,30 @@ export class CreditCardPurchaseService {
     const purchasedAt = parsePurchaseDate(input.purchaseDate);
     const description = normalizeDescription(input.description);
 
-    const purchaseId = randomUUID();
-    const installmentId = randomUUID();
-    const transactionId = randomUUID();
+    const amounts = splitInstallmentAmounts(totalAmount, installmentsCount);
+    const schedule = buildInstallmentSchedule(purchasedAt, installmentsCount);
+    const nominalInstallmentAmount = amounts[0]!;
 
-    return this.purchases.createCashPurchaseAtomic({
+    const purchaseId = randomUUID();
+    const transactionId = randomUUID();
+    const firstAmount = amounts[0]!;
+
+    const installments = amounts.map((amount, index) => {
+      const installmentNumber = index + 1;
+      const isFirst = installmentNumber === 1;
+      return {
+        id: randomUUID(),
+        purchaseId,
+        installmentNumber,
+        amount,
+        status: isFirst ? ("RECOGNIZED" as const) : ("PENDING" as const),
+        scheduledFor: schedule[index]!,
+        recognizedTransactionId: isFirst ? transactionId : null,
+        recognizedAt: isFirst ? purchasedAt : null,
+      };
+    });
+
+    return this.purchases.createPurchaseAtomic({
       purchase: {
         id: purchaseId,
         userId,
@@ -80,21 +109,13 @@ export class CreditCardPurchaseService {
         categoryId: category.id,
         description,
         currency,
-        totalAmount: amount,
-        installmentAmount: amount,
-        installmentsCount: 1,
+        totalAmount,
+        installmentAmount: nominalInstallmentAmount,
+        installmentsCount,
         purchasedAt,
         status: "ACTIVE",
       },
-      installment: {
-        id: installmentId,
-        purchaseId,
-        installmentNumber: 1,
-        amount,
-        status: "RECOGNIZED",
-        recognizedTransactionId: transactionId,
-        recognizedAt: purchasedAt,
-      },
+      installments,
       transaction: {
         id: transactionId,
         userId,
@@ -103,7 +124,7 @@ export class CreditCardPurchaseService {
         categoryId: category.id,
         type: "EXPENSE",
         status: "ACTIVE",
-        amount,
+        amount: firstAmount,
         currency,
         description,
         occurredAt: purchasedAt,

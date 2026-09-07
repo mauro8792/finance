@@ -390,6 +390,7 @@ model CreditCardInstallment {
   installmentNumber        Int                          @map("installment_number")
   amount                   Decimal                      @db.Decimal(18, 2)
   status                   CreditCardInstallmentStatus  @default(PENDING)
+  scheduledFor             DateTime                     @map("scheduled_for") @db.Timestamptz
   recognizedTransactionId  String?                      @unique @map("recognized_transaction_id") @db.Uuid
   recognizedAt             DateTime?                    @map("recognized_at") @db.Timestamptz
   createdAt                DateTime                     @default(now()) @map("created_at") @db.Timestamptz
@@ -400,5 +401,6 @@ model CreditCardInstallment {
   @@unique([purchaseId, installmentNumber])
   @@index([purchaseId])
   @@index([status])
+  @@index([scheduledFor])
   @@map("credit_card_installments")
 }

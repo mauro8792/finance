@@ -522,7 +522,7 @@ Las tarjetas son entidades de primera clase (`CreditCard`), independientes de `A
 Compra con tarjeta:
 
 - **P0.5 path directo:** `Transaction.type = EXPENSE` con `creditCardId` + `accountId = null` (sigue válido por compatibilidad).
-- **P0.6 path canónico (1 pago):** `CreditCardPurchase` → `CreditCardInstallment` 1/1 `RECOGNIZED` → `Transaction EXPENSE` (mismo impacto F1).
+- **P0.6/P0.7 path canónico:** `CreditCardPurchase` → `CreditCardInstallment` 1..N → `Transaction EXPENSE` solo para cuotas `RECOGNIZED`.
 
 Gasto no tarjeta → `accountId` obligatorio; `creditCardId = null`.
 
@@ -532,9 +532,10 @@ Efectos de la compra / cuota reconocida:
 
 - sí: gasto reconocido, categoría, presupuesto del período (vía **Transaction**);
 - no: saldo bancario / disponible;
-- Purchase/Installment **no** suman gasto ni deuda por sí solos.
+- Purchase/Installment **no** suman gasto ni deuda por sí solos;
+- installments `PENDING` solo forman `futureInstallmentCommitment`.
 
-`currentCardDebt` (P0.5/P0.6) = suma de `EXPENSE` ACTIVE vinculados a la tarjeta.  
+`currentCardDebt` (P0.5–P0.7) = suma de `EXPENSE` ACTIVE vinculados a la tarjeta.  
 Aún no restan pagos ni reintegros a tarjeta (P0.10+).
 
 Pago de tarjeta → `Transaction.type = CREDIT_CARD_PAYMENT`:
@@ -546,7 +547,7 @@ Pago de tarjeta → `Transaction.type = CREDIT_CARD_PAYMENT`:
 Distinguir:
 
 - `currentCardDebt` — reconocidos aún no pagados;
-- `futureInstallmentCommitment` — cuotas no reconocidas (P0.7+; en P0.5 siempre 0);
+- `futureInstallmentCommitment` — cuotas `PENDING` de purchases `ACTIVE` (P0.7+; P0.5 sin purchase = 0);
 - `totalOutstandingCommitment` = suma de ambos.
 
 Reintegros acreditados: destino banco (`REIMBURSEMENT` + `accountId`) o tarjeta (`REIMBURSEMENT` + `creditCardId`, `accountId` null).  
@@ -556,7 +557,7 @@ Sin `closingDay`: proyección limitada; no afirmar “próximo resumen” cierto
 
 `CreditCardStatement` no es fuente de deuda: `currentCardDebt` se deriva de eventos (`EXPENSE` reconocidos, `CREDIT_CARD_PAYMENT`, reintegros a tarjeta, cargos explícitos). Cambiar `actualAmount` del statement **no** altera la deuda en silencio (`MVP2-DECISIONES-P0.md` F9).
 
-**Limitación temporal P0.5:** runway puede incluir CARD EXPENSE en gasto mensual histórico, pero no proyecta el futuro `CREDIT_CARD_PAYMENT` (aún no existe).
+**Limitación temporal P0.7:** runway no convierte `futureInstallmentCommitment` en cash outflows; reconocimiento de cuotas `#2..N` es P0.8 (no cron en P0.7).
 
 ## 23.2 Legacy MVP1
 
@@ -574,17 +575,20 @@ El pago del resumen **nunca** debe registrarse otra vez como `EXPENSE` (ni en le
 
 Modelo: `CreditCardPurchase` → `CreditCardInstallment` 1..N → `Transaction EXPENSE` opcional al reconocer.
 
-**P0.6:** N=1 siempre; installment creado ya `RECOGNIZED` con EXPENSE atómico.  
-**P0.7+:** N>1 con installments `PENDING` hasta reconocimiento.
+**P0.6:** N=1; installment creado ya `RECOGNIZED` con EXPENSE atómico.  
+**P0.7:** N∈[1,60]; al crear, **solo #1 RECOGNIZED** + EXPENSE; `#2..N PENDING`.  
+Regla temporal: primera cuota se reconoce inmediatamente; schedule (`scheduled_for`) mensual desde `purchaseDate` **sin** usar `closingDay`. Reconocimiento futuro = P0.8.
 
 No crear N `EXPENSE` huérfanos sin purchase padre (flujo purchase).  
-El create EXPENSE P0.5 con `creditCardId` permanece por compatibilidad hasta consolidar en P0.7+.
+El create EXPENSE P0.5 con `creditCardId` permanece por compatibilidad (sin Purchase; sí forma `currentCardDebt`; future = 0).
 
-CreditCardPurchase = fuente contractual/metadata.  
+CreditCardPurchase = fuente contractual/metadata (`totalAmount`).  
+CreditCardInstallment.amount = obligación exacta por período.  
 Transaction = fuente del gasto reconocido.  
 CreditCardStatement ≠ fuente de deuda.
 
-Nunca sumar Purchase + Transaction como dos impactos financieros.
+Nunca sumar Purchase + Transaction como dos impactos financieros.  
+Nunca asumir `installmentAmount * count == totalAmount` si hay remainder de redondeo.
 
 Criterio de impacto mensual: solo la cuota reconocida en el período entra en gasto bruto/neto y presupuestos.  
 Ejemplo: 600.000 en 6 cuotas → 100.000 por período de reconocimiento, nunca 600.000 en el mes de compra.

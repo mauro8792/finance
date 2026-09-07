@@ -1,5 +1,6 @@
 import { CURRENCIES, type Currency } from "shared";
 import { z } from "zod";
+import { MAX_CREDIT_CARD_INSTALLMENTS } from "./credit-card-purchase.math.js";
 
 const amountSchema = z.union([
   z.string().min(1, "El importe es obligatorio."),
@@ -26,11 +27,17 @@ export const CreateCreditCardPurchaseSchema = z
   })
   .strict()
   .superRefine((value, ctx) => {
-    if (value.installmentsCount !== undefined && value.installmentsCount !== 1) {
+    if (value.installmentsCount === undefined) {
+      return;
+    }
+    if (
+      value.installmentsCount < 1 ||
+      value.installmentsCount > MAX_CREDIT_CARD_INSTALLMENTS
+    ) {
       ctx.addIssue({
         code: "custom",
         path: ["installmentsCount"],
-        message: "En P0.6 installmentsCount debe ser 1.",
+        message: `installmentsCount debe ser un entero entre 1 y ${MAX_CREDIT_CARD_INSTALLMENTS}.`,
       });
     }
   });

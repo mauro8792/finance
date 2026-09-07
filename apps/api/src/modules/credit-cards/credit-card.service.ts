@@ -1,6 +1,11 @@
 import { CURRENCIES, type Currency } from "shared";
 import { AppError } from "../../shared/errors/app-error.js";
+import type { CreditCardPurchaseRepository } from "../credit-card-purchases/credit-card-purchase.types.js";
 import type { TransactionRepository } from "../transactions/transaction.types.js";
+import {
+  computeFutureInstallmentCommitment,
+  computeTotalOutstandingCommitment,
+} from "./credit-card-commitment.js";
 import { computeCurrentCardDebt } from "./credit-card-debt.js";
 import {
   CREDIT_CARD_FEE_STATUSES,
@@ -11,10 +16,18 @@ import {
   type UpdateCreditCardInput,
 } from "./credit-card.types.js";
 
+export type CreditCardCommitments = {
+  creditCardId: string;
+  currentCardDebt: string;
+  futureInstallmentCommitment: string;
+  totalOutstandingCommitment: string;
+};
+
 export class CreditCardService {
   constructor(
     private readonly cards: CreditCardRepository,
-    private readonly transactions: TransactionRepository | null = null
+    private readonly transactions: TransactionRepository | null = null,
+    private readonly purchases: CreditCardPurchaseRepository | null = null
   ) {}
 
   async list(userId: string): Promise<CreditCard[]> {
@@ -25,6 +38,17 @@ export class CreditCardService {
     userId: string,
     id: string
   ): Promise<{ creditCardId: string; currentCardDebt: string }> {
+    const commitments = await this.getCommitments(userId, id);
+    return {
+      creditCardId: commitments.creditCardId,
+      currentCardDebt: commitments.currentCardDebt,
+    };
+  }
+
+  async getCommitments(
+    userId: string,
+    id: string
+  ): Promise<CreditCardCommitments> {
     const card = await this.requireOwned(userId, id);
     if (!this.transactions) {
       throw new AppError(
@@ -38,9 +62,27 @@ export class CreditCardService {
       type: "EXPENSE",
       status: "ACTIVE",
     });
+    const currentCardDebt = computeCurrentCardDebt(movements);
+
+    let futureInstallmentCommitment = "0.00";
+    if (this.purchases) {
+      const pending =
+        await this.purchases.findPendingInstallmentAmountsByCreditCardId(
+          userId,
+          card.id
+        );
+      futureInstallmentCommitment =
+        computeFutureInstallmentCommitment(pending);
+    }
+
     return {
       creditCardId: card.id,
-      currentCardDebt: computeCurrentCardDebt(movements),
+      currentCardDebt,
+      futureInstallmentCommitment,
+      totalOutstandingCommitment: computeTotalOutstandingCommitment(
+        currentCardDebt,
+        futureInstallmentCommitment
+      ),
     };
   }
 

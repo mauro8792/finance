@@ -398,7 +398,7 @@ apps/api/
 │   │   │   ├── credit-card.schema.ts
 │   │   │   ├── credit-card-debt.ts
 │   │   │   └── credit-card.types.ts
-│   │   ├── credit-card-purchases/ # MVP2 P0.6 — Purchase + Installment 1/1 + EXPENSE atómico
+│   │   ├── credit-card-purchases/ # MVP2 P0.6–P0.7 — Purchase + N Installments; #1 EXPENSE atómico
 │   │   │   ├── credit-card-purchase.controller.ts
 │   │   │   ├── credit-card-purchase.service.ts
 │   │   │   ├── credit-card-purchase.repository.ts

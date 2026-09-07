@@ -294,7 +294,7 @@ Reglas:
 
 ---
 
-# CreditCardPurchase / CreditCardInstallment (P0.6)
+# CreditCardPurchase / CreditCardInstallment (P0.6–P0.7)
 
 ```text
 credit_card_purchases
@@ -306,7 +306,9 @@ credit_card_installments
 ```text
 id, user_id, credit_card_id, category_id
 description, currency
-total_amount, installment_amount, installments_count
+total_amount          -- contrato original (NO sumar a debt/spending)
+installment_amount    -- nominal/base; última cuota puede diferir por redondeo
+installments_count    -- 1..60 (P0.7)
 purchased_at
 status: ACTIVE | VOIDED
 created_at, updated_at
@@ -316,18 +318,29 @@ created_at, updated_at
 
 ```text
 id, purchase_id
-installment_number
-amount
+installment_number (>= 1)
+amount                    -- obligación exacta por período (fuente contractual)
 status: PENDING | RECOGNIZED | CANCELLED
-recognized_transaction_id NULL UNIQUE  -- FK transactions
+scheduled_for             -- P0.7: purchaseDate + (n-1) meses (clamp EOM); no = closingDay
+recognized_transaction_id NULL UNIQUE  -- FK transactions; NOT NULL iff RECOGNIZED
 recognized_at NULL
 created_at, updated_at
 UNIQUE (purchase_id, installment_number)
+CHECK recognition consistency (RECOGNIZED ↔ tx id)
 ```
 
-P0.6 siempre: `installments_count = 1`, installment `RECOGNIZED` + EXPENSE atómico.  
-FK canónica del gasto: installment → transaction (no `purchase.transaction_id`).  
-P0.7 agregará N installments `PENDING` sin migración destructiva.
+**Semántica:**
+- `Purchase.totalAmount` = contrato original
+- `Installment.amount` = obligación por período
+- `Transaction EXPENSE` = gasto reconocido (única fuente de periodSpending / currentCardDebt vía tarjeta)
+- `PENDING` = future commitment
+- `RECOGNIZED` = current debt vía Transaction
+- `CANCELLED` = ni gasto ni commitment
+
+**P0.7 create:** #1 RECOGNIZED + EXPENSE; #2..N PENDING. Sin auto-reconocimiento por fecha (P0.8).  
+`scheduled_for` = `purchased_at` ORIGINAL + `(installment_number - 1)` meses (clamp EOM); **no** encadenar desde la cuota anterior.
+
+FK canónica del gasto: installment → transaction (no `purchase.transaction_id`).
 
 Purchase = metadata contractual. Transaction = gasto reconocido. Statement ≠ deuda.
 

@@ -64,6 +64,13 @@ export class CreditCardController {
     const result = await this.cards.getCurrentCardDebt(userId, id);
     res.status(200).json(result);
   };
+
+  commitments = async (req: Request, res: Response): Promise<void> => {
+    const userId = getAuthUserId(req);
+    const { id } = parseBody(CreditCardIdParamsSchema, req.params);
+    const result = await this.cards.getCommitments(userId, id);
+    res.status(200).json(result);
+  };
 }
 
 function parseBody<T>(schema: ZodType<T>, data: unknown): T {

@@ -45,8 +45,10 @@ import { CreditCardPurchaseService } from "./credit-card-purchase.service.js";
 import type {
   CreatePurchaseAtomicInput,
   CreditCardPurchaseRepository,
-  PurchaseWithInstallment,
+  PurchaseWithInstallments,
 } from "./credit-card-purchase.types.js";
+import { computeFutureInstallmentCommitment } from "../credit-cards/credit-card-commitment.js";
+import { toCents } from "../transactions/transaction-balance.js";
 
 const TZ = DEFAULT_USER_TIMEZONE;
 
@@ -258,7 +260,7 @@ class MemoryTransactionRepository implements TransactionRepository {
 }
 
 class MemoryPurchaseRepository implements CreditCardPurchaseRepository {
-  readonly items: PurchaseWithInstallment[] = [];
+  readonly items: PurchaseWithInstallments[] = [];
   failAfterPurchase = false;
   private readonly transactions: MemoryTransactionRepository;
 
@@ -266,10 +268,9 @@ class MemoryPurchaseRepository implements CreditCardPurchaseRepository {
     this.transactions = transactions;
   }
 
-  async createCashPurchaseAtomic(
+  async createPurchaseAtomic(
     input: CreatePurchaseAtomicInput
-  ): Promise<PurchaseWithInstallment> {
-    // Simulate atomicity: either all succeed or nothing is kept.
+  ): Promise<PurchaseWithInstallments> {
     const snapshotPurchases = this.items.length;
     const snapshotTx = this.transactions.items.length;
 
@@ -280,18 +281,21 @@ class MemoryPurchaseRepository implements CreditCardPurchaseRepository {
       }
       const transaction = await this.transactions.create(input.transaction);
       const now = new Date();
-      const item: PurchaseWithInstallment = {
+      const installments = input.installments.map((item) => ({
+        ...item,
+        recognizedTransactionId:
+          item.status === "RECOGNIZED" ? transaction.id : null,
+        createdAt: now,
+        updatedAt: now,
+      }));
+      const item: PurchaseWithInstallments = {
         purchase: {
           ...input.purchase,
           createdAt: now,
           updatedAt: now,
         },
-        installment: {
-          ...input.installment,
-          createdAt: now,
-          updatedAt: now,
-        },
-        transactionId: transaction.id,
+        installments,
+        recognizedTransactionId: transaction.id,
       };
       this.items.push(item);
       return item;
@@ -308,6 +312,22 @@ class MemoryPurchaseRepository implements CreditCardPurchaseRepository {
 
   async findByUserId(userId: string) {
     return this.items.filter((item) => item.purchase.userId === userId);
+  }
+
+  async findPendingInstallmentAmountsByCreditCardId(
+    userId: string,
+    creditCardId: string
+  ) {
+    return this.items
+      .filter(
+        (item) =>
+          item.purchase.userId === userId &&
+          item.purchase.creditCardId === creditCardId &&
+          item.purchase.status === "ACTIVE"
+      )
+      .flatMap((item) => item.installments)
+      .filter((row) => row.status === "PENDING")
+      .map((row) => ({ amount: row.amount, status: row.status }));
   }
 }
 
@@ -428,7 +448,7 @@ async function setup() {
     cards
   );
   const accountService = new AccountService(accounts, transactions);
-  const cardService = new CreditCardService(cards, transactions);
+  const cardService = new CreditCardService(cards, transactions, purchases);
   const financial = new FinancialService(transactions, accounts);
   const budgetService = new BudgetService(
     budgets,
@@ -454,57 +474,30 @@ async function setup() {
   };
 }
 
-test("P0.6 A — create purchase 1 pago creates purchase + installment + EXPENSE", async () => {
+test("P0.7 A — 600000 / 6 recognizes only first installment", async () => {
   const ctx = await setup();
   const created = await ctx.purchaseService.create(ctx.userId, {
     creditCardId: ctx.card.id,
     categoryId: ctx.category.id,
-    description: "Nafta",
+    description: "Electrodoméstico",
     currency: "ARS",
-    totalAmount: "20000.00",
+    totalAmount: "600000.00",
     purchaseDate: "2026-09-07",
+    installmentsCount: 6,
   });
 
-  assert.equal(created.purchase.installmentsCount, 1);
-  assert.equal(created.purchase.totalAmount, "20000.00");
-  assert.equal(created.installment.installmentNumber, 1);
-  assert.equal(created.installment.status, "RECOGNIZED");
-  assert.equal(created.installment.amount, "20000.00");
-  assert.equal(created.transactionId, created.installment.recognizedTransactionId);
+  assert.equal(created.purchase.totalAmount, "600000.00");
+  assert.equal(created.purchase.installmentsCount, 6);
+  assert.equal(created.installments.length, 6);
+  assert.equal(created.installments[0]?.status, "RECOGNIZED");
+  assert.equal(created.installments[0]?.amount, "100000.00");
+  for (let i = 1; i < 6; i += 1) {
+    assert.equal(created.installments[i]?.status, "PENDING");
+    assert.equal(created.installments[i]?.recognizedTransactionId, null);
+  }
 
-  const tx = await ctx.transactions.findById(created.transactionId);
-  assert.ok(tx);
-  assert.equal(tx.type, "EXPENSE");
-  assert.equal(tx.accountId, null);
-  assert.equal(tx.creditCardId, ctx.card.id);
-  assert.equal(tx.amount, "20000.00");
-});
-
-test("P0.6 B/L — atomic failure leaves no orphan purchase or transaction", async () => {
-  const ctx = await setup();
-  ctx.purchases.failAfterPurchase = true;
-  await assert.rejects(() =>
-    ctx.purchaseService.create(ctx.userId, {
-      creditCardId: ctx.card.id,
-      categoryId: ctx.category.id,
-      currency: "ARS",
-      totalAmount: "100.00",
-      purchaseDate: "2026-09-07",
-    })
-  );
-  assert.equal(ctx.purchases.items.length, 0);
-  assert.equal(ctx.transactions.items.length, 0);
-});
-
-test("P0.6 C — bank unchanged, spending and debt rise once", async () => {
-  const ctx = await setup();
-  await ctx.purchaseService.create(ctx.userId, {
-    creditCardId: ctx.card.id,
-    categoryId: ctx.category.id,
-    currency: "ARS",
-    totalAmount: 20000,
-    purchaseDate: "2026-09-07",
-  });
+  assert.equal(ctx.transactions.items.length, 1);
+  assert.equal(ctx.transactions.items[0]?.amount, "100000.00");
 
   const balance = await ctx.accountService.getBalance(ctx.userId, ctx.account.id);
   assert.equal(balance.balance, "100000.00");
@@ -515,151 +508,145 @@ test("P0.6 C — bank unchanged, spending and debt rise once", async () => {
     9,
     TZ
   );
-  assert.equal(spending, "20000.00");
+  assert.equal(spending, "100000.00");
 
-  const debt = await ctx.cardService.getCurrentCardDebt(ctx.userId, ctx.card.id);
-  assert.equal(debt.currentCardDebt, "20000.00");
-});
-
-test("P0.6 D — no double count from purchase.totalAmount", async () => {
-  const ctx = await setup();
-  await ctx.purchaseService.create(ctx.userId, {
-    creditCardId: ctx.card.id,
-    categoryId: ctx.category.id,
-    currency: "ARS",
-    totalAmount: "20000.00",
-    purchaseDate: "2026-09-07",
-  });
-  // Debt derives only from EXPENSE movements, not purchase rows.
-  assert.equal(computeCurrentCardDebt(ctx.transactions.items), "20000.00");
-  assert.equal(ctx.purchases.items.length, 1);
-  assert.equal(ctx.transactions.items.length, 1);
-});
-
-test("P0.6 E — budget consumes once", async () => {
-  const ctx = await setup();
-  await ctx.budgetService.create(ctx.userId, {
-    categoryId: ctx.category.id,
-    year: 2026,
-    month: 9,
-    amount: "100000.00",
-    currency: "ARS",
-  });
-  await ctx.purchaseService.create(ctx.userId, {
-    creditCardId: ctx.card.id,
-    categoryId: ctx.category.id,
-    currency: "ARS",
-    totalAmount: "20000.00",
-    purchaseDate: "2026-09-07",
-  });
-  const listed = await ctx.budgetService.listByPeriod(ctx.userId, 2026, 9);
-  assert.equal(listed[0]?.consumption, "20000.00");
-});
-
-test("P0.6 F — reject missing / inactive / foreign card", async () => {
-  const ctx = await setup();
-  const foreign = await ctx.cards.create({
-    userId: randomUUID(),
-    name: "X",
-    issuer: "X",
-    brand: "Visa",
-    currency: "ARS",
-  });
-  const inactive = await ctx.cards.create({
-    userId: ctx.userId,
-    name: "Inactive",
-    issuer: "X",
-    brand: "Visa",
-    currency: "ARS",
-    isActive: false,
-  });
-
-  await assert.rejects(
-    () =>
-      ctx.purchaseService.create(ctx.userId, {
-        creditCardId: randomUUID(),
-        categoryId: ctx.category.id,
-        currency: "ARS",
-        totalAmount: "10.00",
-        purchaseDate: "2026-09-07",
-      }),
-    (e: unknown) => e instanceof AppError && e.code === "NOT_FOUND"
+  const commitments = await ctx.cardService.getCommitments(
+    ctx.userId,
+    ctx.card.id
   );
-  await assert.rejects(
-    () =>
-      ctx.purchaseService.create(ctx.userId, {
-        creditCardId: foreign.id,
-        categoryId: ctx.category.id,
-        currency: "ARS",
-        totalAmount: "10.00",
-        purchaseDate: "2026-09-07",
-      }),
-    (e: unknown) => e instanceof AppError && e.code === "NOT_FOUND"
-  );
-  await assert.rejects(
-    () =>
-      ctx.purchaseService.create(ctx.userId, {
-        creditCardId: inactive.id,
-        categoryId: ctx.category.id,
-        currency: "ARS",
-        totalAmount: "10.00",
-        purchaseDate: "2026-09-07",
-      }),
-    (e: unknown) => e instanceof AppError && e.code === "CREDIT_CARD_INACTIVE"
-  );
+  assert.equal(commitments.currentCardDebt, "100000.00");
+  assert.equal(commitments.futureInstallmentCommitment, "500000.00");
+  assert.equal(commitments.totalOutstandingCommitment, "600000.00");
 });
 
-test("P0.6 G — currency mismatch rejected", async () => {
-  const ctx = await setup();
-  await assert.rejects(
-    () =>
-      ctx.purchaseService.create(ctx.userId, {
-        creditCardId: ctx.card.id,
-        categoryId: ctx.category.id,
-        currency: "USD",
-        totalAmount: "10.00",
-        purchaseDate: "2026-09-07",
-      }),
-    (e: unknown) => e instanceof AppError && e.code === "CURRENCY_MISMATCH"
-  );
-});
-
-test("P0.6 H — installmentsCount must be 1", async () => {
-  const ctx = await setup();
-  await assert.rejects(
-    () =>
-      ctx.purchaseService.create(ctx.userId, {
-        creditCardId: ctx.card.id,
-        categoryId: ctx.category.id,
-        currency: "ARS",
-        totalAmount: "10.00",
-        purchaseDate: "2026-09-07",
-        installmentsCount: 2,
-      }),
-    (e: unknown) => e instanceof AppError && e.code === "VALIDATION_ERROR"
-  );
-});
-
-test("P0.6 I — list/detail user isolation", async () => {
+test("P0.7 B — 100 / 3 splits without cent loss", async () => {
   const ctx = await setup();
   const created = await ctx.purchaseService.create(ctx.userId, {
     creditCardId: ctx.card.id,
     categoryId: ctx.category.id,
     currency: "ARS",
-    totalAmount: "50.00",
+    totalAmount: "100.00",
     purchaseDate: "2026-09-07",
+    installmentsCount: 3,
   });
-  const listed = await ctx.purchaseService.list(ctx.userId);
-  assert.equal(listed.length, 1);
-  const detail = await ctx.purchaseService.getById(ctx.userId, created.purchase.id);
-  assert.equal(detail.purchase.id, created.purchase.id);
-  await assert.rejects(
-    () => ctx.purchaseService.getById(randomUUID(), created.purchase.id),
-    (e: unknown) => e instanceof AppError && e.code === "NOT_FOUND"
+  const amounts = created.installments.map((row) => row.amount);
+  assert.deepEqual(amounts, ["33.33", "33.33", "33.34"]);
+  const sumCents = amounts.reduce((acc, value) => acc + toCents(value), 0n);
+  assert.equal(sumCents, toCents("100.00"));
+  assert.equal(created.purchase.totalAmount, "100.00");
+});
+
+test("P0.7 C — installmentsCount=1 matches P0.6 behavior", async () => {
+  const ctx = await setup();
+  const created = await ctx.purchaseService.create(ctx.userId, {
+    creditCardId: ctx.card.id,
+    categoryId: ctx.category.id,
+    description: "Nafta",
+    currency: "ARS",
+    totalAmount: "20000.00",
+    purchaseDate: "2026-09-07",
+    installmentsCount: 1,
+  });
+
+  assert.equal(created.purchase.installmentsCount, 1);
+  assert.equal(created.installments.length, 1);
+  assert.equal(created.installments[0]?.status, "RECOGNIZED");
+  assert.equal(created.installments[0]?.amount, "20000.00");
+  assert.equal(
+    created.recognizedTransactionId,
+    created.installments[0]?.recognizedTransactionId
+  );
+
+  const tx = await ctx.transactions.findById(created.recognizedTransactionId!);
+  assert.ok(tx);
+  assert.equal(tx.type, "EXPENSE");
+  assert.equal(tx.accountId, null);
+  assert.equal(tx.creditCardId, ctx.card.id);
+  assert.equal(tx.amount, "20000.00");
+
+  const commitments = await ctx.cardService.getCommitments(
+    ctx.userId,
+    ctx.card.id
+  );
+  assert.equal(commitments.currentCardDebt, "20000.00");
+  assert.equal(commitments.futureInstallmentCommitment, "0.00");
+});
+
+test("P0.7 D — invalid installmentsCount rejected", async () => {
+  const ctx = await setup();
+  for (const installmentsCount of [0, -1, 61]) {
+    await assert.rejects(
+      () =>
+        ctx.purchaseService.create(ctx.userId, {
+          creditCardId: ctx.card.id,
+          categoryId: ctx.category.id,
+          currency: "ARS",
+          totalAmount: "10.00",
+          purchaseDate: "2026-09-07",
+          installmentsCount,
+        }),
+      (e: unknown) => e instanceof AppError && e.code === "VALIDATION_ERROR"
+    );
+  }
+});
+
+test("P0.7 E — budget consumes only recognized installment", async () => {
+  const ctx = await setup();
+  await ctx.budgetService.create(ctx.userId, {
+    categoryId: ctx.category.id,
+    year: 2026,
+    month: 9,
+    amount: "1000000.00",
+    currency: "ARS",
+  });
+  await ctx.purchaseService.create(ctx.userId, {
+    creditCardId: ctx.card.id,
+    categoryId: ctx.category.id,
+    currency: "ARS",
+    totalAmount: "600000.00",
+    purchaseDate: "2026-09-07",
+    installmentsCount: 6,
+  });
+  const listed = await ctx.budgetService.listByPeriod(ctx.userId, 2026, 9);
+  assert.equal(listed[0]?.consumption, "100000.00");
+});
+
+test("P0.7 F — purchase.totalAmount never double-counted", async () => {
+  const ctx = await setup();
+  await ctx.purchaseService.create(ctx.userId, {
+    creditCardId: ctx.card.id,
+    categoryId: ctx.category.id,
+    currency: "ARS",
+    totalAmount: "600000.00",
+    purchaseDate: "2026-09-07",
+    installmentsCount: 6,
+  });
+  assert.equal(computeCurrentCardDebt(ctx.transactions.items), "100000.00");
+  assert.equal(ctx.transactions.items.length, 1);
+  assert.equal(ctx.purchases.items.length, 1);
+});
+
+test("P0.7 G/H — future commitment only PENDING ACTIVE; CANCELLED excluded", async () => {
+  const ctx = await setup();
+  const created = await ctx.purchaseService.create(ctx.userId, {
+    creditCardId: ctx.card.id,
+    categoryId: ctx.category.id,
+    currency: "ARS",
+    totalAmount: "300.00",
+    purchaseDate: "2026-09-07",
+    installmentsCount: 3,
+  });
+  // Simulate cancelling one pending installment in memory.
+  created.installments[1]!.status = "CANCELLED";
+  const pending = created.installments.filter((row) => row.status === "PENDING");
+  assert.equal(computeFutureInstallmentCommitment(pending), "100.00");
+  assert.equal(
+    computeFutureInstallmentCommitment(created.installments),
+    "100.00"
   );
 });
 
-test("P0.6 J — direct P0.5 card EXPENSE still works", async () => {
+test("P0.7 I — direct P0.5 card EXPENSE affects debt only", async () => {
   const ctx = await setup();
   const expense = await ctx.txService.createExpense(ctx.userId, {
     amount: "1500.00",
@@ -670,17 +657,188 @@ test("P0.6 J — direct P0.5 card EXPENSE still works", async () => {
   assert.equal(expense.accountId, null);
   assert.equal(expense.creditCardId, ctx.card.id);
   assert.equal(ctx.purchases.items.length, 0);
+
+  const commitments = await ctx.cardService.getCommitments(
+    ctx.userId,
+    ctx.card.id
+  );
+  assert.equal(commitments.currentCardDebt, "1500.00");
+  assert.equal(commitments.futureInstallmentCommitment, "0.00");
 });
 
-test("P0.6 K — liquidity unchanged after purchase", async () => {
+test("P0.7 J — multiple purchases aggregate correctly", async () => {
   const ctx = await setup();
   await ctx.purchaseService.create(ctx.userId, {
     creditCardId: ctx.card.id,
     categoryId: ctx.category.id,
     currency: "ARS",
-    totalAmount: "20000.00",
+    totalAmount: "600000.00",
     purchaseDate: "2026-09-07",
+    installmentsCount: 6,
+  });
+  await ctx.txService.createExpense(ctx.userId, {
+    amount: "50000.00",
+    currency: "ARS",
+    creditCardId: ctx.card.id,
+    categoryId: ctx.category.id,
+  });
+  const commitments = await ctx.cardService.getCommitments(
+    ctx.userId,
+    ctx.card.id
+  );
+  assert.equal(commitments.currentCardDebt, "150000.00");
+  assert.equal(commitments.futureInstallmentCommitment, "500000.00");
+  assert.equal(commitments.totalOutstandingCommitment, "650000.00");
+});
+
+test("P0.7 K — USD rounding exact", async () => {
+  const ctx = await setup();
+  const usdCard = await ctx.cards.create({
+    userId: ctx.userId,
+    name: "USD Card",
+    issuer: "Bank",
+    brand: "Visa",
+    currency: "USD",
+  });
+  const created = await ctx.purchaseService.create(ctx.userId, {
+    creditCardId: usdCard.id,
+    categoryId: ctx.category.id,
+    currency: "USD",
+    totalAmount: "10.00",
+    purchaseDate: "2026-09-07",
+    installmentsCount: 3,
+  });
+  const sumCents = created.installments.reduce(
+    (acc, row) => acc + toCents(row.amount),
+    0n
+  );
+  assert.equal(sumCents, toCents("10.00"));
+  assert.deepEqual(
+    created.installments.map((row) => row.amount),
+    ["3.33", "3.33", "3.34"]
+  );
+});
+
+test("P0.7 L — schedule dates handle month lengths and leap year", async () => {
+  const ctx = await setup();
+  const created = await ctx.purchaseService.create(ctx.userId, {
+    creditCardId: ctx.card.id,
+    categoryId: ctx.category.id,
+    currency: "ARS",
+    totalAmount: "400.00",
+    purchaseDate: "2024-01-31",
+    installmentsCount: 4,
+  });
+  const dates = created.installments.map((row) =>
+    row.scheduledFor.toISOString().slice(0, 10)
+  );
+  assert.deepEqual(dates, [
+    "2024-01-31",
+    "2024-02-29",
+    "2024-03-31",
+    "2024-04-30",
+  ]);
+
+  const yearChange = await ctx.purchaseService.create(ctx.userId, {
+    creditCardId: ctx.card.id,
+    categoryId: ctx.category.id,
+    currency: "ARS",
+    totalAmount: "200.00",
+    purchaseDate: "2026-11-07",
+    installmentsCount: 2,
+  });
+  assert.equal(
+    yearChange.installments[1]?.scheduledFor.toISOString().slice(0, 10),
+    "2026-12-07"
+  );
+});
+
+test("P0.7 M — atomic rollback leaves no partial purchase", async () => {
+  const ctx = await setup();
+  ctx.purchases.failAfterPurchase = true;
+  await assert.rejects(() =>
+    ctx.purchaseService.create(ctx.userId, {
+      creditCardId: ctx.card.id,
+      categoryId: ctx.category.id,
+      currency: "ARS",
+      totalAmount: "100.00",
+      purchaseDate: "2026-09-07",
+      installmentsCount: 3,
+    })
+  );
+  assert.equal(ctx.purchases.items.length, 0);
+  assert.equal(ctx.transactions.items.length, 0);
+});
+
+test("P0.7 N — user isolation for purchases and commitments", async () => {
+  const ctx = await setup();
+  const created = await ctx.purchaseService.create(ctx.userId, {
+    creditCardId: ctx.card.id,
+    categoryId: ctx.category.id,
+    currency: "ARS",
+    totalAmount: "50.00",
+    purchaseDate: "2026-09-07",
+    installmentsCount: 2,
+  });
+  const listed = await ctx.purchaseService.list(ctx.userId);
+  assert.equal(listed.length, 1);
+  await assert.rejects(
+    () => ctx.purchaseService.getById(randomUUID(), created.purchase.id),
+    (e: unknown) => e instanceof AppError && e.code === "NOT_FOUND"
+  );
+  await assert.rejects(
+    () => ctx.cardService.getCommitments(randomUUID(), ctx.card.id),
+    (e: unknown) => e instanceof AppError && e.code === "NOT_FOUND"
+  );
+});
+
+test("P0.7 O — inactive card rejects new purchase", async () => {
+  const ctx = await setup();
+  const inactive = await ctx.cards.create({
+    userId: ctx.userId,
+    name: "Inactive",
+    issuer: "X",
+    brand: "Visa",
+    currency: "ARS",
+    isActive: false,
+  });
+  await assert.rejects(
+    () =>
+      ctx.purchaseService.create(ctx.userId, {
+        creditCardId: inactive.id,
+        categoryId: ctx.category.id,
+        currency: "ARS",
+        totalAmount: "10.00",
+        purchaseDate: "2026-09-07",
+        installmentsCount: 2,
+      }),
+    (e: unknown) => e instanceof AppError && e.code === "CREDIT_CARD_INACTIVE"
+  );
+});
+
+test("P0.7 — liquidity unchanged; currency mismatch still rejected", async () => {
+  const ctx = await setup();
+  await ctx.purchaseService.create(ctx.userId, {
+    creditCardId: ctx.card.id,
+    categoryId: ctx.category.id,
+    currency: "ARS",
+    totalAmount: "600000.00",
+    purchaseDate: "2026-09-07",
+    installmentsCount: 6,
   });
   const available = await ctx.financial.getTotalAvailableARS(ctx.userId);
   assert.equal(available, "100000.00");
+
+  await assert.rejects(
+    () =>
+      ctx.purchaseService.create(ctx.userId, {
+        creditCardId: ctx.card.id,
+        categoryId: ctx.category.id,
+        currency: "USD",
+        totalAmount: "10.00",
+        purchaseDate: "2026-09-07",
+        installmentsCount: 2,
+      }),
+    (e: unknown) => e instanceof AppError && e.code === "CURRENCY_MISMATCH"
+  );
 });

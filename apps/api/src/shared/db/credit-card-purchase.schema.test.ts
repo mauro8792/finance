@@ -3,11 +3,11 @@ import { randomUUID } from "node:crypto";
 import { test } from "node:test";
 import { getPrismaClient } from "./prisma.js";
 
-test("CreditCardPurchase cash purchase persists purchase + installment + EXPENSE atomically", async () => {
+test("CreditCardPurchase N cuotas: #1 RECOGNIZED + PENDING schedule + EXPENSE", async () => {
   const prisma = getPrismaClient();
   const user = await prisma.user.create({
     data: {
-      name: "QA Purchase",
+      name: "QA Purchase P07",
       email: `${randomUUID()}@qa.invalid`,
       passwordHash: "invalid",
     },
@@ -15,7 +15,7 @@ test("CreditCardPurchase cash purchase persists purchase + installment + EXPENSE
   const category = await prisma.category.create({
     data: {
       userId: user.id,
-      name: `Nafta ${Date.now()}`,
+      name: `Electro ${Date.now()}`,
       type: "EXPENSE",
     },
   });
@@ -30,9 +30,9 @@ test("CreditCardPurchase cash purchase persists purchase + installment + EXPENSE
   });
 
   const purchaseId = randomUUID();
-  const installmentId = randomUUID();
   const transactionId = randomUUID();
   const purchasedAt = new Date("2026-09-07T12:00:00.000Z");
+  const installmentIds = [randomUUID(), randomUUID(), randomUUID()];
 
   try {
     await prisma.$transaction(async (tx) => {
@@ -42,11 +42,11 @@ test("CreditCardPurchase cash purchase persists purchase + installment + EXPENSE
           userId: user.id,
           creditCardId: card.id,
           categoryId: category.id,
-          description: "Nafta",
+          description: "Electro",
           currency: "ARS",
-          totalAmount: "20000.00",
-          installmentAmount: "20000.00",
-          installmentsCount: 1,
+          totalAmount: "100.00",
+          installmentAmount: "33.33",
+          installmentsCount: 3,
           purchasedAt,
           status: "ACTIVE",
         },
@@ -60,38 +60,72 @@ test("CreditCardPurchase cash purchase persists purchase + installment + EXPENSE
           categoryId: category.id,
           type: "EXPENSE",
           status: "ACTIVE",
-          amount: "20000.00",
+          amount: "33.33",
           currency: "ARS",
-          description: "Nafta",
+          description: "Electro",
           occurredAt: purchasedAt,
         },
       });
-      await tx.creditCardInstallment.create({
-        data: {
-          id: installmentId,
-          purchaseId,
-          installmentNumber: 1,
-          amount: "20000.00",
-          status: "RECOGNIZED",
-          recognizedTransactionId: transactionId,
-          recognizedAt: purchasedAt,
-        },
-      });
+
+      const amounts = ["33.33", "33.33", "33.34"];
+      for (let index = 0; index < 3; index += 1) {
+        const isFirst = index === 0;
+        await tx.creditCardInstallment.create({
+          data: {
+            id: installmentIds[index]!,
+            purchaseId,
+            installmentNumber: index + 1,
+            amount: amounts[index]!,
+            status: isFirst ? "RECOGNIZED" : "PENDING",
+            scheduledFor: new Date(
+              Date.UTC(2026, 8 + index, 7, 12, 0, 0, 0)
+            ),
+            recognizedTransactionId: isFirst ? transactionId : null,
+            recognizedAt: isFirst ? purchasedAt : null,
+          },
+        });
+      }
     });
 
     const purchase = await prisma.creditCardPurchase.findUnique({
       where: { id: purchaseId },
-      include: { installments: true },
+      include: { installments: { orderBy: { installmentNumber: "asc" } } },
     });
     assert.ok(purchase);
-    assert.equal(purchase.installmentsCount, 1);
-    assert.equal(purchase.installments.length, 1);
+    assert.equal(purchase.installmentsCount, 3);
+    assert.equal(purchase.installments.length, 3);
+    assert.equal(purchase.installments[0]?.status, "RECOGNIZED");
     assert.equal(purchase.installments[0]?.recognizedTransactionId, transactionId);
+    assert.ok(purchase.installments[0]?.scheduledFor);
+    assert.equal(purchase.installments[1]?.status, "PENDING");
+    assert.equal(purchase.installments[1]?.recognizedTransactionId, null);
 
-    const expense = await prisma.transaction.findUnique({ where: { id: transactionId } });
-    assert.equal(expense?.accountId, null);
-    assert.equal(expense?.creditCardId, card.id);
-    assert.equal(expense?.type, "EXPENSE");
+    await assert.rejects(() =>
+      prisma.creditCardInstallment.create({
+        data: {
+          id: randomUUID(),
+          purchaseId,
+          installmentNumber: 1,
+          amount: "1.00",
+          status: "PENDING",
+          scheduledFor: purchasedAt,
+        },
+      })
+    );
+
+    await assert.rejects(() =>
+      prisma.creditCardInstallment.create({
+        data: {
+          id: randomUUID(),
+          purchaseId,
+          installmentNumber: 4,
+          amount: "1.00",
+          status: "RECOGNIZED",
+          scheduledFor: purchasedAt,
+          recognizedTransactionId: null,
+        },
+      })
+    );
   } finally {
     await prisma.creditCardInstallment.deleteMany({ where: { purchaseId } });
     await prisma.transaction.deleteMany({ where: { id: transactionId } });

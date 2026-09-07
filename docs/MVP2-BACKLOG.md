@@ -134,7 +134,7 @@ Gastos no tarjeta: `accountId` obligatorio, `creditCardId = null`.
 
 ## P0.6 — Compra contado (1 cuota) vía Purchase
 
-**Estado: DONE definitivo** (código + Neon `neondb` + API deploy/smoke 2026-09-07). **P0.7 no iniciado.**
+**Estado: DONE definitivo** (código + Neon `neondb` + API deploy/smoke 2026-09-07).
 
 **Objetivo:** Flujo §5: crear `CreditCardPurchase` (N=1) + `CreditCardInstallment` 1/1 + `EXPENSE` reconocido en el acto → `currentCardDebt += amount`; banco intacto.
 
@@ -153,28 +153,49 @@ Gastos no tarjeta: `accountId` obligatorio, `creditCardId = null`.
 
 **Tests:** `credit-card-purchase.service.test.ts` (A–L) + schema test.
 
-**Dependencias:** P0.5. **Siguiente gate:** migrate Neon + P0.7.
+**Dependencias:** P0.5. **Siguiente:** P0.7 (código listo; Neon pendiente aprobación).
 
 ---
 
 ## P0.7 — Compra en N cuotas + compromiso futuro
 
-**Objetivo:** Persistir total, N, cuota, N installments `PENDING`; `futureInstallmentCommitment = suma pendientes`; `currentCardDebt` sin cambio hasta reconocer.
+**Estado: DONE definitivo** (código + Neon `neondb` + API deploy/smoke 2026-09-07). **P0.8 no iniciado.**
 
-**Reglas:** F2; §6.2–6.3; X/N sobre reconocidas vs total.
+**Objetivo:** `Purchase` N≥1 → N `Installment` con schedule; al crear, **solo #1 RECOGNIZED** + EXPENSE; `#2..N PENDING` = `futureInstallmentCommitment`.
 
-**Migraciones:** tablas purchase/installment.
+**Regla temporal de reconocimiento (hasta P0.8/closingDay):**
+- Al registrar compra nueva: installment #1 queda RECOGNIZED inmediatamente.
+- Installments #2..N quedan PENDING.
+- El schedule mensual (`scheduled_for`) **no** usa `closingDay` todavía.
+- **No** hay cron/job/endpoint de reconocimiento futuro en P0.7.
 
-**Riesgos:** no auto-reconocer por solo paso del tiempo sin regla/statement.
+**Algoritmos:**
+- Redondeo: minor units (`toCents`); cuotas 1..N-1 = floor(total/N); última = floor + remainder. `SUM(installment.amount) === purchase.totalAmount`.
+- Fechas: `scheduled_for = purchaseDate + (n-1)` meses UTC; si el día no existe, último día del mes.
+- Cap producto: `installmentsCount` ∈ [1, 60].
+- `installmentAmount` en Purchase = valor nominal/base (cuota #1); fuente contractual exacta = `Installment.amount`.
 
-**Tests:** 600k/6 → future=600k, current=0, gasto período=0 hasta reconocer.
+**Fórmulas (derivadas, no persistidas):**
+- `currentCardDebt` = SUM ACTIVE EXPENSE con `creditCardId` (P0.5 + reconocidas P0.6/P0.7)
+- `futureInstallmentCommitment` = SUM amount de installments PENDING en purchases ACTIVE
+- `totalOutstandingCommitment` = current + future
+- Nunca sumar `Purchase.totalAmount` a spending/debt/future
 
-**Criterio de aceptación:** compromiso consultable; sin N EXPENSE huérfanos.
+**Migraciones:** `20260907180000_credit_card_installment_schedule` (ADD `scheduled_for` NOT NULL + CHECK recognition consistency). Aditiva.
 
-**Dependencias:** P0.6, F2.
+**API:**
+- `POST /api/credit-card-purchases` acepta `installmentsCount` 1..60
+- `GET /:id` expone `installments[]`
+- `GET /api/credit-cards/:id/commitments` → `{ currentCardDebt, futureInstallmentCommitment, totalOutstandingCommitment }`
+- `GET .../current-debt` se mantiene (subset)
+
+**Tests:** A–O en `credit-card-purchase.service.test.ts` + `credit-card-purchase.math.test.ts` + schema.
+
+**Limitaciones hasta P0.8:** no reconoce cuotas por fecha; runway no convierte future commitments en cash outflows; sin statements/payments/refunds/UI/AI.
+
+**Dependencias:** P0.6, F2. **Gate:** aprobación migrate Neon; luego P0.8.
 
 ---
-
 ## P0.8 — Reconocimiento de cuota (impacto mensual + budget)
 
 **Objetivo:** Al reconocer installment k: crear `EXPENSE` (accountId null, creditCardId set, category del purchase); `future −= cuota`, `current += cuota`; gross/net/budget del **período de reconocimiento** += cuota. Nunca 600k en mes 0.
