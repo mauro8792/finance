@@ -519,10 +519,10 @@ Implementación: P0.3–P0.5 en código (ver `MVP2-BACKLOG.md`). Neon P0.5 pendi
 
 Las tarjetas son entidades de primera clase (`CreditCard`), independientes de `Account`.
 
-Compra con tarjeta (P0.5 base, 1 pago / consumo reconocido, sin Purchase aún) → `Transaction.type = EXPENSE` con:
+Compra con tarjeta:
 
-- `creditCardId` obligatorio;
-- `accountId = null`.
+- **P0.5 path directo:** `Transaction.type = EXPENSE` con `creditCardId` + `accountId = null` (sigue válido por compatibilidad).
+- **P0.6 path canónico (1 pago):** `CreditCardPurchase` → `CreditCardInstallment` 1/1 `RECOGNIZED` → `Transaction EXPENSE` (mismo impacto F1).
 
 Gasto no tarjeta → `accountId` obligatorio; `creditCardId = null`.
 
@@ -530,10 +530,11 @@ No usar cuentas sentinela.
 
 Efectos de la compra / cuota reconocida:
 
-- sí: gasto reconocido, categoría, presupuesto del período;
-- no: saldo bancario / disponible.
+- sí: gasto reconocido, categoría, presupuesto del período (vía **Transaction**);
+- no: saldo bancario / disponible;
+- Purchase/Installment **no** suman gasto ni deuda por sí solos.
 
-`currentCardDebt` (P0.5 mínimo) = suma de `EXPENSE` ACTIVE vinculados a la tarjeta.  
+`currentCardDebt` (P0.5/P0.6) = suma de `EXPENSE` ACTIVE vinculados a la tarjeta.  
 Aún no restan pagos ni reintegros a tarjeta (P0.10+).
 
 Pago de tarjeta → `Transaction.type = CREDIT_CARD_PAYMENT`:
@@ -573,7 +574,17 @@ El pago del resumen **nunca** debe registrarse otra vez como `EXPENSE` (ni en le
 
 Modelo: `CreditCardPurchase` → `CreditCardInstallment` 1..N → `Transaction EXPENSE` opcional al reconocer.
 
-No crear N `EXPENSE` huérfanos sin purchase padre.
+**P0.6:** N=1 siempre; installment creado ya `RECOGNIZED` con EXPENSE atómico.  
+**P0.7+:** N>1 con installments `PENDING` hasta reconocimiento.
+
+No crear N `EXPENSE` huérfanos sin purchase padre (flujo purchase).  
+El create EXPENSE P0.5 con `creditCardId` permanece por compatibilidad hasta consolidar en P0.7+.
+
+CreditCardPurchase = fuente contractual/metadata.  
+Transaction = fuente del gasto reconocido.  
+CreditCardStatement ≠ fuente de deuda.
+
+Nunca sumar Purchase + Transaction como dos impactos financieros.
 
 Criterio de impacto mensual: solo la cuota reconocida en el período entra en gasto bruto/neto y presupuestos.  
 Ejemplo: 600.000 en 6 cuotas → 100.000 por período de reconocimiento, nunca 600.000 en el mes de compra.

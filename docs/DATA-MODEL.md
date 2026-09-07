@@ -285,14 +285,51 @@ UNIQUE partial (user_id) WHERE is_primary = true
 
 Reglas:
 
-- Sin PAN/CVV ni datos sensibles de tarjeta.
-- `closing_day` / `due_day` opcionales → configuración incompleta permitida.
-- `configComplete` se deriva en API (`closing_day` y `due_day` presentes); no se persiste.
-- Una sola principal por usuario (índice parcial + servicio).
-- Desactivar no borra; si era principal, `is_primary` pasa a false.
-- P0.3: entidad CreditCard.
-- P0.4: `transactions.credit_card_id` nullable (sin semántica financiera activa hasta P0.5).
-- P0.5: `transactions.account_id` nullable; EXPENSE tarjeta F1 activo en dominio (Neon pendiente).
+- una sola `is_primary = true` por usuario (índice parcial);
+- `closing_day` / `due_day` null = config incompleta;
+- Sin PAN/CVV ni datos sensibles de tarjeta;
+- `configComplete` se deriva en API; no se persiste;
+- Desactivar no borra; si era principal, `is_primary` pasa a false;
+- P0.3–P0.6: ver CreditCard / Purchase / Installment abajo.
+
+---
+
+# CreditCardPurchase / CreditCardInstallment (P0.6)
+
+```text
+credit_card_purchases
+credit_card_installments
+```
+
+`credit_card_purchases`:
+
+```text
+id, user_id, credit_card_id, category_id
+description, currency
+total_amount, installment_amount, installments_count
+purchased_at
+status: ACTIVE | VOIDED
+created_at, updated_at
+```
+
+`credit_card_installments`:
+
+```text
+id, purchase_id
+installment_number
+amount
+status: PENDING | RECOGNIZED | CANCELLED
+recognized_transaction_id NULL UNIQUE  -- FK transactions
+recognized_at NULL
+created_at, updated_at
+UNIQUE (purchase_id, installment_number)
+```
+
+P0.6 siempre: `installments_count = 1`, installment `RECOGNIZED` + EXPENSE atómico.  
+FK canónica del gasto: installment → transaction (no `purchase.transaction_id`).  
+P0.7 agregará N installments `PENDING` sin migración destructiva.
+
+Purchase = metadata contractual. Transaction = gasto reconocido. Statement ≠ deuda.
 
 ---
 

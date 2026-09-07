@@ -340,8 +340,25 @@ totalOutstandingCommitment = currentCardDebt + futureInstallmentCommitment
 |---|---|
 | P0.3 `credit_cards` | DONE (código + Neon) |
 | P0.4 `transactions.credit_card_id` nullable | DONE (código + Neon); sin semántica financiera activa |
-| P0.5 F1 accountId null / no débito bancario | DONE (código + test DB + Neon); API deploy pendiente cierre operativo |
+| P0.5 F1 accountId null / no débito bancario | DONE definitivo (código + Neon + API smoke) |
+| P0.6 Purchase contado 1/1 | DONE definitivo (código + Neon + API) |
 | `CREDIT_CARD_PAYMENT` | No iniciado |
+
+### Modelado P0.6 (opción B)
+
+```text
+CreditCardPurchase
+  -> CreditCardInstallment (1/1, RECOGNIZED)
+      -> Transaction EXPENSE (accountId null, creditCardId set)
+```
+
+FK canónica: `CreditCardInstallment.recognizedTransactionId` → `transactions.id` (UNIQUE).  
+Purchase **no** tiene `transactionId` (evitar romper el 1:N de P0.7).
+
+`currentCardDebt` sigue = SUM ACTIVE EXPENSE con `creditCardId` (P0.5).  
+Nunca sumar `purchase.totalAmount` ni installment aparte.
+
+Void de purchase: diferido a P0.15.
 
 ### Matriz de impacto P0.5 (anti-doble-conteo)
 
@@ -351,6 +368,9 @@ Recognition of spending and movement of cash are separate concerns.
 |---|---|---|---|---|
 | Bank EXPENSE | +amount | −amount | 0 | 0 |
 | Card EXPENSE P0.5 | +amount | 0 | +amount | 0 |
+| Purchase 1 pago P0.6 (vía EXPENSE) | +amount | 0 | +amount | 0 |
+
+Purchase/Installment solos: impacto financiero = 0. Solo el Transaction reconoce gasto/deuda.
 
 ### Matriz de nulabilidad por TransactionType (P0.5)
 

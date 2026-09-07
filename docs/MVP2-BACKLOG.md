@@ -108,7 +108,7 @@ Orden por dependencias.
 
 ## P0.5 — Regla de saldo F1 (EXPENSE tarjeta)
 
-**Estado: DONE** en código + migración en repo; aplicada en `personal_finance_test` y en Neon prod `neondb` (2026-09-07). **Siguiente gate:** deploy API P0.3–P0.5 + smoke; luego aprobación P0.6.
+**Estado: DONE definitivo** (código + Neon `neondb` + API prod `finance-2gxt` smoke 2026-09-07). Commit `6e953f1`.
 
 **Objetivo:** Nuevos gastos de tarjeta: `creditCardId` obligatorio, `accountId = null`; impactan gasto/categoría/presupuesto; **no** debitan cuenta.
 
@@ -134,21 +134,26 @@ Gastos no tarjeta: `accountId` obligatorio, `creditCardId = null`.
 
 ## P0.6 — Compra contado (1 cuota) vía Purchase
 
-**Objetivo:** Flujo §5: crear `CreditCardPurchase` (N=1) + installment + `EXPENSE` reconocido en el acto → `currentCardDebt += amount`; banco intacto.
+**Estado: DONE definitivo** (código + Neon `neondb` + API deploy/smoke 2026-09-07). **P0.7 no iniciado.**
 
-**Entidades:** `CreditCardPurchase`, `CreditCardInstallment`, `transactions`.
+**Objetivo:** Flujo §5: crear `CreditCardPurchase` (N=1) + `CreditCardInstallment` 1/1 + `EXPENSE` reconocido en el acto → `currentCardDebt += amount`; banco intacto.
 
-**Reglas:** F1, F2 (siempre purchase padre, incluso N=1).
+**Diseño:** opción B — `Purchase → Installment → Transaction` (prepara P0.7 sin FK 1:1 destructiva en Purchase).
 
-**Migraciones:** tablas purchase/installment si no están (puede unificarse con P0.7).
+**Entidades/módulos:** `credit-card-purchases/` (service/repo/routes); tablas `credit_card_purchases`, `credit_card_installments`.
 
-**Riesgos:** no crear EXPENSE tarjeta sin purchase.
+**Reglas:** F1, F2; impacto financiero solo vía Transaction; Purchase/Installment = metadata contractual.
 
-**Tests:** §5; `currentCardDebt`; `futureInstallmentCommitment = 0`; legacy intacto.
+**Migraciones:** `20260907160000_create_credit_card_purchase` (CREATE enums/tables/FKs/checks; sin DROP/UPDATE/backfill).
 
-**Criterio de aceptación:** API end-to-end contado; métricas de deuda separadas.
+**API:**
+- `GET/POST /api/credit-card-purchases`
+- `GET /api/credit-card-purchases/:id`
+- Void diferido a P0.15 (no endpoint void en P0.6)
 
-**Dependencias:** P0.5.
+**Tests:** `credit-card-purchase.service.test.ts` (A–L) + schema test.
+
+**Dependencias:** P0.5. **Siguiente gate:** migrate Neon + P0.7.
 
 ---
 

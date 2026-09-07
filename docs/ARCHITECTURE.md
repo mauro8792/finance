@@ -390,13 +390,21 @@ apps/api/
 │   │   ├── budgets/
 │   │   ├── housing/
 │   │   ├── investments/
-│   │   ├── credit-cards/          # MVP2 P0.3 — CRUD CreditCard (sin deuda/transactions aún)
+│   │   ├── credit-cards/          # MVP2 P0.3 — CRUD CreditCard + currentCardDebt P0.5
 │   │   │   ├── credit-card.controller.ts
 │   │   │   ├── credit-card.service.ts
 │   │   │   ├── credit-card.repository.ts
 │   │   │   ├── credit-card.routes.ts
 │   │   │   ├── credit-card.schema.ts
+│   │   │   ├── credit-card-debt.ts
 │   │   │   └── credit-card.types.ts
+│   │   ├── credit-card-purchases/ # MVP2 P0.6 — Purchase + Installment 1/1 + EXPENSE atómico
+│   │   │   ├── credit-card-purchase.controller.ts
+│   │   │   ├── credit-card-purchase.service.ts
+│   │   │   ├── credit-card-purchase.repository.ts
+│   │   │   ├── credit-card-purchase.routes.ts
+│   │   │   ├── credit-card-purchase.schema.ts
+│   │   │   └── credit-card-purchase.types.ts
 │   │   ├── simulations/
 │   │   │   ├── simulation.service.ts
 │   │   │   ├── simulation.types.ts

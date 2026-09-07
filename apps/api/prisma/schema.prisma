@@ -101,6 +101,21 @@ enum CreditCardFeeStatus {
   @@map("credit_card_fee_status_enum")
 }
 
+enum CreditCardPurchaseStatus {
+  ACTIVE
+  VOIDED
+
+  @@map("credit_card_purchase_status_enum")
+}
+
+enum CreditCardInstallmentStatus {
+  PENDING
+  RECOGNIZED
+  CANCELLED
+
+  @@map("credit_card_installment_status_enum")
+}
+
 model User {
   id           String        @id @default(uuid()) @db.Uuid
   name         String        @db.VarChar(120)
@@ -115,9 +130,10 @@ model User {
   currencyExchanges  CurrencyExchange[]
   budgets            Budget[]
   housingObligations HousingObligation[]
-  investments        Investment[]
-  creditCards        CreditCard[]
-  sessions           Session[]
+  investments           Investment[]
+  creditCards           CreditCard[]
+  creditCardPurchases   CreditCardPurchase[]
+  sessions              Session[]
 
   @@map("users")
 }
@@ -149,6 +165,7 @@ model Category {
   user         User          @relation(fields: [userId], references: [id], onDelete: Restrict)
   transactions Transaction[]
   budgets      Budget[]
+  creditCardPurchases CreditCardPurchase[]
 
   @@unique([userId, name])
   @@map("categories")
@@ -201,6 +218,7 @@ model Transaction {
   relatedTransaction    Transaction?        @relation("RelatedTransactions", fields: [relatedTransactionId], references: [id], onDelete: Restrict)
   relatedTransactions   Transaction[]       @relation("RelatedTransactions")
   housingPayment        HousingPayment?
+  creditCardInstallment CreditCardInstallment?
 
   @@index([userId, occurredAt])
   @@index([accountId, occurredAt])
@@ -332,10 +350,55 @@ model CreditCard {
   feeStatus   CreditCardFeeStatus @default(UNKNOWN) @map("fee_status")
   createdAt   DateTime            @default(now()) @map("created_at") @db.Timestamptz
   updatedAt   DateTime            @updatedAt @map("updated_at") @db.Timestamptz
-  user        User                @relation(fields: [userId], references: [id], onDelete: Restrict)
+  user         User                @relation(fields: [userId], references: [id], onDelete: Restrict)
   transactions Transaction[]
+  purchases    CreditCardPurchase[]
 
   @@index([userId])
   @@index([userId, isActive])
   @@map("credit_cards")
+}
+
+model CreditCardPurchase {
+  id                 String                   @id @default(uuid()) @db.Uuid
+  userId             String                   @map("user_id") @db.Uuid
+  creditCardId       String                   @map("credit_card_id") @db.Uuid
+  categoryId         String                   @map("category_id") @db.Uuid
+  description        String?                  @db.VarChar(255)
+  currency           Currency
+  totalAmount        Decimal                  @map("total_amount") @db.Decimal(18, 2)
+  installmentAmount  Decimal                  @map("installment_amount") @db.Decimal(18, 2)
+  installmentsCount  Int                      @default(1) @map("installments_count")
+  purchasedAt        DateTime                 @map("purchased_at") @db.Timestamptz
+  status             CreditCardPurchaseStatus @default(ACTIVE)
+  createdAt          DateTime                 @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt          DateTime                 @updatedAt @map("updated_at") @db.Timestamptz
+  user               User                     @relation(fields: [userId], references: [id], onDelete: Restrict)
+  creditCard         CreditCard               @relation(fields: [creditCardId], references: [id], onDelete: Restrict)
+  category           Category                 @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  installments       CreditCardInstallment[]
+
+  @@index([userId, purchasedAt])
+  @@index([creditCardId, purchasedAt])
+  @@index([userId, status])
+  @@map("credit_card_purchases")
+}
+
+model CreditCardInstallment {
+  id                       String                       @id @default(uuid()) @db.Uuid
+  purchaseId               String                       @map("purchase_id") @db.Uuid
+  installmentNumber        Int                          @map("installment_number")
+  amount                   Decimal                      @db.Decimal(18, 2)
+  status                   CreditCardInstallmentStatus  @default(PENDING)
+  recognizedTransactionId  String?                      @unique @map("recognized_transaction_id") @db.Uuid
+  recognizedAt             DateTime?                    @map("recognized_at") @db.Timestamptz
+  createdAt                DateTime                     @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt                DateTime                     @updatedAt @map("updated_at") @db.Timestamptz
+  purchase                 CreditCardPurchase           @relation(fields: [purchaseId], references: [id], onDelete: Restrict)
+  recognizedTransaction    Transaction?                 @relation(fields: [recognizedTransactionId], references: [id], onDelete: Restrict)
+
+  @@unique([purchaseId, installmentNumber])
+  @@index([purchaseId])
+  @@index([status])
+  @@map("credit_card_installments")
 }
