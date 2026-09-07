@@ -153,13 +153,13 @@ Gastos no tarjeta: `accountId` obligatorio, `creditCardId = null`.
 
 **Tests:** `credit-card-purchase.service.test.ts` (A–L) + schema test.
 
-**Dependencias:** P0.5. **Siguiente:** P0.7 (código listo; Neon pendiente aprobación).
+**Dependencias:** P0.5. **Siguiente:** P0.7 DONE.
 
 ---
 
 ## P0.7 — Compra en N cuotas + compromiso futuro
 
-**Estado: DONE definitivo** (código + Neon `neondb` + API deploy/smoke 2026-09-07). **P0.8 no iniciado.**
+**Estado: DONE definitivo** (código + Neon `neondb` + API deploy/smoke 2026-09-07).
 
 **Objetivo:** `Purchase` N≥1 → N `Installment` con schedule; al crear, **solo #1 RECOGNIZED** + EXPENSE; `#2..N PENDING` = `futureInstallmentCommitment`.
 
@@ -191,28 +191,41 @@ Gastos no tarjeta: `accountId` obligatorio, `creditCardId = null`.
 
 **Tests:** A–O en `credit-card-purchase.service.test.ts` + `credit-card-purchase.math.test.ts` + schema.
 
-**Limitaciones hasta P0.8:** no reconoce cuotas por fecha; runway no convierte future commitments en cash outflows; sin statements/payments/refunds/UI/AI.
+**Limitaciones históricas P0.7 (superadas por P0.8 en código):** no reconoce cuotas por fecha vía job; runway no convierte future commitments en cash outflows; sin statements/payments/refunds/UI/AI.
 
-**Dependencias:** P0.6, F2. **Gate:** aprobación migrate Neon; luego P0.8.
+**Dependencias:** P0.6, F2. **Siguiente:** P0.8.
 
 ---
+
 ## P0.8 — Reconocimiento de cuota (impacto mensual + budget)
 
-**Objetivo:** Al reconocer installment k: crear `EXPENSE` (accountId null, creditCardId set, category del purchase); `future −= cuota`, `current += cuota`; gross/net/budget del **período de reconocimiento** += cuota. Nunca 600k en mes 0.
+**Estado: DONE definitivo** (código + API deploy/smoke + CLI dry-run prod 2026-09-07). **Sin migración Neon.** **P0.9 no iniciado.** **Sin cron/scheduler.**
 
-**Entidades:** installments → transactions; `FinancialService`; `BudgetService`.
+**Objetivo:** `recognizeDueInstallments(asOf)` transforma installments elegibles `PENDING` → `RECOGNIZED` + `Transaction EXPENSE` de forma **idempotente** y segura ante concurrencia.
 
-**Reglas:** F2, F5; §6.1.
+**Elegibilidad:** `status=PENDING`, `recognizedTransactionId IS NULL`, `scheduledFor <= asOf`, Purchase `ACTIVE`, ownership vía purchase.userId. No reconoce CANCELLED / RECOGNIZED / VOIDED / futuras / otro user. **Sin closingDay / statements.**
 
-**Migraciones:** ninguna extra si FKs installment↔transaction listos.
+**Fechas:**
+- `Transaction.occurredAt` = `Installment.scheduledFor` (período financiero)
+- `Installment.recognizedAt` = instante técnico del reconocimiento (`clock.now()` una vez por corrida)
 
-**Riesgos:** budgets del mes; no reconocer dos veces.
+**Concurrencia:** por installment, DB transaction con `SELECT … FOR UPDATE OF installment SKIP LOCKED` → create EXPENSE → update condicional PENDING→RECOGNIZED. Evita Transactions huérfanas y doble gasto. Unidad atómica = 1 installment (no batch gigante). Partial failure: unidades ya committed permanecen; retry no duplica.
 
-**Tests:** golden 600k/6; presupuesto categoría 100k/mes; idempotencia reconocimiento; void controlado diferido a P0.15.
+**Invocación (sin cron / sin endpoint admin inseguro):**
+```text
+npm run installments:recognize-due -- --as-of=2027-01-15 [--dry-run] [--user-id=UUID]
+```
+Dry-run: agregados only, cero writes.  
+`failed > 0` ⇒ CLI exit code ≠ 0 (el summary siempre se imprime). Partial-commit se mantiene; retry no duplica.  
+Automatización futura debe reutilizar exactamente `recognizeDueInstallments` — no una segunda lógica.
 
-**Criterio de aceptación:** Dashboard/Month/Budgets alineados a impacto mensual.
+**Métricas:** reconocimiento mueve `futureInstallmentCommitment` → `currentCardDebt`; `totalOutstandingCommitment` no aumenta. Bank impact = 0.
 
-**Dependencias:** P0.7, F5.
+**Migraciones:** ninguna (schema P0.7 alcanza).
+
+**Tests:** A–Q service + CLI parse/exit-code + DB concurrency.
+
+**Dependencias:** P0.7, F5. **Siguiente gate:** autorización P0.9.
 
 ---
 

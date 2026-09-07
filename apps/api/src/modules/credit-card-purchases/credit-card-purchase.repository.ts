@@ -1,10 +1,15 @@
 import type {
   CreditCardInstallment as PrismaInstallment,
   CreditCardPurchase as PrismaPurchase,
+  Prisma,
 } from "@prisma/client";
 import type { Currency } from "shared";
 import { getPrismaClient } from "../../shared/db/prisma.js";
 import { toCreateData } from "../transactions/transaction.repository.js";
+import type {
+  DueInstallmentCandidate,
+  RecognizeInstallmentOutcome,
+} from "./credit-card-installment-recognize.types.js";
 import type {
   CreatePurchaseAtomicInput,
   CreditCardInstallment,
@@ -14,6 +19,26 @@ import type {
   CreditCardPurchaseStatus,
   PurchaseWithInstallments,
 } from "./credit-card-purchase.types.js";
+
+type LockedDueRow = {
+  id: string;
+  amount: Prisma.Decimal;
+  scheduled_for: Date;
+  installment_number: number;
+  user_id: string;
+  credit_card_id: string;
+  category_id: string;
+  currency: string;
+  description: string | null;
+  installments_count: number;
+};
+
+export class RecognizeClaimLostError extends Error {
+  constructor(installmentId: string) {
+    super(`Installment claim lost: ${installmentId}`);
+    this.name = "RecognizeClaimLostError";
+  }
+}
 
 export class PrismaCreditCardPurchaseRepository
   implements CreditCardPurchaseRepository
@@ -116,6 +141,139 @@ export class PrismaCreditCardPurchaseRepository
       amount: row.amount.toFixed(2),
       status: row.status as CreditCardInstallmentStatus,
     }));
+  }
+
+  async findDueInstallmentCandidates(
+    asOf: Date,
+    userId?: string
+  ): Promise<DueInstallmentCandidate[]> {
+    const rows = await this.prisma.creditCardInstallment.findMany({
+      where: {
+        status: "PENDING",
+        recognizedTransactionId: null,
+        scheduledFor: { lte: asOf },
+        purchase: {
+          status: "ACTIVE",
+          ...(userId !== undefined ? { userId } : {}),
+        },
+      },
+      include: {
+        purchase: {
+          select: {
+            id: true,
+            userId: true,
+            creditCardId: true,
+            categoryId: true,
+            currency: true,
+            description: true,
+            installmentsCount: true,
+          },
+        },
+      },
+      orderBy: [
+        { scheduledFor: "asc" },
+        { purchaseId: "asc" },
+        { installmentNumber: "asc" },
+      ],
+    });
+
+    return rows.map((row) => ({
+      installmentId: row.id,
+      purchaseId: row.purchaseId,
+      userId: row.purchase.userId,
+      creditCardId: row.purchase.creditCardId,
+      categoryId: row.purchase.categoryId,
+      currency: row.purchase.currency as Currency,
+      description: row.purchase.description,
+      installmentNumber: row.installmentNumber,
+      installmentsCount: row.purchase.installmentsCount,
+      amount: row.amount.toFixed(2),
+      scheduledFor: row.scheduledFor,
+    }));
+  }
+
+  async recognizeInstallmentAtomic(input: {
+    installmentId: string;
+    recognizedAt: Date;
+    transactionId: string;
+  }): Promise<RecognizeInstallmentOutcome> {
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const locked = await tx.$queryRaw<LockedDueRow[]>`
+          SELECT
+            i.id,
+            i.amount,
+            i.scheduled_for,
+            i.installment_number,
+            p.user_id,
+            p.credit_card_id,
+            p.category_id,
+            p.currency::text AS currency,
+            p.description,
+            p.installments_count
+          FROM credit_card_installments i
+          INNER JOIN credit_card_purchases p ON p.id = i.purchase_id
+          WHERE i.id = ${input.installmentId}::uuid
+            AND i.status = 'PENDING'
+            AND i.recognized_transaction_id IS NULL
+            AND p.status = 'ACTIVE'
+          FOR UPDATE OF i SKIP LOCKED
+        `;
+
+        if (locked.length === 0) {
+          return "skipped";
+        }
+
+        const row = locked[0]!;
+        const amount = row.amount.toFixed(2);
+        const description =
+          row.description?.trim() ||
+          `Cuota ${row.installment_number}/${row.installments_count}`;
+
+        await tx.transaction.create({
+          data: toCreateData({
+            id: input.transactionId,
+            userId: row.user_id,
+            accountId: null,
+            creditCardId: row.credit_card_id,
+            categoryId: row.category_id,
+            type: "EXPENSE",
+            status: "ACTIVE",
+            amount,
+            currency: row.currency as Currency,
+            description,
+            occurredAt: row.scheduled_for,
+            paymentMethod: null,
+            isFixed: false,
+            reimbursementStatus: "NONE",
+          }),
+        });
+
+        const updated = await tx.creditCardInstallment.updateMany({
+          where: {
+            id: input.installmentId,
+            status: "PENDING",
+            recognizedTransactionId: null,
+          },
+          data: {
+            status: "RECOGNIZED",
+            recognizedTransactionId: input.transactionId,
+            recognizedAt: input.recognizedAt,
+          },
+        });
+
+        if (updated.count !== 1) {
+          throw new RecognizeClaimLostError(input.installmentId);
+        }
+
+        return "recognized";
+      });
+    } catch (error) {
+      if (error instanceof RecognizeClaimLostError) {
+        return "skipped";
+      }
+      throw error;
+    }
   }
 }
 

@@ -337,8 +337,11 @@ CHECK recognition consistency (RECOGNIZED ↔ tx id)
 - `RECOGNIZED` = current debt vía Transaction
 - `CANCELLED` = ni gasto ni commitment
 
-**P0.7 create:** #1 RECOGNIZED + EXPENSE; #2..N PENDING. Sin auto-reconocimiento por fecha (P0.8).  
-`scheduled_for` = `purchased_at` ORIGINAL + `(installment_number - 1)` meses (clamp EOM); **no** encadenar desde la cuota anterior.
+**P0.7 create:** #1 RECOGNIZED + EXPENSE; #2..N PENDING.  
+**P0.8:** `recognizeDueInstallments(asOf)` — PENDING due → RECOGNIZED + EXPENSE.  
+`scheduled_for` = `purchased_at` ORIGINAL + `(installment_number - 1)` meses (clamp EOM); **no** encadenar desde la cuota anterior.  
+`scheduled_for` = período financiero del EXPENSE (`occurredAt`); `recognized_at` = momento técnico.  
+CLI: `npm run installments:recognize-due` (sin cron en P0.8).
 
 FK canónica del gasto: installment → transaction (no `purchase.transaction_id`).
 

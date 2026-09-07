@@ -557,7 +557,7 @@ Sin `closingDay`: proyección limitada; no afirmar “próximo resumen” cierto
 
 `CreditCardStatement` no es fuente de deuda: `currentCardDebt` se deriva de eventos (`EXPENSE` reconocidos, `CREDIT_CARD_PAYMENT`, reintegros a tarjeta, cargos explícitos). Cambiar `actualAmount` del statement **no** altera la deuda en silencio (`MVP2-DECISIONES-P0.md` F9).
 
-**Limitación temporal P0.7:** runway no convierte `futureInstallmentCommitment` en cash outflows; reconocimiento de cuotas `#2..N` es P0.8 (no cron en P0.7).
+**Limitación temporal P0.8:** reconocimiento invocable vía CLI (`installments:recognize-due`); **sin** cron/scheduler externo todavía. Runway aún no convierte future commitments en cash outflows automáticos. Sin statements/payments.
 
 ## 23.2 Legacy MVP1
 
@@ -577,15 +577,22 @@ Modelo: `CreditCardPurchase` → `CreditCardInstallment` 1..N → `Transaction E
 
 **P0.6:** N=1; installment creado ya `RECOGNIZED` con EXPENSE atómico.  
 **P0.7:** N∈[1,60]; al crear, **solo #1 RECOGNIZED** + EXPENSE; `#2..N PENDING`.  
-Regla temporal: primera cuota se reconoce inmediatamente; schedule (`scheduled_for`) mensual desde `purchaseDate` **sin** usar `closingDay`. Reconocimiento futuro = P0.8.
+**P0.8:** `recognizeDueInstallments(asOf)` reconoce PENDING con `scheduledFor <= asOf` → EXPENSE (`occurredAt = scheduledFor`) + `recognizedAt = now` técnico. Idempotente (`FOR UPDATE SKIP LOCKED`). Catch-up multi-cuota. Sin cron; CLI `installments:recognize-due` (+ `--dry-run`). Sin closingDay.
+
+Regla temporal P0.7 (create): primera cuota se reconoce inmediatamente.  
+Reconocimiento futuro de `#2..N` = P0.8 (manual/CLI hasta haber scheduler).
 
 No crear N `EXPENSE` huérfanos sin purchase padre (flujo purchase).  
-El create EXPENSE P0.5 con `creditCardId` permanece por compatibilidad (sin Purchase; sí forma `currentCardDebt`; future = 0).
+El create EXPENSE P0.5 con `creditCardId` permanece por compatibilidad (sin Purchase; sí forma `currentCardDebt`; future = 0; el job P0.8 no lo toca).
 
 CreditCardPurchase = fuente contractual/metadata (`totalAmount`).  
 CreditCardInstallment.amount = obligación exacta por período.  
+`scheduledFor` = período financiero esperado del gasto.  
+`recognizedAt` = momento técnico de reconocimiento.  
 Transaction = fuente del gasto reconocido.  
 CreditCardStatement ≠ fuente de deuda.
+
+Reconocer mueve compromiso: future → current; **no** aumenta `totalOutstandingCommitment`.
 
 Nunca sumar Purchase + Transaction como dos impactos financieros.  
 Nunca asumir `installmentAmount * count == totalAmount` si hay remainder de redondeo.

@@ -262,7 +262,9 @@ class MemoryTransactionRepository implements TransactionRepository {
 class MemoryPurchaseRepository implements CreditCardPurchaseRepository {
   readonly items: PurchaseWithInstallments[] = [];
   failAfterPurchase = false;
+  failNextRecognize = false;
   private readonly transactions: MemoryTransactionRepository;
+  private readonly claimChains = new Map<string, Promise<unknown>>();
 
   constructor(transactions: MemoryTransactionRepository) {
     this.transactions = transactions;
@@ -328,6 +330,119 @@ class MemoryPurchaseRepository implements CreditCardPurchaseRepository {
       .flatMap((item) => item.installments)
       .filter((row) => row.status === "PENDING")
       .map((row) => ({ amount: row.amount, status: row.status }));
+  }
+
+  async findDueInstallmentCandidates(asOf: Date, userId?: string) {
+    const rows = this.items
+      .filter(
+        (item) =>
+          item.purchase.status === "ACTIVE" &&
+          (userId === undefined || item.purchase.userId === userId)
+      )
+      .flatMap((item) =>
+        item.installments
+          .filter(
+            (inst) =>
+              inst.status === "PENDING" &&
+              inst.recognizedTransactionId === null &&
+              inst.scheduledFor.getTime() <= asOf.getTime()
+          )
+          .map((inst) => ({
+            installmentId: inst.id,
+            purchaseId: item.purchase.id,
+            userId: item.purchase.userId,
+            creditCardId: item.purchase.creditCardId,
+            categoryId: item.purchase.categoryId,
+            currency: item.purchase.currency,
+            description: item.purchase.description,
+            installmentNumber: inst.installmentNumber,
+            installmentsCount: item.purchase.installmentsCount,
+            amount: inst.amount,
+            scheduledFor: inst.scheduledFor,
+          }))
+      );
+    return rows.sort((a, b) => {
+      const byDate = a.scheduledFor.getTime() - b.scheduledFor.getTime();
+      if (byDate !== 0) return byDate;
+      const byPurchase = a.purchaseId.localeCompare(b.purchaseId);
+      if (byPurchase !== 0) return byPurchase;
+      return a.installmentNumber - b.installmentNumber;
+    });
+  }
+
+  async recognizeInstallmentAtomic(input: {
+    installmentId: string;
+    recognizedAt: Date;
+    transactionId: string;
+  }) {
+    const previous = this.claimChains.get(input.installmentId) ?? Promise.resolve();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    this.claimChains.set(
+      input.installmentId,
+      previous.then(() => gate)
+    );
+    await previous;
+
+    try {
+      const owner = this.items.find((item) =>
+        item.installments.some((inst) => inst.id === input.installmentId)
+      );
+      const installment = owner?.installments.find(
+        (inst) => inst.id === input.installmentId
+      );
+      if (
+        !owner ||
+        !installment ||
+        owner.purchase.status !== "ACTIVE" ||
+        installment.status !== "PENDING" ||
+        installment.recognizedTransactionId !== null
+      ) {
+        return "skipped";
+      }
+
+      const snapshotTx = this.transactions.items.length;
+      try {
+        if (this.failNextRecognize) {
+          this.failNextRecognize = false;
+          throw new Error("forced recognize failure");
+        }
+        await this.transactions.create({
+          id: input.transactionId,
+          userId: owner.purchase.userId,
+          accountId: null,
+          creditCardId: owner.purchase.creditCardId,
+          categoryId: owner.purchase.categoryId,
+          type: "EXPENSE",
+          status: "ACTIVE",
+          amount: installment.amount,
+          currency: owner.purchase.currency,
+          description:
+            owner.purchase.description ??
+            `Cuota ${installment.installmentNumber}/${owner.purchase.installmentsCount}`,
+          occurredAt: installment.scheduledFor,
+          paymentMethod: null,
+          isFixed: false,
+          reimbursementStatus: "NONE",
+        });
+        installment.status = "RECOGNIZED";
+        installment.recognizedTransactionId = input.transactionId;
+        installment.recognizedAt = input.recognizedAt;
+        owner.recognizedTransactionId =
+          owner.recognizedTransactionId ?? input.transactionId;
+        return "recognized";
+      } catch (error) {
+        this.transactions.items.length = snapshotTx;
+        installment.status = "PENDING";
+        installment.recognizedTransactionId = null;
+        installment.recognizedAt = null;
+        throw error;
+      }
+    } finally {
+      release();
+    }
   }
 }
 
@@ -841,4 +956,365 @@ test("P0.7 — liquidity unchanged; currency mismatch still rejected", async () 
       }),
     (e: unknown) => e instanceof AppError && e.code === "CURRENCY_MISMATCH"
   );
+});
+
+test("P0.8 A — one due PENDING becomes RECOGNIZED + EXPENSE", async () => {
+  const ctx = await setup();
+  const created = await ctx.purchaseService.create(ctx.userId, {
+    creditCardId: ctx.card.id,
+    categoryId: ctx.category.id,
+    currency: "ARS",
+    totalAmount: "600000.00",
+    purchaseDate: "2026-09-07",
+    installmentsCount: 6,
+  });
+  const asOf = created.installments[1]!.scheduledFor;
+  const result = await ctx.purchaseService.recognizeDueInstallments({
+    asOf,
+    userId: ctx.userId,
+  });
+  assert.equal(result.recognized, 1);
+  assert.equal(created.installments[1]?.status, "RECOGNIZED");
+  assert.equal(ctx.transactions.items.length, 2);
+  assert.equal(ctx.transactions.items[1]?.amount, "100000.00");
+  assert.equal(
+    ctx.transactions.items[1]?.occurredAt.toISOString(),
+    created.installments[1]!.scheduledFor.toISOString()
+  );
+});
+
+test("P0.8 B — future PENDING untouched", async () => {
+  const ctx = await setup();
+  const created = await ctx.purchaseService.create(ctx.userId, {
+    creditCardId: ctx.card.id,
+    categoryId: ctx.category.id,
+    currency: "ARS",
+    totalAmount: "600000.00",
+    purchaseDate: "2026-09-07",
+    installmentsCount: 6,
+  });
+  const result = await ctx.purchaseService.recognizeDueInstallments({
+    asOf: new Date("2026-09-07T12:00:00.000Z"),
+    userId: ctx.userId,
+  });
+  assert.equal(result.eligible, 0);
+  assert.equal(result.recognized, 0);
+  assert.ok(created.installments.slice(1).every((row) => row.status === "PENDING"));
+  assert.equal(ctx.transactions.items.length, 1);
+});
+
+test("P0.8 C — already RECOGNIZED not duplicated", async () => {
+  const ctx = await setup();
+  await ctx.purchaseService.create(ctx.userId, {
+    creditCardId: ctx.card.id,
+    categoryId: ctx.category.id,
+    currency: "ARS",
+    totalAmount: "20000.00",
+    purchaseDate: "2026-09-07",
+    installmentsCount: 1,
+  });
+  const result = await ctx.purchaseService.recognizeDueInstallments({
+    asOf: new Date("2026-12-31T23:59:59.999Z"),
+    userId: ctx.userId,
+  });
+  assert.equal(result.eligible, 0);
+  assert.equal(ctx.transactions.items.length, 1);
+});
+
+test("P0.8 D — CANCELLED never recognized", async () => {
+  const ctx = await setup();
+  const created = await ctx.purchaseService.create(ctx.userId, {
+    creditCardId: ctx.card.id,
+    categoryId: ctx.category.id,
+    currency: "ARS",
+    totalAmount: "300.00",
+    purchaseDate: "2026-09-07",
+    installmentsCount: 3,
+  });
+  created.installments[1]!.status = "CANCELLED";
+  const result = await ctx.purchaseService.recognizeDueInstallments({
+    asOf: new Date("2027-01-01T00:00:00.000Z"),
+    userId: ctx.userId,
+  });
+  assert.equal(result.recognized, 1);
+  assert.equal(created.installments[1]?.status, "CANCELLED");
+  assert.equal(created.installments[2]?.status, "RECOGNIZED");
+});
+
+test("P0.8 E — VOIDED purchase pending untouched", async () => {
+  const ctx = await setup();
+  const created = await ctx.purchaseService.create(ctx.userId, {
+    creditCardId: ctx.card.id,
+    categoryId: ctx.category.id,
+    currency: "ARS",
+    totalAmount: "300.00",
+    purchaseDate: "2026-09-07",
+    installmentsCount: 3,
+  });
+  created.purchase.status = "VOIDED";
+  const result = await ctx.purchaseService.recognizeDueInstallments({
+    asOf: new Date("2027-01-01T00:00:00.000Z"),
+    userId: ctx.userId,
+  });
+  assert.equal(result.eligible, 0);
+  assert.equal(result.recognized, 0);
+  assert.equal(ctx.transactions.items.length, 1);
+});
+
+test("P0.8 F/G — catch-up four installments keeps scheduledFor as occurredAt", async () => {
+  const ctx = await setup();
+  const created = await ctx.purchaseService.create(ctx.userId, {
+    creditCardId: ctx.card.id,
+    categoryId: ctx.category.id,
+    currency: "ARS",
+    totalAmount: "600000.00",
+    purchaseDate: "2026-09-07",
+    installmentsCount: 6,
+  });
+  const asOf = created.installments[4]!.scheduledFor;
+  const result = await ctx.purchaseService.recognizeDueInstallments({
+    asOf,
+    userId: ctx.userId,
+  });
+  assert.equal(result.recognized, 4);
+  assert.equal(ctx.transactions.items.length, 5);
+  for (let index = 1; index <= 4; index += 1) {
+    const installment = created.installments[index]!;
+    assert.equal(installment.status, "RECOGNIZED");
+    const tx = ctx.transactions.items.find(
+      (row) => row.id === installment.recognizedTransactionId
+    );
+    assert.ok(tx);
+    assert.equal(tx.occurredAt.toISOString(), installment.scheduledFor.toISOString());
+  }
+  assert.equal(created.installments[5]?.status, "PENDING");
+});
+
+test("P0.8 H — metrics move future → current; total unchanged", async () => {
+  const ctx = await setup();
+  const created = await ctx.purchaseService.create(ctx.userId, {
+    creditCardId: ctx.card.id,
+    categoryId: ctx.category.id,
+    currency: "ARS",
+    totalAmount: "600000.00",
+    purchaseDate: "2026-09-07",
+    installmentsCount: 6,
+  });
+  const before = await ctx.cardService.getCommitments(ctx.userId, ctx.card.id);
+  assert.equal(before.currentCardDebt, "100000.00");
+  assert.equal(before.futureInstallmentCommitment, "500000.00");
+  assert.equal(before.totalOutstandingCommitment, "600000.00");
+
+  await ctx.purchaseService.recognizeDueInstallments({
+    asOf: created.installments[1]!.scheduledFor,
+    userId: ctx.userId,
+  });
+  const after = await ctx.cardService.getCommitments(ctx.userId, ctx.card.id);
+  assert.equal(after.currentCardDebt, "200000.00");
+  assert.equal(after.futureInstallmentCommitment, "400000.00");
+  assert.equal(after.totalOutstandingCommitment, "600000.00");
+
+  const balance = await ctx.accountService.getBalance(ctx.userId, ctx.account.id);
+  assert.equal(balance.balance, "100000.00");
+});
+
+test("P0.8 I — second execution creates zero new Transactions", async () => {
+  const ctx = await setup();
+  const created = await ctx.purchaseService.create(ctx.userId, {
+    creditCardId: ctx.card.id,
+    categoryId: ctx.category.id,
+    currency: "ARS",
+    totalAmount: "600000.00",
+    purchaseDate: "2026-09-07",
+    installmentsCount: 6,
+  });
+  const asOf = created.installments[2]!.scheduledFor;
+  const first = await ctx.purchaseService.recognizeDueInstallments({
+    asOf,
+    userId: ctx.userId,
+  });
+  assert.equal(first.recognized, 2);
+  const second = await ctx.purchaseService.recognizeDueInstallments({
+    asOf,
+    userId: ctx.userId,
+  });
+  assert.equal(second.eligible, 0);
+  assert.equal(second.recognized, 0);
+  assert.equal(ctx.transactions.items.length, 3);
+});
+
+test("P0.8 J — concurrent recognition yields exactly one Transaction", async () => {
+  const ctx = await setup();
+  const created = await ctx.purchaseService.create(ctx.userId, {
+    creditCardId: ctx.card.id,
+    categoryId: ctx.category.id,
+    currency: "ARS",
+    totalAmount: "600000.00",
+    purchaseDate: "2026-09-07",
+    installmentsCount: 6,
+  });
+  const asOf = created.installments[1]!.scheduledFor;
+  const [a, b] = await Promise.all([
+    ctx.purchaseService.recognizeDueInstallments({ asOf, userId: ctx.userId }),
+    ctx.purchaseService.recognizeDueInstallments({ asOf, userId: ctx.userId }),
+  ]);
+  assert.equal(a.recognized + b.recognized, 1);
+  assert.equal(a.skipped + b.skipped, 1);
+  assert.equal(ctx.transactions.items.length, 2);
+  assert.equal(created.installments[1]?.status, "RECOGNIZED");
+});
+
+test("P0.8 K — rollback on recognize failure leaves no orphan Transaction", async () => {
+  const ctx = await setup();
+  const created = await ctx.purchaseService.create(ctx.userId, {
+    creditCardId: ctx.card.id,
+    categoryId: ctx.category.id,
+    currency: "ARS",
+    totalAmount: "600000.00",
+    purchaseDate: "2026-09-07",
+    installmentsCount: 6,
+  });
+  ctx.purchases.failNextRecognize = true;
+  const result = await ctx.purchaseService.recognizeDueInstallments({
+    asOf: created.installments[1]!.scheduledFor,
+    userId: ctx.userId,
+  });
+  assert.equal(result.failed, 1);
+  assert.equal(result.recognized, 0);
+  assert.equal(created.installments[1]?.status, "PENDING");
+  assert.equal(ctx.transactions.items.length, 1);
+});
+
+test("P0.8 L — retry after partial failure does not duplicate prior", async () => {
+  const ctx = await setup();
+  const created = await ctx.purchaseService.create(ctx.userId, {
+    creditCardId: ctx.card.id,
+    categoryId: ctx.category.id,
+    currency: "ARS",
+    totalAmount: "600000.00",
+    purchaseDate: "2026-09-07",
+    installmentsCount: 6,
+  });
+  await ctx.purchaseService.recognizeDueInstallments({
+    asOf: created.installments[1]!.scheduledFor,
+    userId: ctx.userId,
+  });
+  assert.equal(ctx.transactions.items.length, 2);
+
+  ctx.purchases.failNextRecognize = true;
+  const failed = await ctx.purchaseService.recognizeDueInstallments({
+    asOf: created.installments[2]!.scheduledFor,
+    userId: ctx.userId,
+  });
+  assert.equal(failed.failed, 1);
+  assert.equal(ctx.transactions.items.length, 2);
+
+  const retry = await ctx.purchaseService.recognizeDueInstallments({
+    asOf: created.installments[2]!.scheduledFor,
+    userId: ctx.userId,
+  });
+  assert.equal(retry.recognized, 1);
+  assert.equal(ctx.transactions.items.length, 3);
+});
+
+test("P0.8 M — user isolation on recognition", async () => {
+  const ctx = await setup();
+  await ctx.purchaseService.create(ctx.userId, {
+    creditCardId: ctx.card.id,
+    categoryId: ctx.category.id,
+    currency: "ARS",
+    totalAmount: "600000.00",
+    purchaseDate: "2026-09-07",
+    installmentsCount: 6,
+  });
+  const other = await ctx.purchaseService.recognizeDueInstallments({
+    asOf: new Date("2027-01-01T00:00:00.000Z"),
+    userId: randomUUID(),
+  });
+  assert.equal(other.eligible, 0);
+  assert.equal(ctx.transactions.items.length, 1);
+});
+
+test("P0.8 N — purchase 1/1 regression: no second Transaction", async () => {
+  const ctx = await setup();
+  await ctx.purchaseService.create(ctx.userId, {
+    creditCardId: ctx.card.id,
+    categoryId: ctx.category.id,
+    currency: "ARS",
+    totalAmount: "20000.00",
+    purchaseDate: "2026-09-07",
+    installmentsCount: 1,
+  });
+  const result = await ctx.purchaseService.recognizeDueInstallments({
+    asOf: new Date("2030-01-01T00:00:00.000Z"),
+    userId: ctx.userId,
+  });
+  assert.equal(result.recognized, 0);
+  assert.equal(ctx.transactions.items.length, 1);
+});
+
+test("P0.8 O — direct P0.5 EXPENSE untouched by recognition", async () => {
+  const ctx = await setup();
+  await ctx.txService.createExpense(ctx.userId, {
+    amount: "1500.00",
+    currency: "ARS",
+    creditCardId: ctx.card.id,
+    categoryId: ctx.category.id,
+  });
+  const before = ctx.transactions.items.length;
+  await ctx.purchaseService.recognizeDueInstallments({
+    asOf: new Date("2030-01-01T00:00:00.000Z"),
+    userId: ctx.userId,
+  });
+  assert.equal(ctx.transactions.items.length, before);
+});
+
+test("P0.8 P — budget consumes scheduledFor period, not run day", async () => {
+  const ctx = await setup();
+  const created = await ctx.purchaseService.create(ctx.userId, {
+    creditCardId: ctx.card.id,
+    categoryId: ctx.category.id,
+    currency: "ARS",
+    totalAmount: "600000.00",
+    purchaseDate: "2026-09-07",
+    installmentsCount: 6,
+  });
+  await ctx.budgetService.create(ctx.userId, {
+    categoryId: ctx.category.id,
+    year: 2026,
+    month: 10,
+    amount: "1000000.00",
+    currency: "ARS",
+  });
+  await ctx.purchaseService.recognizeDueInstallments({
+    asOf: created.installments[1]!.scheduledFor,
+    userId: ctx.userId,
+  });
+  const oct = await ctx.budgetService.listByPeriod(ctx.userId, 2026, 10);
+  assert.equal(oct[0]?.consumption, "100000.00");
+  const jan = await ctx.budgetService.listByPeriod(ctx.userId, 2027, 1);
+  assert.equal(jan.length, 0);
+});
+
+test("P0.8 Q — dry-run zero writes", async () => {
+  const ctx = await setup();
+  const created = await ctx.purchaseService.create(ctx.userId, {
+    creditCardId: ctx.card.id,
+    categoryId: ctx.category.id,
+    currency: "ARS",
+    totalAmount: "600000.00",
+    purchaseDate: "2026-09-07",
+    installmentsCount: 6,
+  });
+  const result = await ctx.purchaseService.recognizeDueInstallments({
+    asOf: created.installments[3]!.scheduledFor,
+    userId: ctx.userId,
+    dryRun: true,
+  });
+  assert.equal(result.dryRun, true);
+  assert.equal(result.eligible, 3);
+  assert.equal(result.recognized, 0);
+  assert.equal(result.totalsByCurrency.ARS, "300000.00");
+  assert.equal(ctx.transactions.items.length, 1);
+  assert.ok(created.installments.slice(1).every((row) => row.status === "PENDING"));
 });

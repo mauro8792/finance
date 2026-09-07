@@ -1,5 +1,9 @@
 import type { Currency } from "shared";
 import type { CreateTransactionInput } from "../transactions/transaction.types.js";
+import type {
+  DueInstallmentCandidate,
+  RecognizeInstallmentOutcome,
+} from "./credit-card-installment-recognize.types.js";
 
 export const CREDIT_CARD_PURCHASE_STATUSES = ["ACTIVE", "VOIDED"] as const;
 export type CreditCardPurchaseStatus =
@@ -91,4 +95,18 @@ export interface CreditCardPurchaseRepository {
     userId: string,
     creditCardId: string
   ): Promise<Array<{ amount: string; status: CreditCardInstallmentStatus }>>;
+  findDueInstallmentCandidates(
+    asOf: Date,
+    userId?: string
+  ): Promise<DueInstallmentCandidate[]>;
+  /**
+   * Atomically claim PENDING installment via FOR UPDATE SKIP LOCKED,
+   * create EXPENSE (occurredAt = scheduledFor), mark RECOGNIZED.
+   * Returns skipped if another worker claimed it or no longer eligible.
+   */
+  recognizeInstallmentAtomic(input: {
+    installmentId: string;
+    recognizedAt: Date;
+    transactionId: string;
+  }): Promise<RecognizeInstallmentOutcome>;
 }

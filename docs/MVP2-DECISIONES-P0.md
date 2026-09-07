@@ -343,6 +343,7 @@ totalOutstandingCommitment = currentCardDebt + futureInstallmentCommitment
 | P0.5 F1 accountId null / no débito bancario | DONE definitivo (código + Neon + API smoke) |
 | P0.6 Purchase contado 1/1 | DONE definitivo (código + Neon + API) |
 | P0.7 Purchase N cuotas + future commitment | DONE definitivo (código + Neon + API) |
+| P0.8 Recognize due installments (idempotent) | DONE definitivo (código + API; sin migración; CLI dry-run; sin cron) |
 | `CREDIT_CARD_PAYMENT` | No iniciado |
 
 ### Modelado P0.6–P0.7 (opción B)
@@ -372,7 +373,7 @@ Nunca sumar `purchase.totalAmount`.
 
 Void de purchase: diferido a P0.15.
 
-### Matriz de impacto P0.5–P0.7 (anti-doble-conteo)
+### Matriz de impacto P0.5–P0.8 (anti-doble-conteo)
 
 Recognition of spending and movement of cash are separate concerns.
 
@@ -382,6 +383,10 @@ Recognition of spending and movement of cash are separate concerns.
 | Card EXPENSE P0.5 | +amount | 0 | +amount | 0 |
 | Purchase 1 pago P0.6 (vía EXPENSE) | +amount | 0 | +amount | 0 |
 | Purchase 600k/6 P0.7 al crear | +100k | 0 | +100k | +500k |
+| Recognize 2/6 P0.8 | +100k | 0 | +100k | −100k |
+
+Tras reconocer k cuotas: `totalOutstandingCommitment` se mantiene; solo se mueve future→current.  
+`occurredAt` del EXPENSE = `scheduledFor` (no el día técnico del job).
 
 Purchase/Installment solos: impacto financiero = 0. Solo el Transaction reconoce gasto/deuda.
 

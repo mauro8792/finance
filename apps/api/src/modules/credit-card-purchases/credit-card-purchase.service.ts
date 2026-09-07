@@ -3,8 +3,15 @@ import { CURRENCIES, type Currency } from "shared";
 import { AppError } from "../../shared/errors/app-error.js";
 import type { CategoryRepository } from "../categories/category.types.js";
 import type { CreditCardRepository } from "../credit-cards/credit-card.types.js";
+import { sumAmounts } from "../transactions/net-expense.js";
 import { EXPENSE_CATEGORY_TYPES } from "../transactions/transaction.types.js";
 import { parsePositiveAmount } from "../transactions/transaction.service.js";
+import type {
+  Clock,
+  RecognizeDueOptions,
+  RecognizeDueResult,
+} from "./credit-card-installment-recognize.types.js";
+import { systemClock } from "./credit-card-installment-recognize.types.js";
 import {
   buildInstallmentSchedule,
   MAX_CREDIT_CARD_INSTALLMENTS,
@@ -26,17 +33,17 @@ export type CreateCreditCardPurchaseRequest = {
 };
 
 /**
- * P0.7: N-installment purchase.
- * Create atomically: Purchase + N Installments + EXPENSE for installment #1 only.
- * #1 RECOGNIZED immediately; #2..N PENDING (future commitment).
- * Temporary recognition rule until P0.8 / closingDay cycles.
+ * P0.7–P0.8: N-installment purchases + safe due recognition.
+ * Create: #1 RECOGNIZED immediately; #2..N PENDING.
+ * recognizeDueInstallments: PENDING due → RECOGNIZED + EXPENSE (idempotent).
  * Void endpoint deferred to P0.15.
  */
 export class CreditCardPurchaseService {
   constructor(
     private readonly purchases: CreditCardPurchaseRepository,
     private readonly cards: CreditCardRepository,
-    private readonly categories: CategoryRepository
+    private readonly categories: CategoryRepository,
+    private readonly clock: Clock = systemClock
   ) {}
 
   async list(userId: string): Promise<PurchaseWithInstallments[]> {
@@ -49,6 +56,99 @@ export class CreditCardPurchaseService {
       throw new AppError("NOT_FOUND", "Compra no encontrada.", 404);
     }
     return item;
+  }
+
+  /**
+   * Recognize all eligible PENDING installments with scheduledFor <= asOf.
+   * Unit of work = one installment (DB transaction + FOR UPDATE SKIP LOCKED).
+   * Partial success: prior units stay committed; unexpected error stops and reports.
+   */
+  async recognizeDueInstallments(
+    options: RecognizeDueOptions = {}
+  ): Promise<RecognizeDueResult> {
+    const asOf = options.asOf ?? this.clock.now();
+    const dryRun = options.dryRun === true;
+    const candidates = await this.purchases.findDueInstallmentCandidates(
+      asOf,
+      options.userId
+    );
+
+    const totalsAccumulator = new Map<string, string[]>();
+    for (const candidate of candidates) {
+      const list = totalsAccumulator.get(candidate.currency) ?? [];
+      list.push(candidate.amount);
+      totalsAccumulator.set(candidate.currency, list);
+    }
+    const totalsByCurrency: Record<string, string> = {};
+    for (const [currency, amounts] of totalsAccumulator) {
+      totalsByCurrency[currency] = sumAmounts(amounts);
+    }
+
+    const purchasesAffected = new Set(candidates.map((c) => c.purchaseId)).size;
+    const cardsAffected = new Set(candidates.map((c) => c.creditCardId)).size;
+
+    if (dryRun) {
+      return {
+        asOf: asOf.toISOString(),
+        dryRun: true,
+        eligible: candidates.length,
+        recognized: 0,
+        skipped: 0,
+        failed: 0,
+        totalsByCurrency,
+        purchasesAffected,
+        cardsAffected,
+      };
+    }
+
+    const recognizedAt = this.clock.now();
+    let recognized = 0;
+    let skipped = 0;
+    let failed = 0;
+    let failureMessage: string | undefined;
+
+    for (const candidate of candidates) {
+      try {
+        const outcome = await this.purchases.recognizeInstallmentAtomic({
+          installmentId: candidate.installmentId,
+          recognizedAt,
+          transactionId: randomUUID(),
+        });
+        if (outcome === "recognized") {
+          recognized += 1;
+        } else {
+          skipped += 1;
+        }
+      } catch (error) {
+        failed += 1;
+        failureMessage =
+          error instanceof Error ? error.message : "Recognition failed";
+        return {
+          asOf: asOf.toISOString(),
+          dryRun: false,
+          eligible: candidates.length,
+          recognized,
+          skipped,
+          failed,
+          totalsByCurrency,
+          purchasesAffected,
+          cardsAffected,
+          failureMessage,
+        };
+      }
+    }
+
+    return {
+      asOf: asOf.toISOString(),
+      dryRun: false,
+      eligible: candidates.length,
+      recognized,
+      skipped,
+      failed,
+      totalsByCurrency,
+      purchasesAffected,
+      cardsAffected,
+    };
   }
 
   async create(
