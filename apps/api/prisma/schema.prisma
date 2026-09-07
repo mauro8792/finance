@@ -116,6 +116,15 @@ enum CreditCardInstallmentStatus {
   @@map("credit_card_installment_status_enum")
 }
 
+enum CreditCardStatementStatus {
+  PROJECTED
+  CLOSED
+  PARTIALLY_PAID
+  PAID
+
+  @@map("credit_card_statement_status_enum")
+}
+
 model User {
   id           String        @id @default(uuid()) @db.Uuid
   name         String        @db.VarChar(120)
@@ -133,6 +142,7 @@ model User {
   investments           Investment[]
   creditCards           CreditCard[]
   creditCardPurchases   CreditCardPurchase[]
+  creditCardStatements  CreditCardStatement[]
   sessions              Session[]
 
   @@map("users")
@@ -353,10 +363,36 @@ model CreditCard {
   user         User                @relation(fields: [userId], references: [id], onDelete: Restrict)
   transactions Transaction[]
   purchases    CreditCardPurchase[]
+  statements   CreditCardStatement[]
 
   @@index([userId])
   @@index([userId, isActive])
   @@map("credit_cards")
+}
+
+model CreditCardStatement {
+  id                    String                     @id @default(uuid()) @db.Uuid
+  userId                String                     @map("user_id") @db.Uuid
+  creditCardId          String                     @map("credit_card_id") @db.Uuid
+  currency              Currency
+  periodStart           DateTime                   @map("period_start") @db.Timestamptz
+  periodEnd             DateTime                   @map("period_end") @db.Timestamptz
+  closingDate           DateTime                   @map("closing_date") @db.Timestamptz
+  dueDate               DateTime?                  @map("due_date") @db.Timestamptz
+  status                CreditCardStatementStatus  @default(PROJECTED)
+  /// Snapshot of derived projection at close. Null while PROJECTED (live-derived).
+  closedProjectedAmount Decimal?                   @map("closed_projected_amount") @db.Decimal(18, 2)
+  actualAmount          Decimal?                   @map("actual_amount") @db.Decimal(18, 2)
+  closedAt              DateTime?                  @map("closed_at") @db.Timestamptz
+  createdAt             DateTime                   @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt             DateTime                   @updatedAt @map("updated_at") @db.Timestamptz
+  user                  User                       @relation(fields: [userId], references: [id], onDelete: Restrict)
+  creditCard            CreditCard                 @relation(fields: [creditCardId], references: [id], onDelete: Restrict)
+
+  @@unique([creditCardId, closingDate])
+  @@index([userId, closingDate])
+  @@index([creditCardId, status])
+  @@map("credit_card_statements")
 }
 
 model CreditCardPurchase {

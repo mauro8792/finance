@@ -8,6 +8,7 @@ import type { AuthContext } from "../auth/auth.types.js";
 import { CreditCardController } from "./credit-card.controller.js";
 import { createCreditCardRouter } from "./credit-card.routes.js";
 import { CreditCardService } from "./credit-card.service.js";
+import { createStatementControllerStub } from "./statement-controller-stub.js";
 import type {
   CreateCreditCardInput,
   CreditCard,
@@ -93,7 +94,10 @@ function buildApp(userId = randomUUID()) {
   app.use(express.json());
   app.use(
     "/api/credit-cards",
-    createCreditCardRouter(new CreditCardController(new CreditCardService(repo)))
+    createCreditCardRouter(
+      new CreditCardController(new CreditCardService(repo)),
+      createStatementControllerStub()
+    )
   );
   app.use(errorHandler);
   return { app, userId, repo };

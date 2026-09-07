@@ -251,31 +251,38 @@ created_at, updated_at
 ### `credit_card_statements` (P0.9)
 
 ```text
-id, credit_card_id
-period labels / closing_at / due_at (cuando existan)
+id, user_id, credit_card_id, currency
+period_start, period_end (= closing_date), closing_date
+due_date NULL
 status: PROJECTED | CLOSED | PARTIALLY_PAID | PAID
-projected_amount NULL, actual_amount NULL
+closed_projected_amount NULL   -- snapshot al cerrar; null en PROJECTED
+actual_amount NULL             -- informativo; NO mueve deuda
+closed_at NULL
+UNIQUE(credit_card_id, closing_date)
 ```
 
-Sin `closing_day` en la tarjeta: no inventar statement “cierto” ni asignar consumos a un resumen concreto (F7).
+`projectedAmount` API = derivado live (PROJECTED) o `closed_projected_amount` (CLOSED).  
+Sin `Transaction.statement_id` — pertenencia por card + occurredAt en el ciclo.
+
+Sin `closing_day` en la tarjeta: no inventar statement “cierto” (F7).
 
 ### F9 — CreditCardStatement no es fuente de deuda
 
-Aprobado junto con el inventario P0.2.
+Aprobado junto con el inventario P0.2. **Vigente en P0.9.**
 
 `CreditCardStatement` **no** es fuente independiente de `currentCardDebt`.
 
 La deuda actual se deriva de eventos financieros reconocidos:
 
 - compras/cuotas reconocidas (`EXPENSE` con `creditCardId`);
-- `CREDIT_CARD_PAYMENT`;
+- `CREDIT_CARD_PAYMENT` (P0.10+);
 - reintegros acreditados a tarjeta;
-- eventuales cargos reales explícitos (comisión, interés, impuesto, etc.).
+- eventuales cargos reales explícitos.
 
 El statement:
 
 - agrupa/formaliza un ciclo;
-- puede guardar `projectedAmount`;
+- proyecta monto derivado de Transactions;
 - puede guardar `actualAmount` informado por el banco;
 - **actualizar `actualAmount` NO debe modificar silenciosamente `currentCardDebt`**.
 
@@ -344,6 +351,7 @@ totalOutstandingCommitment = currentCardDebt + futureInstallmentCommitment
 | P0.6 Purchase contado 1/1 | DONE definitivo (código + Neon + API) |
 | P0.7 Purchase N cuotas + future commitment | DONE definitivo (código + Neon + API) |
 | P0.8 Recognize due installments (idempotent) | DONE definitivo (código + API; sin migración; CLI dry-run; sin cron) |
+| P0.9 CreditCardStatement (F9) | DONE definitivo (código + Neon + API) |
 | `CREDIT_CARD_PAYMENT` | No iniciado |
 
 ### Modelado P0.6–P0.7 (opción B)

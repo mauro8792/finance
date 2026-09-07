@@ -349,6 +349,28 @@ Purchase = metadata contractual. Transaction = gasto reconocido. Statement ≠ d
 
 ---
 
+# CreditCardStatement (P0.9)
+
+```text
+credit_card_statements
+```
+
+```text
+id, user_id, credit_card_id, currency
+period_start, period_end (= closing_date), closing_date
+due_date NULL
+status: PROJECTED | CLOSED | PARTIALLY_PAID | PAID
+closed_projected_amount NULL  -- snapshot al CLOSED
+actual_amount NULL            -- informativo; F9: no mueve deuda
+closed_at NULL
+UNIQUE(credit_card_id, closing_date)
+```
+
+**F9:** Statement no es ledger de deuda. `projectedAmount` API = live (PROJECTED) o snapshot (CLOSED).  
+Pertenencia de gastos: `creditCardId` + `occurredAt` en `[periodStart, periodEnd]` — sin `Transaction.statement_id`.
+
+---
+
 # 7. Category
 
 Tabla:

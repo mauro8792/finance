@@ -199,7 +199,7 @@ Gastos no tarjeta: `accountId` obligatorio, `creditCardId = null`.
 
 ## P0.8 — Reconocimiento de cuota (impacto mensual + budget)
 
-**Estado: DONE definitivo** (código + API deploy/smoke + CLI dry-run prod 2026-09-07). **Sin migración Neon.** **P0.9 no iniciado.** **Sin cron/scheduler.**
+**Estado: DONE definitivo** (código + API deploy/smoke + CLI dry-run prod 2026-09-07). **Sin migración Neon.** **Sin cron/scheduler.**
 
 **Objetivo:** `recognizeDueInstallments(asOf)` transforma installments elegibles `PENDING` → `RECOGNIZED` + `Transaction EXPENSE` de forma **idempotente** y segura ante concurrencia.
 
@@ -229,21 +229,35 @@ Automatización futura debe reutilizar exactamente `recognizeDueInstallments` �
 
 ---
 
-## P0.9 — Statements / proyección (F7)
+## P0.9 — Statements / proyección (F7 + F9)
 
-**Objetivo:** Entidad statement cuando hay ciclo; proyección **LIMITADA** sin `closingDay` (consumos, cuotas, compromisos, expected refunds) **sin** afirmar “próximo resumen = X” ni asignar consumos a un resumen inventado.
+**Estado: DONE definitivo** (código + Neon + API deploy/smoke 2026-09-07). **P0.10 no iniciado.**
 
-**Reglas:** F7; §§7–8 cuando config completa.
+**Objetivo:** `CreditCardStatement` agrupa/proyecta/cierra un ciclo. **F9: Statement ≠ deuda.**
 
-**Migraciones:** `credit_card_statements`.
+**Modelo:** `credit_card_statements` — periodStart/End, closingDate, dueDate?, status (PROJECTED|CLOSED|PARTIALLY_PAID|PAID), closedProjectedAmount snapshot, actualAmount informativo.
 
-**Riesgos:** UX que sugiera certeza falsa — copy obligatorio “configuración incompleta”.
+**Reglas de ciclo (UTC):**
+- Requiere `closingDay`; sin él → `CREDIT_CARD_CONFIG_INCOMPLETE`.
+- `closingDate` = día closingDay del mes (clamp EOM).
+- `periodEnd = closingDate`; `periodStart = previousClosing + 1 día`.
+- `dueDate` = primera ocurrencia de `dueDay` **estrictamente posterior** a closingDate (clamp EOM); null si dueDay null.
 
-**Tests:** incomplete → limited payload; complete → puede proyectar ciclo; `actualAmount` editable al cerrar.
+**projectedAmount:** derivado live de EXPENSE ACTIVE tarjeta (`accountId` null) en `[periodStart, periodEnd]` mientras PROJECTED. Al close: snapshot → `closedProjectedAmount`. Retroactive tx no muta snapshot; `hasReconciliationDifference`.
 
-**Criterio de aceptación:** API respeta F7; no “próximo resumen cierto” sin cierre.
+**API (producción — controller fino → service; no placeholders/501):**
+- `GET /api/credit-cards/:id/statements`
+- `POST /api/credit-cards/:id/statements/project` `{ closingDate }`
+- `GET .../statements/:statementId`
+- `POST .../statements/:statementId/close` `{ actualAmount? }`
 
-**Dependencias:** P0.7–P0.8.
+Nota: `statement-controller-stub.ts` es **solo** para tests de CRUD de tarjeta (`credit-card.controller.test.ts`). El router de producción monta `CreditCardStatementController` real.
+
+**Migración:** `20260907190000_create_credit_card_statement` (aditiva; sin `Transaction.statementId`).
+
+**Tests:** math A–E + service F–Y + HTTP controller.
+
+**Dependencias:** P0.7–P0.8. **Siguiente gate:** autorización P0.10.
 
 ---
 
