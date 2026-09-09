@@ -59,7 +59,6 @@ export class CreditCardService {
     }
     const movements = await this.transactions.findByUserId(userId, {
       creditCardId: card.id,
-      type: "EXPENSE",
       status: "ACTIVE",
     });
     const currentCardDebt = computeCurrentCardDebt(movements);

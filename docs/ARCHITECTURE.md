@@ -400,6 +400,7 @@ apps/api/
 │   │   │   └── credit-card.types.ts
 │   │   ├── credit-card-purchases/ # MVP2 P0.6–P0.8 — Purchase + N Installments; recognizeDue CLI
 │   │   ├── credit-card-statements/ # MVP2 P0.9 — Statement cycle projection/close (F9 ≠ debt)
+│   │   ├── credit-card-payments/   # MVP2 P0.10 — CREDIT_CARD_PAYMENT (bank−, debt−, spending 0)
 │   │   │   ├── credit-card-purchase.controller.ts
 │   │   │   ├── credit-card-purchase.service.ts
 │   │   │   ├── credit-card-purchase.repository.ts

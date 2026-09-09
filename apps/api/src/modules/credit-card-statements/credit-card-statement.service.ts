@@ -1,6 +1,16 @@
+/**
+ * P0.9 CreditCardStatement — grouping/projection/snapshot only (F9).
+ * Does NOT alter currentCardDebt, bank balance, or installments.
+ * projectedAmount is live-derived while PROJECTED; snapshotted on close.
+ * P0.10: paidAmount/remainingAmount derived from payment links (status only).
+ */
 import { randomUUID } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import { AppError } from "../../shared/errors/app-error.js";
+import type { CreditCardPaymentRepository } from "../credit-card-payments/credit-card-payment.types.js";
+import {
+  statementTargetAmount,
+} from "../credit-cards/credit-card-debt.js";
 import type { CreditCardRepository } from "../credit-cards/credit-card.types.js";
 import { sumAmounts } from "../transactions/net-expense.js";
 import { fromCents, toCents } from "../transactions/transaction-balance.js";
@@ -18,20 +28,17 @@ import {
 import type {
   CreditCardStatement,
   CreditCardStatementRepository,
+  StatementPaymentSummary,
   StatementTransactionSummary,
   StatementView,
 } from "./credit-card-statement.types.js";
 
-/**
- * P0.9 CreditCardStatement — grouping/projection/snapshot only (F9).
- * Does NOT alter currentCardDebt, bank balance, or installments.
- * projectedAmount is live-derived while PROJECTED; snapshotted on close.
- */
 export class CreditCardStatementService {
   constructor(
     private readonly statements: CreditCardStatementRepository,
     private readonly cards: CreditCardRepository,
-    private readonly transactions: TransactionRepository
+    private readonly transactions: TransactionRepository,
+    private readonly payments: CreditCardPaymentRepository | null = null
   ) {}
 
   async list(userId: string, creditCardId: string): Promise<StatementView[]> {
@@ -141,11 +148,19 @@ export class CreditCardStatementService {
         ? null
         : parseNonNegativeAmount(String(actualAmountRaw));
 
+    const target = statementTargetAmount({
+      actualAmount,
+      closedProjectedAmount,
+    });
+    const closeStatus =
+      target != null && toCents(target) === 0n ? "PAID" : "CLOSED";
+
     try {
       const closed = await this.statements.close(statement.id, {
         closedProjectedAmount,
         actualAmount,
         closedAt: new Date(),
+        status: closeStatus,
       });
       return this.toView(closed, true);
     } catch (error) {
@@ -187,12 +202,59 @@ export class CreditCardStatementService {
       statement.closedProjectedAmount !== null &&
       statement.closedProjectedAmount !== currentDerivedAmount;
 
+    const targetAmount =
+      statement.status === "PROJECTED"
+        ? null
+        : statementTargetAmount(statement);
+
+    let paidAmount: string | null = null;
+    let remainingAmount: string | null = null;
+    let payments: StatementPaymentSummary[] | undefined;
+    let hasPaymentCoverageGap = false;
+
+    if (statement.status !== "PROJECTED" && this.payments) {
+      const links = await this.payments.findByStatementId(statement.id);
+      const paymentViews: StatementPaymentSummary[] = [];
+      let paidCents = 0n;
+      for (const link of links) {
+        const tx = await this.transactions.findById(link.transactionId);
+        if (!tx || tx.status !== "ACTIVE" || tx.accountId == null) {
+          continue;
+        }
+        paidCents += toCents(tx.amount);
+        paymentViews.push({
+          id: link.transactionId,
+          amount: tx.amount,
+          accountId: tx.accountId,
+          occurredAt: tx.occurredAt,
+          status: tx.status,
+        });
+      }
+      paidAmount = fromCents(paidCents);
+      if (targetAmount != null) {
+        const rem = toCents(targetAmount) - paidCents;
+        remainingAmount = fromCents(rem < 0n ? 0n : rem);
+      }
+      hasPaymentCoverageGap =
+        toCents(currentDerivedAmount) > paidCents;
+      if (includeTransactions) {
+        payments = paymentViews;
+      }
+    } else if (statement.status !== "PROJECTED") {
+      paidAmount = "0.00";
+      remainingAmount = targetAmount;
+    }
+
     const view: StatementView = {
       statement,
       projectedAmount,
       currentDerivedAmount,
       difference,
       hasReconciliationDifference,
+      targetAmount,
+      paidAmount,
+      remainingAmount,
+      hasPaymentCoverageGap,
     };
 
     if (includeTransactions) {
@@ -207,6 +269,9 @@ export class CreditCardStatementService {
             occurredAt: tx.occurredAt,
           })
         );
+      if (payments) {
+        view.payments = payments;
+      }
     }
 
     return view;
@@ -220,7 +285,6 @@ export class CreditCardStatementService {
       type: "EXPENSE",
       status: "ACTIVE",
       occurredAtGte: statement.periodStart,
-      // inclusive end: use lt of next ms after periodEnd
       occurredAtLt: new Date(statement.periodEnd.getTime() + 1),
     });
     return rows.filter((tx) => tx.accountId === null);

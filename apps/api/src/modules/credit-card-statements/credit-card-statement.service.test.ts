@@ -326,7 +326,7 @@ class MemoryStatements implements CreditCardStatementRepository {
     }
     const updated: CreditCardStatement = {
       ...current,
-      status: "CLOSED",
+      status: input.status,
       closedProjectedAmount: input.closedProjectedAmount,
       actualAmount: input.actualAmount,
       closedAt: input.closedAt,

@@ -69,7 +69,7 @@ export class PrismaCreditCardStatementRepository
     const updated = await this.prisma.creditCardStatement.updateMany({
       where: { id, status: "PROJECTED" },
       data: {
-        status: "CLOSED",
+        status: input.status,
         closedProjectedAmount: input.closedProjectedAmount,
         actualAmount: input.actualAmount,
         closedAt: input.closedAt,

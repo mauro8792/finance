@@ -263,19 +263,45 @@ Nota: `statement-controller-stub.ts` es **solo** para tests de CRUD de tarjeta (
 
 ## P0.10 — `CREDIT_CARD_PAYMENT` (total/parcial)
 
-**Objetivo:** Tipo dedicado; `accountId` origen + `creditCardId`; débito banco; `currentCardDebt −= amount`; **no** gross/net/budget.
+**Estado: DONE definitivo** (código + Neon + API deploy/smoke). **P0.11 no iniciado.**
 
-**Reglas:** F3; §9–9.1.
+**Objetivo:** Tipo dedicado; `accountId` origen + `creditCardId`; débito banco; `currentCardDebt −= amount`; **no** gross/net/budget. **payment ≠ expense.**
 
-**Migraciones:** enum `CREDIT_CARD_PAYMENT`; opcional tabla payment link / metadata statement.
+**Diseño link:** tabla `credit_card_payment_links` (1:1 con Transaction) guarda `statementId?` + `idempotencyKey` sin duplicar amount. SoT financiero = Transaction.
 
-**Riesgos:** **alto** — mal clasificar como EXPENSE = doble gasto.
+**Idempotency:** `idempotencyKey` **requerida**; UNIQUE(userId, key) en DB; canonical payload = `creditCardId` + `accountId` + `amount` + `statementId` + `occurredAt` (si el cliente lo envía). Replay mismo payload → mismo payment; distinto → `409 IDEMPOTENCY_CONFLICT`. Tests concurrentes A/B cubren race + UNIQUE.
 
-**Tests:** 500k pago; parcial 300k; gross invariante; void restaura banco+deuda (P0.15); legacy EXPENSE CREDIT_CARD no se convierte en payment.
+**Locking:** `SELECT … FOR UPDATE` sobre `credit_cards` (+ account/statement) dentro de la misma DB transaction.
 
-**Criterio de aceptación:** matriz fila pago en CI.
+**Deuda:**
+```text
+currentCardDebt = SUM ACTIVE EXPENSE(card) − SUM ACTIVE CREDIT_CARD_PAYMENT(card)  (≥ 0)
+```
 
-**Dependencias:** P0.9 (imputación a statement si existe), F3. Mínimo viable: pago a tarjeta sin statement si config incompleta, reduciendo solo `currentCardDebt`.
+**Matrix:**
+| Event | Spending | Bank | CurrentCardDebt | FutureCommitment |
+|---|---|---|---|---|
+| `CREDIT_CARD_PAYMENT` | 0 | −amount | −amount | 0 |
+
+**Statement (F9 vigente):**
+- `targetAmount = actualAmount ?? closedProjectedAmount`
+- `paidAmount = SUM ACTIVE payments linked`
+- status: CLOSED / PARTIALLY_PAID / PAID según paid vs target
+- no pagar PROJECTED ni PAID; payment sin statement permitido
+- close con target 0 → PAID inmediato
+- overpayment statement o deuda → reject
+- saldo cuenta negativo permitido (paridad MVP1)
+
+**API:**
+- `POST/GET /api/credit-cards/:id/payments`
+- `GET /api/credit-cards/:id/payments/:paymentId`
+- sin PATCH/DELETE (void = P0.15)
+
+**Migración:** `20260909120000_add_credit_card_payment` (enum + link table).
+
+**CSV:** tipo `PAGO_TARJETA`; sin columna Tarjeta nueva (contrato CSV intacto; cuenta origen visible).
+
+**Dependencias:** P0.9, F3. **Siguiente gate:** autorización P0.11.
 
 ---
 

@@ -27,6 +27,7 @@ const TYPE_LABELS: Record<Transaction["type"], string> = {
   INVESTMENT_RETURN: "Rendimiento",
   CURRENCY_EXCHANGE: "Cambio de moneda",
   HOUSING_PAYMENT: "Pago vivienda",
+  CREDIT_CARD_PAYMENT: "PAGO_TARJETA",
 };
 
 const STATUS_LABELS: Record<Transaction["status"], string> = {

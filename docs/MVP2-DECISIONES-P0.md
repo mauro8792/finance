@@ -352,7 +352,7 @@ totalOutstandingCommitment = currentCardDebt + futureInstallmentCommitment
 | P0.7 Purchase N cuotas + future commitment | DONE definitivo (código + Neon + API) |
 | P0.8 Recognize due installments (idempotent) | DONE definitivo (código + API; sin migración; CLI dry-run; sin cron) |
 | P0.9 CreditCardStatement (F9) | DONE definitivo (código + Neon + API) |
-| `CREDIT_CARD_PAYMENT` | No iniciado |
+| `CREDIT_CARD_PAYMENT` / P0.10 | DONE definitivo (código + Neon + API) |
 
 ### Modelado P0.6–P0.7 (opción B)
 

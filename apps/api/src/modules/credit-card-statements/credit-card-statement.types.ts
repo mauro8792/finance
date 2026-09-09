@@ -42,6 +42,7 @@ export type CloseStatementRecord = {
   closedProjectedAmount: string;
   actualAmount: string | null;
   closedAt: Date;
+  status: "CLOSED" | "PAID";
 };
 
 export type StatementTransactionSummary = {
@@ -52,6 +53,14 @@ export type StatementTransactionSummary = {
   occurredAt: Date;
 };
 
+export type StatementPaymentSummary = {
+  id: string;
+  amount: string;
+  accountId: string;
+  occurredAt: Date;
+  status: string;
+};
+
 export type StatementView = {
   statement: CreditCardStatement;
   /** Live derived sum for PROJECTED; equals closedProjectedAmount for CLOSED display field projectedAmount. */
@@ -60,7 +69,14 @@ export type StatementView = {
   currentDerivedAmount: string;
   difference: string | null;
   hasReconciliationDifference: boolean;
+  /** Null while PROJECTED. */
+  targetAmount: string | null;
+  paidAmount: string | null;
+  remainingAmount: string | null;
+  /** target vs live derived after close; informative only (F9). */
+  hasPaymentCoverageGap: boolean;
   transactions?: StatementTransactionSummary[];
+  payments?: StatementPaymentSummary[];
 };
 
 export interface CreditCardStatementRepository {

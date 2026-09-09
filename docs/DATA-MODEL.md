@@ -481,7 +481,7 @@ INVESTMENT_PRINCIPAL_RETURN
 INVESTMENT_RETURN
 CURRENCY_EXCHANGE
 HOUSING_PAYMENT
-CREDIT_CARD_PAYMENT   -- MVP2; enum pendiente de migración
+CREDIT_CARD_PAYMENT   -- MVP2 P0.10
 ```
 
 El tipo determina el efecto económico.
@@ -498,6 +498,16 @@ El tipo determina el efecto económico.
 `INVESTMENT_OUTFLOW` es débito. `INVESTMENT_PRINCIPAL_RETURN` e `INVESTMENT_RETURN` son crédito. `category_id` null. Metadata: `{ "investmentId": "<uuid>" }`.
 
 `CREDIT_CARD_PAYMENT` es débito de `account_id` (origen). Requiere `credit_card_id`. No es gasto operativo ni de presupuesto. Reduce `currentCardDebt`.
+
+### `credit_card_payment_links` (P0.10)
+
+```text
+id, user_id, transaction_id UNIQUE, credit_card_id,
+statement_id NULLABLE, idempotency_key,
+UNIQUE(user_id, idempotency_key)
+```
+
+No duplica amount: el monto vive solo en `transactions`.
 
 Los importes se guardan siempre positivos.
 

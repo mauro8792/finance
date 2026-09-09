@@ -125,6 +125,18 @@ export function balanceDirection(movement: {
     return "debit";
   }
 
+  if (movement.type === "CREDIT_CARD_PAYMENT") {
+    // F3: bank outflow; not period spending / budget.
+    if (movement.accountId == null) {
+      throw new AppError(
+        "INVALID_CREDIT_CARD_PAYMENT",
+        "CREDIT_CARD_PAYMENT requiere accountId.",
+        500
+      );
+    }
+    return "debit";
+  }
+
   if (
     movement.type === "INVESTMENT_PRINCIPAL_RETURN" ||
     movement.type === "INVESTMENT_RETURN"

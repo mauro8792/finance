@@ -557,7 +557,7 @@ Sin `closingDay`: proyección limitada; no afirmar “próximo resumen” cierto
 
 `CreditCardStatement` no es fuente de deuda: `currentCardDebt` se deriva de eventos (`EXPENSE` reconocidos, `CREDIT_CARD_PAYMENT`, reintegros a tarjeta, cargos explícitos). Cambiar `actualAmount` del statement **no** altera la deuda en silencio (`MVP2-DECISIONES-P0.md` F9).
 
-**Limitación temporal P0.9:** statements proyectan/cierran ciclos; **no** pagos (`CREDIT_CARD_PAYMENT` = P0.10). Cambiar `actualAmount` no mueve deuda (F9).
+**Limitación temporal P0.10:** pagos `CREDIT_CARD_PAYMENT` reducen deuda/banco; no refunds/promos (P0.11+); no void (P0.15). Cambiar `actualAmount` no mueve deuda (F9).
 
 ## 23.2 Legacy MVP1
 

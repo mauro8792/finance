@@ -5,6 +5,7 @@ import express from "express";
 import request from "supertest";
 import { errorHandler } from "../../middlewares/error-handler.js";
 import type { AuthContext } from "../auth/auth.types.js";
+import { createPaymentControllerStub } from "../credit-cards/payment-controller-stub.js";
 import { CreditCardController } from "../credit-cards/credit-card.controller.js";
 import { createCreditCardRouter } from "../credit-cards/credit-card.routes.js";
 import { CreditCardService } from "../credit-cards/credit-card.service.js";
@@ -175,7 +176,7 @@ class MemoryStatements implements CreditCardStatementRepository {
     const current = this.items.get(id)!;
     const updated: CreditCardStatement = {
       ...current,
-      status: "CLOSED",
+      status: input.status,
       closedProjectedAmount: input.closedProjectedAmount,
       actualAmount: input.actualAmount,
       closedAt: input.closedAt,
@@ -214,7 +215,8 @@ function buildApp(userId = randomUUID()) {
     "/api/credit-cards",
     createCreditCardRouter(
       new CreditCardController(new CreditCardService(cards, transactions)),
-      new CreditCardStatementController(statementService)
+      new CreditCardStatementController(statementService),
+      createPaymentControllerStub()
     )
   );
   app.use(errorHandler);

@@ -106,6 +106,10 @@ function baseStatementResponse(item: StatementView) {
     difference: item.difference,
     currentDerivedAmount: item.currentDerivedAmount,
     hasReconciliationDifference: item.hasReconciliationDifference,
+    targetAmount: item.targetAmount,
+    paidAmount: item.paidAmount,
+    remainingAmount: item.remainingAmount,
+    hasPaymentCoverageGap: item.hasPaymentCoverageGap,
     closedAt: s.closedAt?.toISOString() ?? null,
     createdAt: s.createdAt.toISOString(),
     updatedAt: s.updatedAt.toISOString(),
@@ -125,6 +129,13 @@ export function toStatementDetailResponse(item: StatementView) {
       currency: tx.currency,
       description: tx.description,
       occurredAt: tx.occurredAt.toISOString(),
+    })),
+    payments: (item.payments ?? []).map((p) => ({
+      id: p.id,
+      amount: p.amount,
+      accountId: p.accountId,
+      occurredAt: p.occurredAt.toISOString(),
+      status: p.status,
     })),
   };
 }

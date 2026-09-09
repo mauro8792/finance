@@ -19,6 +19,7 @@ export const TRANSACTION_TYPES = [
   "INVESTMENT_RETURN",
   "CURRENCY_EXCHANGE",
   "HOUSING_PAYMENT",
+  "CREDIT_CARD_PAYMENT",
 ] as const;
 
 export type TransactionType = (typeof TRANSACTION_TYPES)[number];
