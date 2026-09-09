@@ -535,8 +535,11 @@ Efectos de la compra / cuota reconocida:
 - Purchase/Installment **no** suman gasto ni deuda por sí solos;
 - installments `PENDING` solo forman `futureInstallmentCommitment`.
 
-`currentCardDebt` (P0.5–P0.7) = suma de `EXPENSE` ACTIVE vinculados a la tarjeta.  
-Aún no restan pagos ni reintegros a tarjeta (P0.10+).
+`currentCardDebt` (P0.11) =
+  SUM ACTIVE EXPENSE(creditCardId)
+  − SUM ACTIVE CREDIT_CARD_PAYMENT(creditCardId)
+  − SUM ACTIVE REIMBURSEMENT(creditCardId)
+  (floor 0).
 
 Pago de tarjeta → `Transaction.type = CREDIT_CARD_PAYMENT`:
 
@@ -546,18 +549,18 @@ Pago de tarjeta → `Transaction.type = CREDIT_CARD_PAYMENT`:
 
 Distinguir:
 
-- `currentCardDebt` — reconocidos aún no pagados;
+- `currentCardDebt` — reconocidos aún no pagados (menos reintegros a tarjeta);
 - `futureInstallmentCommitment` — cuotas `PENDING` de purchases `ACTIVE` (P0.7+; P0.5 sin purchase = 0);
 - `totalOutstandingCommitment` = suma de ambos.
 
 Reintegros acreditados: destino banco (`REIMBURSEMENT` + `accountId`) o tarjeta (`REIMBURSEMENT` + `creditCardId`, `accountId` null).  
-`ExpectedRefund` no mueve confirmado hasta acreditación explícita.
+`CreditCardRefundExpectation` (EXPECTED) **no** mueve confirmado hasta acreditación explícita. EXPECTED ≠ ACCREDITED; reintegro ≠ ingreso.
 
 Sin `closingDay`: proyección limitada; no afirmar “próximo resumen” cierto.
 
 `CreditCardStatement` no es fuente de deuda: `currentCardDebt` se deriva de eventos (`EXPENSE` reconocidos, `CREDIT_CARD_PAYMENT`, reintegros a tarjeta, cargos explícitos). Cambiar `actualAmount` del statement **no** altera la deuda en silencio (`MVP2-DECISIONES-P0.md` F9).
 
-**Limitación temporal P0.10:** pagos `CREDIT_CARD_PAYMENT` reducen deuda/banco; no refunds/promos (P0.11+); no void (P0.15). Cambiar `actualAmount` no mueve deuda (F9).
+**P0.11 local:** expectations + accreditations implementados; migración local/test; Neon no modificado. P0.12 (promos/topes) no iniciado.
 
 ## 23.2 Legacy MVP1
 

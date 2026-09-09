@@ -37,3 +37,13 @@ export const RenewCaucionSchema = z
     notes: z.string().nullable().optional(),
   })
   .strict();
+
+export const UpdateActiveCaucionSchema = z
+  .object({
+    principal: z.string().min(1, "El capital es obligatorio."),
+    annualRate: z.string().min(1, "La TNA es obligatoria."),
+    startDate: z.iso.datetime({ error: "startDate debe ser un datetime ISO." }),
+    maturityDate: z.iso.datetime({ error: "maturityDate debe ser un datetime ISO." }),
+    notes: z.string().nullable().optional(),
+  })
+  .strict();

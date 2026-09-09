@@ -161,7 +161,7 @@ export class PrismaCreditCardPaymentRepository
             userId: input.userId,
             creditCardId: card.id,
             status: "ACTIVE",
-            type: { in: ["EXPENSE", "CREDIT_CARD_PAYMENT"] },
+            type: { in: ["EXPENSE", "CREDIT_CARD_PAYMENT", "REIMBURSEMENT"] },
           },
         });
         const currentDebt = computeCurrentCardDebt(

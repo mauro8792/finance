@@ -126,6 +126,22 @@ enum CreditCardStatementStatus {
   @@map("credit_card_statement_status_enum")
 }
 
+enum CreditCardRefundExpectationStatus {
+  EXPECTED
+  PARTIALLY_ACCREDITED
+  ACCREDITED
+  CANCELLED
+
+  @@map("credit_card_refund_expectation_status_enum")
+}
+
+enum CreditCardRefundDestinationType {
+  BANK_ACCOUNT
+  CREDIT_CARD
+
+  @@map("credit_card_refund_destination_type_enum")
+}
+
 model User {
   id           String        @id @default(uuid()) @db.Uuid
   name         String        @db.VarChar(120)
@@ -141,11 +157,13 @@ model User {
   budgets            Budget[]
   housingObligations HousingObligation[]
   investments           Investment[]
-  creditCards              CreditCard[]
-  creditCardPurchases      CreditCardPurchase[]
-  creditCardStatements     CreditCardStatement[]
-  creditCardPaymentLinks   CreditCardPaymentLink[]
-  sessions                 Session[]
+  creditCards                      CreditCard[]
+  creditCardPurchases              CreditCardPurchase[]
+  creditCardStatements             CreditCardStatement[]
+  creditCardPaymentLinks           CreditCardPaymentLink[]
+  creditCardRefundExpectations     CreditCardRefundExpectation[]
+  creditCardRefundAccreditations   CreditCardRefundAccreditation[]
+  sessions                         Session[]
 
   @@map("users")
 }
@@ -232,6 +250,9 @@ model Transaction {
   housingPayment         HousingPayment?
   creditCardInstallment  CreditCardInstallment?
   creditCardPaymentLink  CreditCardPaymentLink?
+  refundExpectationAsOriginalExpense CreditCardRefundExpectation[] @relation("RefundExpectationOriginalExpense")
+  refundAccreditationsAsOriginalExpense CreditCardRefundAccreditation[] @relation("RefundAccreditationOriginalExpense")
+  refundAccreditation    CreditCardRefundAccreditation?
 
   @@index([userId, occurredAt])
   @@index([accountId, occurredAt])
@@ -368,6 +389,8 @@ model CreditCard {
   purchases    CreditCardPurchase[]
   statements   CreditCardStatement[]
   paymentLinks CreditCardPaymentLink[]
+  refundExpectations   CreditCardRefundExpectation[]
+  refundAccreditations CreditCardRefundAccreditation[]
 
   @@index([userId])
   @@index([userId, isActive])
@@ -439,11 +462,69 @@ model CreditCardPurchase {
   creditCard         CreditCard               @relation(fields: [creditCardId], references: [id], onDelete: Restrict)
   category           Category                 @relation(fields: [categoryId], references: [id], onDelete: Restrict)
   installments       CreditCardInstallment[]
+  refundExpectations   CreditCardRefundExpectation[]
+  refundAccreditations CreditCardRefundAccreditation[]
 
   @@index([userId, purchasedAt])
   @@index([creditCardId, purchasedAt])
   @@index([userId, status])
   @@map("credit_card_purchases")
+}
+
+/// P0.11: expected credit-card refund (no financial impact until accreditation).
+/// XOR: exactly one of purchaseId | originalExpenseTransactionId.
+model CreditCardRefundExpectation {
+  id                            String                            @id @default(uuid()) @db.Uuid
+  userId                        String                            @map("user_id") @db.Uuid
+  creditCardId                  String                            @map("credit_card_id") @db.Uuid
+  purchaseId                    String?                           @map("purchase_id") @db.Uuid
+  originalExpenseTransactionId  String?                           @map("original_expense_transaction_id") @db.Uuid
+  expectedAmount                Decimal                           @map("expected_amount") @db.Decimal(18, 2)
+  currency                      Currency
+  status                        CreditCardRefundExpectationStatus @default(EXPECTED)
+  expectedDate                  DateTime?                         @map("expected_date") @db.Timestamptz
+  description                   String?                           @db.VarChar(255)
+  createdAt                     DateTime                          @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt                     DateTime                          @updatedAt @map("updated_at") @db.Timestamptz
+  user                          User                              @relation(fields: [userId], references: [id], onDelete: Restrict)
+  creditCard                    CreditCard                        @relation(fields: [creditCardId], references: [id], onDelete: Restrict)
+  purchase                      CreditCardPurchase?               @relation(fields: [purchaseId], references: [id], onDelete: Restrict)
+  originalExpenseTransaction    Transaction?                      @relation("RefundExpectationOriginalExpense", fields: [originalExpenseTransactionId], references: [id], onDelete: Restrict)
+  accreditations                CreditCardRefundAccreditation[]
+
+  @@index([userId, status])
+  @@index([creditCardId, createdAt])
+  @@index([purchaseId])
+  @@index([originalExpenseTransactionId])
+  @@map("credit_card_refund_expectations")
+}
+
+/// P0.11: links REIMBURSEMENT Transaction → optional expectation + idempotency.
+/// Amount SoT remains Transaction; this table does not duplicate amount.
+model CreditCardRefundAccreditation {
+  id                            String                          @id @default(uuid()) @db.Uuid
+  userId                        String                          @map("user_id") @db.Uuid
+  transactionId                 String                          @unique @map("transaction_id") @db.Uuid
+  expectationId                 String?                         @map("expectation_id") @db.Uuid
+  originalExpenseTransactionId  String                          @map("original_expense_transaction_id") @db.Uuid
+  purchaseId                    String?                         @map("purchase_id") @db.Uuid
+  creditCardId                  String                          @map("credit_card_id") @db.Uuid
+  destinationType               CreditCardRefundDestinationType @map("destination_type")
+  idempotencyKey                String                          @map("idempotency_key") @db.VarChar(128)
+  createdAt                     DateTime                        @default(now()) @map("created_at") @db.Timestamptz
+  user                          User                            @relation(fields: [userId], references: [id], onDelete: Restrict)
+  transaction                   Transaction                     @relation(fields: [transactionId], references: [id], onDelete: Restrict)
+  expectation                   CreditCardRefundExpectation?    @relation(fields: [expectationId], references: [id], onDelete: Restrict)
+  originalExpenseTransaction    Transaction                     @relation("RefundAccreditationOriginalExpense", fields: [originalExpenseTransactionId], references: [id], onDelete: Restrict)
+  purchase                      CreditCardPurchase?             @relation(fields: [purchaseId], references: [id], onDelete: Restrict)
+  creditCard                    CreditCard                      @relation(fields: [creditCardId], references: [id], onDelete: Restrict)
+
+  @@unique([userId, idempotencyKey])
+  @@index([expectationId])
+  @@index([creditCardId, createdAt])
+  @@index([originalExpenseTransactionId])
+  @@index([purchaseId])
+  @@map("credit_card_refund_accreditations")
 }
 
 model CreditCardInstallment {

@@ -8,6 +8,7 @@ import {
   InvestmentIdParamsSchema,
   MatureCaucionSchema,
   RenewCaucionSchema,
+  UpdateActiveCaucionSchema,
 } from "./investment.schema.js";
 import type {
   InvestmentService,
@@ -70,6 +71,20 @@ export class InvestmentController {
       notes: body.notes,
     });
     res.status(201).json(toRenewResponse(result));
+  };
+
+  updateActiveCaucion = async (req: Request, res: Response): Promise<void> => {
+    const userId = getAuthUserId(req);
+    const { id } = parseValue(InvestmentIdParamsSchema, req.params);
+    const body = parseValue(UpdateActiveCaucionSchema, req.body);
+    const updated = await this.investments.updateActiveCaucion(userId, id, {
+      principal: body.principal,
+      annualRate: body.annualRate,
+      startDate: new Date(body.startDate),
+      maturityDate: new Date(body.maturityDate),
+      notes: body.notes,
+    });
+    res.status(200).json(toInvestmentResponse(updated));
   };
 }
 

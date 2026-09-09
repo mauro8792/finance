@@ -57,6 +57,15 @@ export type RenewAtomicInput = {
   outflow: CreateTransactionInput & { id: string };
 };
 
+export type UpdateActiveCaucionRecord = {
+  principal: string;
+  annualRate: string;
+  startDate: Date;
+  maturityDate: Date;
+  expectedReturn: string;
+  notes: string | null;
+};
+
 export type InvestmentRepository = {
   createCaucionAtomic(
     investment: CreateInvestmentRecord,
@@ -79,6 +88,15 @@ export type InvestmentRepository = {
     investmentReturn: Transaction | null;
     outflow: Transaction;
   }>;
+  /**
+   * Locks ACTIVE caución + linked INVESTMENT_OUTFLOW (metadata.investmentId).
+   * Updates principal/dates/rate/notes and outflow amount/occurredAt atomically.
+   * No new Transaction rows.
+   */
+  updateActiveCaucionAtomic(
+    investmentId: string,
+    patch: UpdateActiveCaucionRecord
+  ): Promise<{ investment: Investment; outflow: Transaction }>;
   findById(id: string): Promise<Investment | null>;
   findByUserId(userId: string): Promise<Investment[]>;
 };

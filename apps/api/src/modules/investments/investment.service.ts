@@ -435,6 +435,100 @@ export class InvestmentService {
     };
   }
 
+  /**
+   * Administrative correction of an ACTIVE caución.
+   * Strategy B: Investment.principal is mirrored on the linked INVESTMENT_OUTFLOW
+   * (metadata.investmentId). Updates both atomically; creates no new Transactions.
+   * accountId is immutable (original outflow already debited that account).
+   */
+  async updateActiveCaucion(
+    userId: string,
+    id: string,
+    input: {
+      principal: string;
+      annualRate: string;
+      startDate: Date;
+      maturityDate: Date;
+      notes?: string | null;
+    }
+  ): Promise<Investment> {
+    const investment = await this.investments.findById(id);
+    if (!investment || investment.userId !== userId) {
+      throw new AppError("NOT_FOUND", "Inversión no encontrada.", 404);
+    }
+    if (investment.type !== "CAUCION") {
+      throw new AppError(
+        "VALIDATION_ERROR",
+        "Sólo una caución puede editarse en este flujo.",
+        400
+      );
+    }
+    if (investment.status !== "ACTIVE") {
+      throw new AppError(
+        "INVESTMENT_NOT_ACTIVE",
+        "Sólo una inversión ACTIVE puede editarse.",
+        400
+      );
+    }
+
+    const principal = parsePositiveAmount(input.principal);
+    const annualRate = parseNonNegativeAnnualRate(input.annualRate);
+    const startDate = input.startDate;
+    const maturityDate = input.maturityDate;
+
+    if (Number.isNaN(startDate.getTime()) || Number.isNaN(maturityDate.getTime())) {
+      throw new AppError("VALIDATION_ERROR", "Las fechas de la caución son inválidas.", 400);
+    }
+
+    const days = calendarDaysBetween(startDate, maturityDate);
+    if (days < 0) {
+      throw new AppError(
+        "VALIDATION_ERROR",
+        "La fecha de vencimiento no puede ser anterior al inicio.",
+        400
+      );
+    }
+
+    const account = await this.requireOriginAccount(userId, investment.accountId);
+    if (account.currency !== investment.currency) {
+      throw new AppError(
+        "CURRENCY_MISMATCH",
+        "La moneda de la cuenta debe coincidir con la de la caución.",
+        400
+      );
+    }
+
+    const delta = toCents(principal) - toCents(investment.principal);
+    if (delta > 0n) {
+      const movements = await this.transactions.findByUserId(userId, {
+        accountId: account.id,
+        status: "ACTIVE",
+      });
+      const available = computeBalance(account.initialBalance, movements);
+      if (toCents(available) < delta) {
+        throw new AppError(
+          "INSUFFICIENT_BALANCE",
+          "La cuenta no tiene saldo suficiente para aumentar el capital.",
+          400
+        );
+      }
+    }
+
+    const expectedReturn = calculateExpectedReturn(principal, annualRate, days);
+    const result = await this.investments.updateActiveCaucionAtomic(id, {
+      principal,
+      annualRate,
+      startDate,
+      maturityDate,
+      expectedReturn,
+      notes:
+        input.notes === undefined
+          ? investment.notes
+          : normalizeNotes(input.notes),
+    });
+    return result.investment;
+  }
+
   private async requireOriginAccount(userId: string, accountId: string) {
     const account = await this.accounts.findById(accountId);
     if (!account || account.userId !== userId) {

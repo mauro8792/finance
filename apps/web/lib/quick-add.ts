@@ -15,7 +15,39 @@ export const LAST_ACCOUNT_KEY = "pf.quickAdd.accountId";
 export const LAST_PAYMENT_KEY = "pf.quickAdd.paymentMethod";
 
 export function normalizeAmountInput(raw: string): string {
-  return raw.trim().replace(",", ".");
+  const trimmed = raw.trim().replace(/\s/g, "");
+  if (!trimmed) {
+    return "";
+  }
+
+  const hasComma = trimmed.includes(",");
+  const hasDot = trimmed.includes(".");
+
+  // es-AR: 25.400.000,00 → miles con punto, decimal con coma
+  if (hasComma && hasDot) {
+    return trimmed.replace(/\./g, "").replace(",", ".");
+  }
+
+  // Solo coma: decimal (12,5 / 25400000,00)
+  if (hasComma) {
+    return trimmed.replace(",", ".");
+  }
+
+  if (hasDot) {
+    const dotCount = (trimmed.match(/\./g) ?? []).length;
+    // Varios puntos: miles (25.400.000)
+    if (dotCount > 1) {
+      return trimmed.replace(/\./g, "");
+    }
+    const [whole = "", fraction = ""] = trimmed.split(".");
+    // Un solo grupo de 3 dígitos tras el punto → miles es-AR (25.400)
+    // 1–2 dígitos → decimal (12.5 / 12.50)
+    if (/^\d+$/.test(whole) && /^\d{3}$/.test(fraction)) {
+      return `${whole}${fraction}`;
+    }
+  }
+
+  return trimmed;
 }
 
 export function isValidAmount(raw: string): boolean {

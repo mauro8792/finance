@@ -3,12 +3,12 @@ import { fromCents, toCents } from "../transactions/transaction-balance.js";
 import type { Transaction } from "../transactions/transaction.types.js";
 
 /**
- * P0.10 currentCardDebt (derived, not persisted):
+ * P0.11 currentCardDebt (derived, not persisted):
  *   SUM ACTIVE EXPENSE WHERE creditCardId
  * − SUM ACTIVE CREDIT_CARD_PAYMENT WHERE creditCardId
+ * − SUM ACTIVE REIMBURSEMENT WHERE creditCardId
  *
  * Never negative under valid operations; defensive floor at 0.
- * Future P0.11: also subtract card reimbursements.
  */
 export function computeCurrentCardDebt(
   movements: ReadonlyArray<
@@ -27,6 +27,12 @@ export function computeCurrentCardDebt(
       item.status === "ACTIVE" &&
       item.creditCardId != null
   );
+  const cardReimbursements = movements.filter(
+    (item) =>
+      item.type === "REIMBURSEMENT" &&
+      item.status === "ACTIVE" &&
+      item.creditCardId != null
+  );
 
   const chargeTotal =
     charges.length === 0 ? 0n : toCents(sumAmounts(charges.map((c) => c.amount)));
@@ -34,7 +40,11 @@ export function computeCurrentCardDebt(
     payments.length === 0
       ? 0n
       : toCents(sumAmounts(payments.map((p) => p.amount)));
-  const debt = chargeTotal - paymentTotal;
+  const reimbursementTotal =
+    cardReimbursements.length === 0
+      ? 0n
+      : toCents(sumAmounts(cardReimbursements.map((r) => r.amount)));
+  const debt = chargeTotal - paymentTotal - reimbursementTotal;
   return fromCents(debt < 0n ? 0n : debt);
 }
 

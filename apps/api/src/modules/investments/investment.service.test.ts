@@ -25,12 +25,14 @@ import type {
 } from "../transactions/transaction.types.js";
 import { PrismaUserRepository } from "../users/user.repository.js";
 import { PrismaInvestmentRepository } from "./investment.repository.js";
+import { calculateExpectedReturn } from "./investment.math.js";
 import { InvestmentService } from "./investment.service.js";
 import type {
   CreateInvestmentRecord,
   Investment,
   InvestmentRepository,
   RenewAtomicInput,
+  UpdateActiveCaucionRecord,
 } from "./investment.types.js";
 
 class MemoryTransactionRepository implements TransactionRepository {
@@ -274,6 +276,53 @@ class MemoryInvestmentRepository implements InvestmentRepository {
 
   async findByUserId(userId: string): Promise<Investment[]> {
     return [...this.items.values()].filter((item) => item.userId === userId);
+  }
+
+  async updateActiveCaucionAtomic(
+    investmentId: string,
+    patch: UpdateActiveCaucionRecord
+  ): Promise<{ investment: Investment; outflow: Transaction }> {
+    const current = this.items.get(investmentId);
+    if (!current || current.status !== "ACTIVE") {
+      throw new AppError(
+        "INVESTMENT_NOT_ACTIVE",
+        "Sólo una inversión ACTIVE puede editarse.",
+        409
+      );
+    }
+    const outflows = this.transactions.items.filter(
+      (item) =>
+        item.type === "INVESTMENT_OUTFLOW" &&
+        item.status === "ACTIVE" &&
+        item.metadata &&
+        typeof item.metadata === "object" &&
+        (item.metadata as { investmentId?: string }).investmentId ===
+          investmentId
+    );
+    if (outflows.length !== 1) {
+      throw new AppError(
+        "VALIDATION_ERROR",
+        "No hay un INVESTMENT_OUTFLOW único vinculado a esta caución.",
+        409
+      );
+    }
+    const outflow = outflows[0]!;
+    const updated: Investment = {
+      ...current,
+      principal: patch.principal,
+      annualRate: patch.annualRate,
+      startDate: patch.startDate,
+      maturityDate: patch.maturityDate,
+      expectedReturn: patch.expectedReturn,
+      notes: patch.notes,
+      updatedAt: new Date(),
+    };
+    this.items.set(investmentId, updated);
+    const outflowUpdated = await this.transactions.update(outflow.id, {
+      amount: patch.principal,
+      occurredAt: patch.startDate,
+    });
+    return { investment: updated, outflow: outflowUpdated };
   }
 }
 
@@ -1480,6 +1529,164 @@ test("InvestmentService persists a fictional renewal on PostgreSQL", async () =>
     await prisma.investment.deleteMany({
       where: { userId: user.id, renewedFromInvestmentId: { not: null } },
     });
+    await prisma.investment.deleteMany({ where: { userId: user.id } });
+    await prisma.account.deleteMany({ where: { id: origin.id } });
+    await prisma.user.delete({ where: { id: user.id } });
+  }
+});
+
+test("Caucion edit ACTIVE: capital/TNA/fechas + expectedReturn; no new Transaction", async () => {
+  const userId = randomUUID();
+  const accounts = new MemoryAccountRepository();
+  const transactions = new MemoryTransactionRepository();
+  const investments = new MemoryInvestmentRepository(transactions);
+  const service = new InvestmentService(investments, accounts, transactions);
+  const origin = await accounts.create({
+    userId,
+    name: "Bull Market QA",
+    currency: "ARS",
+    type: "BANK",
+    initialBalance: "30000000.00",
+  });
+  const created = await service.createCaucion(userId, {
+    ...validCaucion(origin.id),
+    principal: "25495784.34",
+    annualRate: "0.211000",
+    startDate: new Date("2026-09-02T15:00:00.000Z"),
+    maturityDate: new Date("2026-09-09T15:00:00.000Z"),
+  });
+  const beforeCount = transactions.items.length;
+  const expected = calculateExpectedReturn("25400000.00", "0.211000", 7);
+
+  const updated = await service.updateActiveCaucion(userId, created.investment.id, {
+    principal: "25400000.00",
+    annualRate: "0.211000",
+    startDate: new Date("2026-09-02T15:00:00.000Z"),
+    maturityDate: new Date("2026-09-09T15:00:00.000Z"),
+  });
+
+  assert.equal(updated.status, "ACTIVE");
+  assert.equal(updated.principal, "25400000.00");
+  assert.equal(updated.annualRate, "0.211000");
+  assert.equal(updated.expectedReturn, expected);
+  assert.equal(updated.actualReturn, null);
+  assert.equal(transactions.items.length, beforeCount);
+  const outflow = transactions.items.find(
+    (item) =>
+      item.type === "INVESTMENT_OUTFLOW" &&
+      (item.metadata as { investmentId?: string })?.investmentId ===
+        created.investment.id
+  );
+  assert.equal(outflow?.amount, "25400000.00");
+  const afterBalance = computeBalance(
+    origin.initialBalance,
+    await transactions.findByUserId(userId, {
+      accountId: origin.id,
+      status: "ACTIVE",
+    })
+  );
+  assert.equal(afterBalance, "4600000.00");
+});
+
+test("Caucion edit rejects closed, wrong user, bad dates", async () => {
+  const { userId, service, origin } = await setup();
+  const created = await service.createCaucion(userId, validCaucion(origin.id));
+  await service.mature(userId, created.investment.id, {
+    destinationAccountId: origin.id,
+    capitalReturned: "100000.00",
+    actualReturn: "575.34",
+    occurredAt: new Date("2026-09-08T15:00:00.000Z"),
+  });
+  await assert.rejects(
+    () =>
+      service.updateActiveCaucion(userId, created.investment.id, {
+        principal: "90000.00",
+        annualRate: "0.300000",
+        startDate: new Date("2026-09-01T15:00:00.000Z"),
+        maturityDate: new Date("2026-09-08T15:00:00.000Z"),
+      }),
+    (error: unknown) =>
+      error instanceof AppError && error.code === "INVESTMENT_NOT_ACTIVE"
+  );
+
+  const active = await setup();
+  const open = await active.service.createCaucion(
+    active.userId,
+    validCaucion(active.origin.id)
+  );
+  await assert.rejects(
+    () =>
+      active.service.updateActiveCaucion(randomUUID(), open.investment.id, {
+        principal: "90000.00",
+        annualRate: "0.300000",
+        startDate: new Date("2026-09-01T15:00:00.000Z"),
+        maturityDate: new Date("2026-09-08T15:00:00.000Z"),
+      }),
+    (error: unknown) => error instanceof AppError && error.code === "NOT_FOUND"
+  );
+  await assert.rejects(
+    () =>
+      active.service.updateActiveCaucion(active.userId, open.investment.id, {
+        principal: "90000.00",
+        annualRate: "0.300000",
+        startDate: new Date("2026-09-10T15:00:00.000Z"),
+        maturityDate: new Date("2026-09-01T15:00:00.000Z"),
+      }),
+    (error: unknown) =>
+      error instanceof AppError && error.code === "VALIDATION_ERROR"
+  );
+});
+
+test("Caucion edit race vs mature: only one wins (Postgres)", async () => {
+  const prisma = getPrismaClient();
+  const users = new PrismaUserRepository(prisma);
+  const accounts = new PrismaAccountRepository(prisma);
+  const transactions = new PrismaTransactionRepository(prisma);
+  const investments = new PrismaInvestmentRepository(prisma);
+  const service = new InvestmentService(investments, accounts, transactions);
+  const user = await users.create({
+    name: "QA Edit Race",
+    email: `${randomUUID()}@qa.invalid`,
+  });
+  const origin = await accounts.create({
+    userId: user.id,
+    name: "Origin",
+    currency: "ARS",
+    type: "BANK",
+    initialBalance: "500000.00",
+  });
+  try {
+    const created = await service.createCaucion(user.id, validCaucion(origin.id));
+    const results = await Promise.allSettled([
+      service.updateActiveCaucion(user.id, created.investment.id, {
+        principal: "90000.00",
+        annualRate: "0.300000",
+        startDate: new Date("2026-09-01T15:00:00.000Z"),
+        maturityDate: new Date("2026-09-08T15:00:00.000Z"),
+      }),
+      service.mature(user.id, created.investment.id, {
+        destinationAccountId: origin.id,
+        capitalReturned: "100000.00",
+        actualReturn: "575.34",
+        occurredAt: new Date("2026-09-08T15:00:00.000Z"),
+      }),
+    ]);
+    const fulfilled = results.filter((r) => r.status === "fulfilled");
+    const rejected = results.filter((r) => r.status === "rejected");
+    assert.equal(fulfilled.length, 1);
+    assert.equal(rejected.length, 1);
+    const final = await investments.findById(created.investment.id);
+    assert.ok(final);
+    assert.ok(final.status === "ACTIVE" || final.status === "MATURED");
+    if (final.status === "ACTIVE") {
+      assert.equal(final.principal, "90000.00");
+      assert.equal(final.actualReturn, null);
+    } else {
+      assert.equal(final.principal, "100000.00");
+      assert.equal(final.actualReturn, "575.34");
+    }
+  } finally {
+    await prisma.transaction.deleteMany({ where: { userId: user.id } });
     await prisma.investment.deleteMany({ where: { userId: user.id } });
     await prisma.account.deleteMany({ where: { id: origin.id } });
     await prisma.user.delete({ where: { id: user.id } });

@@ -263,7 +263,7 @@ Nota: `statement-controller-stub.ts` es **solo** para tests de CRUD de tarjeta (
 
 ## P0.10 — `CREDIT_CARD_PAYMENT` (total/parcial)
 
-**Estado: DONE definitivo** (código + Neon + API deploy/smoke). **P0.11 no iniciado.**
+**Estado: DONE definitivo** (código + Neon + API deploy/smoke). **P0.11 DONE definitivo.**
 
 **Objetivo:** Tipo dedicado; `accountId` origen + `creditCardId`; débito banco; `currentCardDebt −= amount`; **no** gross/net/budget. **payment ≠ expense.**
 
@@ -307,28 +307,30 @@ currentCardDebt = SUM ACTIVE EXPENSE(card) − SUM ACTIVE CREDIT_CARD_PAYMENT(ca
 
 ## P0.11 — ExpectedRefund + acreditación F6
 
+**Estado: DONE definitivo** (código + Neon migrate + API deploy/smoke).
+
 **Objetivo:** ExpectedRefund sin efecto confirmado; acreditación:
 
 - **BANK_ACCOUNT:** `REIMBURSEMENT` + `accountId` → banco+, neto↓;
 - **CREDIT_CARD:** `REIMBURSEMENT` + `creditCardId`, `accountId null` → `currentCardDebt`↓, neto↓, banco invariante.
 
-No auto-acreditar. Estados: pendiente / acreditado / revisar / no recibido.
+No auto-acreditar. Estados expectativa: `EXPECTED` | `PARTIALLY_ACCREDITED` | `ACCREDITED` | `CANCELLED`.
 
-**Reglas:** F6; §§10, 13.
+**Reglas:** F6; §§10, 13. **EXPECTED ≠ ACCREDITED**; **reintegro ≠ ingreso**.
 
-**Migraciones:** expected_refunds (+ enums); extender `REIMBURSEMENT` para XOR account/card.
+**Migraciones:** `20260909230000_add_credit_card_refund_expectation` (enums + expectations + accreditations; XOR purchase/expense; `expected_date` nullable; additive). Aplicada en Neon.
 
-**Riesgos:** no cambiar neto de gastos solo-MVP1; no reutilizar `ReimbursementStatus.PENDING` del gasto con otra semántica sin mapear.
+**API:** `/api/credit-card-refunds` — `POST/GET /expected`, `GET /expected/:id`, `POST /expected/:id/cancel`, `POST /accredit`.
 
-**Tests:** esperado no mueve confirmado; A y B; importe real ≠ esperado; plazo → Revisar.
+**Deuda:** `currentCardDebt = Σ EXPENSE − Σ PAYMENT − Σ REIMBURSEMENT(card)` (EXPECTED no participa).
 
-**Criterio de aceptación:** §13 + F6 en CI.
-
-**Dependencias:** P0.6; P0.10 útil si se concilia contra resumen.
+**Dependencias:** P0.6; P0.10. **Siguiente gate:** autorización P0.12 (**NOT STARTED**).
 
 ---
 
 ## P0.12 — Topes de promoción
+
+**Estado: NOT STARTED.**
 
 **Objetivo:** Tope por promo/ventana; expected acotado (§11).
 
@@ -439,7 +441,7 @@ Sin cambio por F1–F8. Paralelizable.
 | Reconocer cuota k | +cuota | — | +cuota | −cuota |
 | Cierre de resumen | — | — | — | — |
 | `CREDIT_CARD_PAYMENT` | — | −amount | −amount | — |
-| ExpectedRefund pendiente | — | — | — | — |
+| ExpectedRefund / acreditación (P0.11 DONE) | — / +banco | −neto | — / −amount | — |
 | Reintegro acreditado → banco | baja neto | +amount | — | — |
 | Reintegro acreditado → tarjeta | baja neto | — | −amount | — |
 | Legacy `paymentMethod=CREDIT_CARD` | + (MVP1) | − (MVP1) | — | — |

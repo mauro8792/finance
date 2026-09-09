@@ -19,6 +19,7 @@ import type {
   Investment,
   CreateInvestmentRequest,
   MatureInvestmentRequest,
+  UpdateActiveInvestmentRequest,
   ParseTransactionRequest,
   ParseTransactionResponse,
   ChatRequest,
@@ -323,6 +324,16 @@ export async function createInvestment(
 ): Promise<Investment> {
   return requestJson<Investment>("/api/investments", {
     method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateActiveInvestment(
+  id: string,
+  payload: UpdateActiveInvestmentRequest
+): Promise<Investment> {
+  return requestJson<Investment>(`/api/investments/${id}`, {
+    method: "PATCH",
     body: JSON.stringify(payload),
   });
 }

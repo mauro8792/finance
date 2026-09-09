@@ -10,6 +10,7 @@ export function createInvestmentRouter(controller: InvestmentController): Router
   const router = Router();
   router.get("/", controller.list);
   router.post("/", controller.createCaucion);
+  router.patch("/:id", controller.updateActiveCaucion);
   router.post("/:id/mature", controller.mature);
   router.post("/:id/renew", controller.renew);
   return router;

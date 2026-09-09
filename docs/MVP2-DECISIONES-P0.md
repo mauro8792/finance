@@ -142,10 +142,15 @@ Dos destinos reales de acreditación:
 
 - reduce `currentCardDebt`;
 - reduce gasto neto confirmado;
-- no aumenta saldo bancario.
+- no aumenta saldo bancario (`balanceDirection` = null).
 
-`ExpectedRefund` permanece separado: **sin efecto financiero confirmado** hasta acreditación explícita.  
-**No** auto-acreditar.
+`CreditCardRefundExpectation` (EXPECTED / PARTIALLY_ACCREDITED) permanece separado: **sin efecto financiero confirmado** hasta acreditación explícita (`POST /api/credit-card-refunds/accredit`).  
+**No** auto-acreditar. EXPECTED ≠ ACCREDITED; reintegro ≠ `INCOME`.
+
+Acreditaciones parciales: una expectativa puede recibir múltiples `REIMBURSEMENT` vía `CreditCardRefundAccreditation`.  
+Cancel remaining: sin acreditaciones → `CANCELLED`; con acreditaciones → `ACCREDITED` (conserva txs reales).
+
+**P0.11:** DONE localmente (migración test/local; **Neon no modificado**).
 
 ---
 
@@ -199,7 +204,7 @@ Columnas separadas: no usar una sola “deuda tarjeta”.
 | Reconocer cuota k | +cuota | — | +cuota | −cuota |
 | Cierre de resumen | — | — | — | — |
 | `CREDIT_CARD_PAYMENT` total/parcial | — | −amount | −amount | — |
-| ExpectedRefund (pendiente) | — | — | — | — |
+| ExpectedRefund / acreditación F6 (P0.11) | — / +banco | −neto | — / −amount | — |
 | Reintegro acreditado → banco | −neto (baja neto) | +amount | — | — |
 | Reintegro acreditado → tarjeta | −neto (baja neto) | — | −amount | — |
 | Legacy `paymentMethod=CREDIT_CARD` (MVP1) | +importe (como hoy) | −importe (como hoy) | — (fuera del modelo MVP2) | — |
@@ -311,16 +316,23 @@ Constraints de servicio (y DB check si es viable):
 - `REIMBURSEMENT` tarjeta: `account_id IS NULL`, `credit_card_id NOT NULL`
 - Legacy filas: sin `credit_card_id`; `account_id` como hoy
 
-### Expected refund / promo (P0.11–P0.12)
+### Expected refund (P0.11) / promo (P0.12)
 
 ```text
-promotions / expected_refunds
-  expected_amount, actual_amount NULL
-  status: PENDING | ACCREDITED | REVIEW | NOT_RECEIVED
-  cap window / tope
-  linked purchase(s)
-  accredited_transaction_id NULL  -- REIMBURSEMENT cuando se acredita
+credit_card_refund_expectations
+  expected_amount, status EXPECTED|PARTIALLY_ACCREDITED|ACCREDITED|CANCELLED
+  XOR purchase_id | original_expense_transaction_id
+  -- accreditedAmount derived from accreditation links
+
+credit_card_refund_accreditations
+  transaction_id UNIQUE → REIMBURSEMENT
+  expectation_id NULLABLE
+  original_expense_transaction_id NOT NULL
+  purchase_id NULLABLE
+  credit_card_id, destination_type, idempotency_key
 ```
+
+P0.12 promotions / cap windows: pendiente.
 
 ### Derivación de métricas (concepto)
 
@@ -353,6 +365,7 @@ totalOutstandingCommitment = currentCardDebt + futureInstallmentCommitment
 | P0.8 Recognize due installments (idempotent) | DONE definitivo (código + API; sin migración; CLI dry-run; sin cron) |
 | P0.9 CreditCardStatement (F9) | DONE definitivo (código + Neon + API) |
 | `CREDIT_CARD_PAYMENT` / P0.10 | DONE definitivo (código + Neon + API) |
+| ExpectedRefund + acreditación F6 / P0.11 | DONE localmente (código + migración test; **Neon pendiente**) |
 
 ### Modelado P0.6–P0.7 (opción B)
 
@@ -406,7 +419,8 @@ Purchase/Installment solos: impacto financiero = 0. Solo el Transaction reconoce
 | EXPENSE (tarjeta P0.5) | NULL | NOT NULL | Sin débito bancario; deuda + |
 | INCOME | NOT NULL | NULL | MVP1 |
 | TRANSFER | NOT NULL | NULL | MVP1 (por pierna) |
-| REIMBURSEMENT | NOT NULL | NULL | MVP1 (F6-B tarjeta = P0.11+) |
+| REIMBURSEMENT | NOT NULL | NULL | MVP1 / F6-A banco |
+| REIMBURSEMENT | NULL | NOT NULL | F6-B tarjeta (P0.11+) |
 | HOUSING_PAYMENT | NOT NULL | NULL | MVP1 |
 | INVESTMENT_* | NOT NULL | NULL | MVP1 |
 | CURRENCY_EXCHANGE | NOT NULL | NULL | MVP1 |
@@ -424,8 +438,8 @@ Post-P0.5 (código local / test; Neon hasta aprobación):
 
 1. **Runtime F1 activo** para creates nuevos vía API (`accountId` XOR `creditCardId`).
 2. **`account_id`:** nullable en schema + migración test; Neon pendiente.
-3. **`REIMBURSEMENT`:** solo acredita cuenta (falta F6-B).
-4. Sin statements/`CREDIT_CARD_PAYMENT`/reconocimiento P0.8 (P0.7 crea schedule PENDING solamente).
+3. **`REIMBURSEMENT`:** F6-A banco + F6-B tarjeta (P0.11 local; Neon pendiente).
+4. Statements/`CREDIT_CARD_PAYMENT`/reconocimiento P0.8: DONE (ver backlog).
 
 Ninguno de estos se “arregla” en silencio: requieren aprobación de Prisma/implementación.
 

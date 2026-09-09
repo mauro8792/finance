@@ -8,6 +8,7 @@ import {
   getInvestments,
   matureInvestment,
   renewInvestment,
+  updateActiveInvestment,
 } from "../lib/api";
 import { amountToCents, formatMoney } from "../lib/format-money";
 import {
@@ -23,6 +24,7 @@ import {
   INVESTMENT_TYPE_LABELS,
   investmentFormError,
   isNonNegativeAmount,
+  isoToArtDateInput,
   percentToAnnualRate,
 } from "../lib/investments";
 import {
@@ -36,6 +38,7 @@ import styles from "./Investments.module.css";
 
 type Panel =
   | { mode: "create" }
+  | { mode: "edit"; investment: Investment }
   | { mode: "mature"; investment: Investment }
   | { mode: "renew"; investment: Investment };
 
@@ -70,6 +73,14 @@ export function InvestmentsPage() {
 
       {panel?.mode === "create" ? (
         <CreateInvestmentForm
+          accounts={accountsQuery.data ?? []}
+          onClose={() => setPanel(null)}
+        />
+      ) : null}
+
+      {panel?.mode === "edit" ? (
+        <EditInvestmentForm
+          investment={panel.investment}
           accounts={accountsQuery.data ?? []}
           onClose={() => setPanel(null)}
         />
@@ -128,6 +139,7 @@ export function InvestmentsPage() {
                       panel={panel}
                       onMature={() => setPanel({ mode: "mature", investment: item })}
                       onRenew={() => setPanel({ mode: "renew", investment: item })}
+                      onEdit={() => setPanel({ mode: "edit", investment: item })}
                       onClosePanel={() => setPanel(null)}
                     />
                   </li>
@@ -191,6 +203,7 @@ function InvestmentCard({
   panel,
   onMature,
   onRenew,
+  onEdit,
   onClosePanel,
 }: {
   investment: Investment;
@@ -198,6 +211,7 @@ function InvestmentCard({
   panel: Panel | null;
   onMature: () => void;
   onRenew: () => void;
+  onEdit?: () => void;
   onClosePanel: () => void;
 }) {
   const account = accounts.find((item) => item.id === investment.accountId);
@@ -281,6 +295,11 @@ function InvestmentCard({
               <button type="button" className={styles.secondary} onClick={onRenew}>
                 Renovar
               </button>
+              {onEdit ? (
+                <button type="button" className={styles.secondary} onClick={onEdit}>
+                  Editar
+                </button>
+              ) : null}
             </div>
           ) : null}
         </div>
@@ -425,7 +444,7 @@ function CreateInvestmentForm({
         <input
           inputMode="decimal"
           value={principal}
-          onChange={(event) => setPrincipal(event.target.value)}
+          onChange={(event) => setPrincipal(normalizeAmountInput(event.target.value))}
         />
       </label>
       <label className={styles.field}>
@@ -471,6 +490,168 @@ function CreateInvestmentForm({
         </button>
         <button type="submit" className={styles.primaryCta} disabled={mutation.isPending}>
           Guardar
+        </button>
+      </div>
+    </form>
+  );
+}
+
+function EditInvestmentForm({
+  investment,
+  accounts,
+  onClose,
+}: {
+  investment: Investment;
+  accounts: Account[];
+  onClose: () => void;
+}) {
+  const queryClient = useQueryClient();
+  const account = accounts.find((item) => item.id === investment.accountId);
+  const [principal, setPrincipal] = useState(investment.principal);
+  const [annualRatePercent, setAnnualRatePercent] = useState(
+    investment.annualRate
+      ? formatAnnualRatePercent(investment.annualRate).replace(/%$/, "")
+      : ""
+  );
+  const [startDate, setStartDate] = useState(isoToArtDateInput(investment.startDate));
+  const [maturityDate, setMaturityDate] = useState(
+    investment.maturityDate ? isoToArtDateInput(investment.maturityDate) : ""
+  );
+  const [notes, setNotes] = useState(investment.notes ?? "");
+  const [localError, setLocalError] = useState<string | null>(null);
+
+  const preview = useMemo(() => {
+    const rate = percentToAnnualRate(annualRatePercent);
+    if (!rate || !isValidAmount(principal) || !startDate || !maturityDate) {
+      return null;
+    }
+    const days = calendarDaysBetweenDateOnly(startDate, maturityDate);
+    if (days === null || days < 0) {
+      return null;
+    }
+    const estimated = estimateExpectedReturn(toApiAmount(principal), rate, days);
+    if (!estimated) {
+      return null;
+    }
+    return {
+      days,
+      estimated,
+      finalAmount: addAmounts(toApiAmount(principal), estimated),
+    };
+  }, [annualRatePercent, principal, startDate, maturityDate]);
+
+  const mutation = useMutation({
+    mutationFn: (payload: {
+      principal: string;
+      annualRate: string;
+      startDate: string;
+      maturityDate: string;
+      notes?: string | null;
+    }) => updateActiveInvestment(investment.id, payload),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["investments"] }),
+        queryClient.invalidateQueries({ queryKey: ["accounts"] }),
+        queryClient.invalidateQueries({ queryKey: ["financial-summary"] }),
+      ]);
+      onClose();
+    },
+  });
+
+  async function onSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setLocalError(null);
+    const rate = percentToAnnualRate(annualRatePercent);
+    const startIso = artDateToIso(startDate);
+    const maturityIso = artDateToIso(maturityDate);
+    if (!isValidAmount(principal)) {
+      setLocalError("El capital debe ser mayor que 0.");
+      return;
+    }
+    if (!rate) {
+      setLocalError("La tasa anual debe ser 0 o más.");
+      return;
+    }
+    if (!startIso || !maturityIso) {
+      setLocalError("Completá las fechas de inicio y vencimiento.");
+      return;
+    }
+    const days = calendarDaysBetweenDateOnly(startDate, maturityDate);
+    if (days === null || days < 0) {
+      setLocalError("El vencimiento no puede ser anterior al inicio.");
+      return;
+    }
+    mutation.mutate({
+      principal: toApiAmount(principal),
+      annualRate: rate,
+      startDate: startIso,
+      maturityDate: maturityIso,
+      notes: notes.trim() ? notes.trim() : null,
+    });
+  }
+
+  return (
+    <form className={styles.form} onSubmit={onSubmit}>
+      <h2 className={styles.formTitle}>Editar caución</h2>
+      <p className={styles.formHint}>
+        Corrección administrativa. No crea movimientos nuevos. La cuenta origen no se
+        puede cambiar.
+      </p>
+      <label className={styles.field}>
+        Cuenta origen
+        <input value={account?.name ?? "Cuenta no disponible"} disabled readOnly />
+      </label>
+      <label className={styles.field}>
+        Capital
+        <input
+          inputMode="decimal"
+          value={principal}
+          onChange={(event) => setPrincipal(normalizeAmountInput(event.target.value))}
+        />
+      </label>
+      <label className={styles.field}>
+        Tasa anual (%)
+        <input
+          inputMode="decimal"
+          value={annualRatePercent}
+          onChange={(event) => setAnnualRatePercent(event.target.value)}
+        />
+      </label>
+      <label className={styles.field}>
+        Fecha inicio
+        <input type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} />
+      </label>
+      <label className={styles.field}>
+        Fecha vencimiento
+        <input
+          type="date"
+          value={maturityDate}
+          onChange={(event) => setMaturityDate(event.target.value)}
+        />
+      </label>
+      <label className={styles.field}>
+        Notas
+        <input value={notes} onChange={(event) => setNotes(event.target.value)} />
+      </label>
+      {preview ? (
+        <div className={styles.preview}>
+          <p>Días: {preview.days}</p>
+          <p>Interés estimado: {formatMoney(preview.estimated, investment.currency)}</p>
+          <p>Monto estimado final: {formatMoney(preview.finalAmount, investment.currency)}</p>
+          <p className={styles.formHint}>Estimado visual. El valor guardado lo calcula el servidor.</p>
+        </div>
+      ) : null}
+      {localError || mutation.isError ? (
+        <p className={styles.formError} role="alert">
+          {localError ?? investmentFormError(mutation.error)}
+        </p>
+      ) : null}
+      <div className={styles.formActions}>
+        <button type="button" className={styles.secondary} onClick={onClose}>
+          Cancelar
+        </button>
+        <button type="submit" className={styles.primaryCta} disabled={mutation.isPending}>
+          Guardar cambios
         </button>
       </div>
     </form>

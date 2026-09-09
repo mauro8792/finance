@@ -97,7 +97,15 @@ export function balanceDirection(movement: {
   accountId?: string | null;
   creditCardId?: string | null;
 }): BalanceDirection | null {
-  if (movement.type === "INCOME" || movement.type === "REIMBURSEMENT") {
+  if (movement.type === "INCOME") {
+    return "credit";
+  }
+
+  if (movement.type === "REIMBURSEMENT") {
+    // F6-A bank: credit account. F6-B card: accountId null → no bank impact.
+    if (movement.accountId == null) {
+      return null;
+    }
     return "credit";
   }
 

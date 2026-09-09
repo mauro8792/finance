@@ -33,10 +33,12 @@ import { DEFAULT_USER_TIMEZONE } from "../users/user.types.js";
 import { InvestmentController } from "./investment.controller.js";
 import { createInvestmentRouter } from "./investment.routes.js";
 import { InvestmentService } from "./investment.service.js";
+import { AppError } from "../../shared/errors/app-error.js";
 import type {
   CreateInvestmentRecord,
   Investment,
   InvestmentRepository,
+  UpdateActiveCaucionRecord,
 } from "./investment.types.js";
 
 class MemoryUserRepository implements UserRepository {
@@ -245,6 +247,53 @@ class MemoryInvestmentRepository implements InvestmentRepository {
   async findByUserId(userId: string): Promise<Investment[]> {
     return [...this.items.values()].filter((item) => item.userId === userId);
   }
+
+  async updateActiveCaucionAtomic(
+    investmentId: string,
+    patch: UpdateActiveCaucionRecord
+  ): Promise<{ investment: Investment; outflow: Transaction }> {
+    const current = this.items.get(investmentId);
+    if (!current || current.status !== "ACTIVE") {
+      throw new AppError(
+        "INVESTMENT_NOT_ACTIVE",
+        "Sólo una inversión ACTIVE puede editarse.",
+        409
+      );
+    }
+    const outflows = this.transactions.items.filter(
+      (item) =>
+        item.type === "INVESTMENT_OUTFLOW" &&
+        item.status === "ACTIVE" &&
+        item.metadata &&
+        typeof item.metadata === "object" &&
+        (item.metadata as { investmentId?: string }).investmentId ===
+          investmentId
+    );
+    if (outflows.length !== 1) {
+      throw new AppError(
+        "VALIDATION_ERROR",
+        "No hay un INVESTMENT_OUTFLOW único vinculado a esta caución.",
+        409
+      );
+    }
+    const outflow = outflows[0]!;
+    const updated: Investment = {
+      ...current,
+      principal: patch.principal,
+      annualRate: patch.annualRate,
+      startDate: patch.startDate,
+      maturityDate: patch.maturityDate,
+      expectedReturn: patch.expectedReturn,
+      notes: patch.notes,
+      updatedAt: new Date(),
+    };
+    this.items.set(investmentId, updated);
+    const outflowUpdated = await this.transactions.update(outflow.id, {
+      amount: patch.principal,
+      occurredAt: patch.startDate,
+    });
+    return { investment: updated, outflow: outflowUpdated };
+  }
 }
 
 class MemoryAccountRepository implements AccountRepository {
@@ -421,6 +470,62 @@ test("POST /api/investments creates a caución and rejects extra fields", async 
   });
   assert.equal(extra.status, 400);
   assert.equal(extra.body.error.code, "VALIDATION_ERROR");
+});
+
+test("PATCH /api/investments/:id edits ACTIVE caución and recalculates expectedReturn", async () => {
+  const { app, accounts, user, transactions } = buildApp();
+  const origin = await accounts.create({
+    userId: user.id,
+    name: "Banco QA",
+    currency: "ARS",
+    type: "BANK",
+    initialBalance: "500000.00",
+  });
+  const created = await request(app).post("/api/investments").send({
+    accountId: origin.id,
+    currency: "ARS",
+    principal: "100000.00",
+    annualRate: "0.300000",
+    startDate: "2026-09-01T15:00:00.000Z",
+    maturityDate: "2026-09-08T15:00:00.000Z",
+  });
+  assert.equal(created.status, 201);
+  const beforeTx = transactions.items.length;
+
+  const patched = await request(app)
+    .patch(`/api/investments/${created.body.id}`)
+    .send({
+      principal: "90000.00",
+      annualRate: "0.300000",
+      startDate: "2026-09-01T15:00:00.000Z",
+      maturityDate: "2026-09-08T15:00:00.000Z",
+    });
+  assert.equal(patched.status, 200);
+  assert.equal(patched.body.principal, "90000.00");
+  assert.equal(patched.body.status, "ACTIVE");
+  assert.equal(patched.body.expectedReturn, "517.81");
+  assert.equal(transactions.items.length, beforeTx);
+  assert.equal(
+    transactions.items.find((t) => t.type === "INVESTMENT_OUTFLOW")?.amount,
+    "90000.00"
+  );
+
+  await request(app).post(`/api/investments/${created.body.id}/mature`).send({
+    destinationAccountId: origin.id,
+    capitalReturned: "90000.00",
+    actualReturn: "517.81",
+    occurredAt: "2026-09-08T15:00:00.000Z",
+  });
+  const closed = await request(app)
+    .patch(`/api/investments/${created.body.id}`)
+    .send({
+      principal: "80000.00",
+      annualRate: "0.300000",
+      startDate: "2026-09-01T15:00:00.000Z",
+      maturityDate: "2026-09-08T15:00:00.000Z",
+    });
+  assert.equal(closed.status, 400);
+  assert.equal(closed.body.error.code, "INVESTMENT_NOT_ACTIVE");
 });
 
 test("PATCH and VOID of INVESTMENT_OUTFLOW are rejected over HTTP", async () => {

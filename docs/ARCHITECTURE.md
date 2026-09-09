@@ -799,6 +799,12 @@ PATCH  /api/transactions/:id
 POST   /api/transactions/:id/void
 POST   /api/transactions/:id/reimbursements
 
+POST   /api/credit-card-refunds/expected
+GET    /api/credit-card-refunds/expected
+GET    /api/credit-card-refunds/expected/:id
+POST   /api/credit-card-refunds/expected/:id/cancel
+POST   /api/credit-card-refunds/accredit
+
 POST   /api/transfers
 
 POST   /api/currency-exchanges
@@ -2018,6 +2024,24 @@ PATCH/void de una pierna se rechazan.
 ---
 
 # 81. Example flow — Reimbursement
+
+MVP1 (banco):
+
+```text
+POST /api/transactions/:id/reimbursements
+→ REIMBURSEMENT + accountId (F6-A)
+```
+
+P0.11 (expectativa / F6-A|B):
+
+```text
+POST /api/credit-card-refunds/expected   -- sin impacto financiero
+POST /api/credit-card-refunds/accredit   -- crea REIMBURSEMENT (SoT)
+  BANK_ACCOUNT → accountId set, creditCardId null → banco+
+  CREDIT_CARD  → accountId null, creditCardId set → currentCardDebt↓, banco invariante
+```
+
+EXPECTED ≠ ACCREDITED; reintegro ≠ INCOME.
 
 ```text
 POST /api/transactions/:id/reimbursements

@@ -13,7 +13,9 @@ import type {
   InvestmentStatus,
   InvestmentType,
   RenewAtomicInput,
+  UpdateActiveCaucionRecord,
 } from "./investment.types.js";
+import { AppError } from "../../shared/errors/app-error.js";
 
 export class PrismaInvestmentRepository implements InvestmentRepository {
   constructor(private readonly prisma = getPrismaClient()) {}
@@ -62,6 +64,24 @@ export class PrismaInvestmentRepository implements InvestmentRepository {
     investmentReturn: Transaction | null;
   }> {
     const records = await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`
+        SELECT id FROM investments WHERE id = ${investmentId}::uuid FOR UPDATE
+      `;
+      const current = await tx.investment.findUnique({ where: { id: investmentId } });
+      if (!current || current.status !== "ACTIVE") {
+        throw new AppError(
+          "INVESTMENT_NOT_ACTIVE",
+          "La caución ya no está ACTIVE.",
+          409
+        );
+      }
+      if (current.principal.toFixed(2) !== principalReturn.amount) {
+        throw new AppError(
+          "VALIDATION_ERROR",
+          "El capital de la caución cambió; reintentá el vencimiento.",
+          409
+        );
+      }
       const createdPrincipal = await tx.transaction.create({
         data: toCreateData(principalReturn),
       });
@@ -70,12 +90,22 @@ export class PrismaInvestmentRepository implements InvestmentRepository {
             data: toCreateData(investmentReturn),
           })
         : null;
-      const updated = await tx.investment.update({
-        where: { id: investmentId },
+      const updatedRows = await tx.investment.updateMany({
+        where: { id: investmentId, status: "ACTIVE" },
         data: {
           status: patch.status,
           actualReturn: patch.actualReturn,
         },
+      });
+      if (updatedRows.count !== 1) {
+        throw new AppError(
+          "INVESTMENT_NOT_ACTIVE",
+          "La caución ya no está ACTIVE.",
+          409
+        );
+      }
+      const updated = await tx.investment.findUniqueOrThrow({
+        where: { id: investmentId },
       });
       return { createdPrincipal, createdReturn, updated };
     });
@@ -149,6 +179,90 @@ export class PrismaInvestmentRepository implements InvestmentRepository {
         ? toTransaction(records.createdReturn)
         : null,
       outflow: toTransaction(records.createdOutflow),
+    };
+  }
+
+  async updateActiveCaucionAtomic(
+    investmentId: string,
+    patch: UpdateActiveCaucionRecord
+  ): Promise<{ investment: Investment; outflow: Transaction }> {
+    const records = await this.prisma.$transaction(async (tx) => {
+      const locked = await tx.$queryRaw<
+        Array<{ id: string; status: string; user_id: string }>
+      >`
+        SELECT id, status::text AS status, user_id
+        FROM investments
+        WHERE id = ${investmentId}::uuid
+        FOR UPDATE
+      `;
+      const row = locked[0];
+      if (!row) {
+        throw new AppError("NOT_FOUND", "Inversión no encontrada.", 404);
+      }
+      if (row.status !== "ACTIVE") {
+        throw new AppError(
+          "INVESTMENT_NOT_ACTIVE",
+          "Sólo una inversión ACTIVE puede editarse.",
+          409
+        );
+      }
+
+      const outflows = await tx.transaction.findMany({
+        where: {
+          type: "INVESTMENT_OUTFLOW",
+          status: "ACTIVE",
+          metadata: {
+            path: ["investmentId"],
+            equals: investmentId,
+          },
+        },
+      });
+      if (outflows.length !== 1) {
+        throw new AppError(
+          "VALIDATION_ERROR",
+          "No hay un INVESTMENT_OUTFLOW único vinculado a esta caución.",
+          409
+        );
+      }
+      const outflow = outflows[0]!;
+
+      const updatedRows = await tx.investment.updateMany({
+        where: { id: investmentId, status: "ACTIVE" },
+        data: {
+          principal: patch.principal,
+          annualRate: patch.annualRate,
+          startDate: patch.startDate,
+          maturityDate: patch.maturityDate,
+          expectedReturn: patch.expectedReturn,
+          notes: patch.notes,
+        },
+      });
+      if (updatedRows.count !== 1) {
+        throw new AppError(
+          "INVESTMENT_NOT_ACTIVE",
+          "La caución ya no está ACTIVE.",
+          409
+        );
+      }
+
+      const updatedOutflow = await tx.transaction.update({
+        where: { id: outflow.id },
+        data: {
+          amount: patch.principal,
+          occurredAt: patch.startDate,
+        },
+      });
+
+      const updatedInvestment = await tx.investment.findUniqueOrThrow({
+        where: { id: investmentId },
+      });
+
+      return { updatedInvestment, updatedOutflow };
+    });
+
+    return {
+      investment: toInvestment(records.updatedInvestment),
+      outflow: toTransaction(records.updatedOutflow),
     };
   }
 

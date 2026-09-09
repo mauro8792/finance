@@ -29,8 +29,19 @@ describe("quick-add helpers", () => {
     assert.equal(isValidAmount("12,50"), true);
     assert.equal(isValidAmount("0"), false);
     assert.equal(isValidAmount("-1"), false);
-    assert.equal(isValidAmount("10.123"), false);
+    assert.equal(isValidAmount("10.123"), true); // es-AR miles: 10123
     assert.equal(toApiAmount("12,5"), "12.50");
+  });
+
+  it("parses es-AR thousands and decimals for large capitals", () => {
+    assert.equal(normalizeAmountInput("25.400.000"), "25400000");
+    assert.equal(normalizeAmountInput("25.400.000,00"), "25400000.00");
+    assert.equal(normalizeAmountInput("25400000"), "25400000");
+    assert.equal(normalizeAmountInput("25400000,00"), "25400000.00");
+    assert.equal(toApiAmount("25.400.000,00"), "25400000.00");
+    assert.equal(toApiAmount("25400000,00"), "25400000.00");
+    assert.equal(isValidAmount("25.400.000,00"), true);
+    assert.equal(isValidAmount("25400000,00"), true);
   });
 
   it("filters active accounts and categories by movement kind", () => {

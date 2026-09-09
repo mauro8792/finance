@@ -311,6 +311,14 @@ export type CreateInvestmentRequest = {
   notes?: string | null;
 };
 
+export type UpdateActiveInvestmentRequest = {
+  principal: string;
+  annualRate: string;
+  startDate: string;
+  maturityDate: string;
+  notes?: string | null;
+};
+
 export type MatureInvestmentRequest = {
   destinationAccountId: string;
   capitalReturned: string;
