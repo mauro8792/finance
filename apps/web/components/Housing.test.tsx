@@ -233,8 +233,7 @@ describe("HousingPage", () => {
     });
     renderHousing();
     expect(await screen.findByText("USD 2.000,00")).toBeTruthy();
-    expect(screen.getByText("4,00 cuotas")).toBeTruthy();
-    expect(screen.getByText("Cubre 4,00 de 12 cuotas pendientes")).toBeTruthy();
+    expect(screen.getByText("4,00 de 12 cuotas cubiertas")).toBeTruthy();
   });
 
   it("keeps the exact covered installments and caps only the bar width", async () => {
@@ -243,9 +242,9 @@ describe("HousingPage", () => {
       "h-1": { coverage: coverageFraction, payments: [] },
     });
     renderHousing();
-    expect(await screen.findByText("7,73 cuotas")).toBeTruthy();
-    expect(screen.getByText("Cubre 7,73 de 12 cuotas pendientes")).toBeTruthy();
-    expect(screen.queryByText("8 cuotas")).toBeNull();
+    expect(await screen.findByText("7,73 de 12 cuotas cubiertas")).toBeTruthy();
+    expect(screen.getByText("USD 3.865,00")).toBeTruthy();
+    expect(screen.queryByText("8 de 12 cuotas cubiertas")).toBeNull();
   });
 
   it("exposes the privacy toggle and the monthly installment", async () => {
@@ -266,8 +265,7 @@ describe("HousingPage", () => {
     });
     renderHousing();
     expect(await screen.findByText("Sin cuenta de reserva configurada")).toBeTruthy();
-    expect(screen.queryByText("0,00 cuotas")).toBeNull();
-    expect(screen.queryByText("0 cuotas")).toBeNull();
+    expect(screen.queryByText(/cuotas cubiertas/)).toBeNull();
   });
 
   it("shows coverage 0 and a negative reserve as returned by the API", async () => {
@@ -277,7 +275,7 @@ describe("HousingPage", () => {
     });
     renderHousing();
     expect(await screen.findByText("-USD 200,00")).toBeTruthy();
-    expect(screen.getByText("0,00 cuotas")).toBeTruthy();
+    expect(screen.getByText("0,00 de 12 cuotas cubiertas")).toBeTruthy();
   });
 
   it("creates a housing obligation with the real contract", async () => {

@@ -303,14 +303,8 @@ export function QuickAddForm({ initialValues, onSaved }: QuickAddFormProps = {})
         ) : null}
       </fieldset>
 
-      {isTransfer ? (
-        <p className={styles.status}>
-          Mové dinero entre tus cuentas sin registrarlo como gasto o ingreso.
-        </p>
-      ) : null}
-
       <label className={styles.amountLabel} htmlFor="quick-add-amount">
-        {isTransfer ? "Monto" : "Importe"}
+        Monto
         <span className={styles.amountRow}>
           <span className={styles.currency}>{selectedAccount?.currency ?? "—"}</span>
           <input
@@ -334,49 +328,15 @@ export function QuickAddForm({ initialValues, onSaved }: QuickAddFormProps = {})
         </span>
       </label>
 
-      <label className={styles.field} htmlFor="quick-add-account">
-        {isTransfer ? "Desde" : "Cuenta"}
-        <select
-          id="quick-add-account"
-          value={accountId}
-          onChange={(event) => setAccountId(event.target.value)}
-          required
-        >
-          {aiMode ? <option value="">Elegí una cuenta</option> : null}
-          {accounts.map((account) => (
-            <option key={account.id} value={account.id}>
-              {account.name} — {account.currency}
-            </option>
-          ))}
-        </select>
+      <label className={styles.field} htmlFor="quick-add-description">
+        Descripción <span className={styles.optional}>(opcional)</span>
+        <input
+          id="quick-add-description"
+          maxLength={255}
+          value={description}
+          onChange={(event) => setDescription(event.target.value)}
+        />
       </label>
-
-      {isTransfer ? (
-        <label className={styles.field} htmlFor="quick-add-destination">
-          Hacia
-          <select
-            id="quick-add-destination"
-            value={destinationAccountId}
-            onChange={(event) => setDestinationAccountId(event.target.value)}
-            required
-          >
-            {transferDestinations.length === 0 ? (
-              <option value="">
-                No hay otra cuenta activa en {selectedAccount?.currency ?? "—"}
-              </option>
-            ) : (
-              <>
-                <option value="">Elegí la cuenta destino</option>
-                {transferDestinations.map((account) => (
-                  <option key={account.id} value={account.id}>
-                    {account.name} — {account.currency}
-                  </option>
-                ))}
-              </>
-            )}
-          </select>
-        </label>
-      ) : null}
 
       {!isTransfer ? (
         <>
@@ -408,44 +368,76 @@ export function QuickAddForm({ initialValues, onSaved }: QuickAddFormProps = {})
       {kind === "INCOME" ? (
         <fieldset className={styles.incomeKind}>
           <legend>Tipo de ingreso</legend>
-          <label className={styles.radio}>
-            <input
-              type="radio"
-              name="incomeKind"
-              value="OPERATING"
-              checked={incomeKind === "OPERATING"}
-              onChange={() => setIncomeKind("OPERATING")}
-            />
-            <span>
-              <strong>Ingreso normal</strong>
-              <small>Sueldo, prestación, freelance u otro ingreso habitual.</small>
-            </span>
-          </label>
-          <label className={styles.radio}>
-            <input
-              type="radio"
-              name="incomeKind"
-              value="CAPITAL"
-              checked={incomeKind === "CAPITAL"}
-              onChange={() => setIncomeKind("CAPITAL")}
-            />
-            <span>
-              <strong>Capital</strong>
-              <small>Dinero inicial, indemnización o patrimonio que incorporás.</small>
-            </span>
-          </label>
+          <div className={styles.radioRow}>
+            <label className={styles.radio}>
+              <input
+                type="radio"
+                name="incomeKind"
+                value="OPERATING"
+                checked={incomeKind === "OPERATING"}
+                onChange={() => setIncomeKind("OPERATING")}
+              />
+              <span>Ingreso normal</span>
+            </label>
+            <label className={styles.radio}>
+              <input
+                type="radio"
+                name="incomeKind"
+                value="CAPITAL"
+                checked={incomeKind === "CAPITAL"}
+                onChange={() => setIncomeKind("CAPITAL")}
+              />
+              <span>Capital</span>
+            </label>
+          </div>
         </fieldset>
       ) : null}
 
-      <label className={styles.field} htmlFor="quick-add-description">
-        Descripción <span className={styles.optional}>(opcional)</span>
-        <input
-          id="quick-add-description"
-          maxLength={255}
-          value={description}
-          onChange={(event) => setDescription(event.target.value)}
-        />
-      </label>
+      <div className={isTransfer ? styles.pair : undefined}>
+        <label className={styles.field} htmlFor="quick-add-account">
+          {isTransfer ? "Desde" : "Cuenta"}
+          <select
+            id="quick-add-account"
+            value={accountId}
+            onChange={(event) => setAccountId(event.target.value)}
+            required
+          >
+            {aiMode ? <option value="">Elegí una cuenta</option> : null}
+            {accounts.map((account) => (
+              <option key={account.id} value={account.id}>
+                {account.name} — {account.currency}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        {isTransfer ? (
+          <label className={styles.field} htmlFor="quick-add-destination">
+            Hacia
+            <select
+              id="quick-add-destination"
+              value={destinationAccountId}
+              onChange={(event) => setDestinationAccountId(event.target.value)}
+              required
+            >
+              {transferDestinations.length === 0 ? (
+                <option value="">
+                  No hay otra cuenta activa en {selectedAccount?.currency ?? "—"}
+                </option>
+              ) : (
+                <>
+                  <option value="">Elegí la cuenta destino</option>
+                  {transferDestinations.map((account) => (
+                    <option key={account.id} value={account.id}>
+                      {account.name} — {account.currency}
+                    </option>
+                  ))}
+                </>
+              )}
+            </select>
+          </label>
+        ) : null}
+      </div>
 
       <div className={kind === "EXPENSE" ? styles.pair : undefined}>
         <label className={styles.field} htmlFor="quick-add-occurred-at">

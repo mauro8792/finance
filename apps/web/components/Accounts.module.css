@@ -7,15 +7,15 @@
   overflow-x: hidden;
 }
 
-.formHint,
-.balanceLabel {
+.formHint {
   margin: 0;
   color: var(--pf-text-muted);
+  font-size: 0.82rem;
 }
 
 .primaryCta,
 .retry,
-.edit,
+.headerCta,
 .secondary {
   display: inline-flex;
   align-items: center;
@@ -45,36 +45,65 @@
   background: var(--pf-primary-strong);
 }
 
-/* Mobile: carrusel con scroll-snap. Desktop (>=768): grilla. */
+/* CTA en el header: no roba una fila completa a la lista. */
+.headerCta {
+  min-height: 2.1rem;
+  padding: 0 0.7rem;
+  background: var(--pf-primary);
+  color: var(--pf-on-primary);
+  font-size: 0.82rem;
+}
+
+.headerCta:hover {
+  background: var(--pf-primary-strong);
+}
+
+/* Acciones secundarias como links de texto, no pilas de botones. */
+.linkAction {
+  min-height: 1.9rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--pf-primary);
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.linkAction:hover:not(:disabled) {
+  text-decoration: underline;
+}
+
+.linkAction:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* Mobile: lista compacta apilada. Desktop (>=768): grilla. */
 .grid {
-  display: grid;
-  grid-auto-flow: column;
-  grid-auto-columns: minmax(15rem, 84%);
-  gap: var(--pf-space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--pf-space-2);
   margin: 0;
-  padding: 0 0 var(--pf-space-2);
+  padding: 0;
   list-style: none;
-  overflow-x: auto;
-  overscroll-behavior-x: contain;
-  scroll-snap-type: x mandatory;
-  scrollbar-width: thin;
-  -webkit-overflow-scrolling: touch;
 }
 
 .gridItem {
   display: flex;
   min-width: 0;
-  scroll-snap-align: start;
 }
 
 .card {
-  gap: var(--pf-space-3);
+  gap: var(--pf-space-2);
 }
 
-.cardHeader {
+.cardTop {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: var(--pf-space-2);
+  min-width: 0;
 }
 
 .typeIcon {
@@ -82,9 +111,9 @@
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  width: 2.25rem;
-  height: 2.25rem;
-  border-radius: var(--pf-radius-md);
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: var(--pf-radius-sm);
   background: var(--pf-primary-soft);
   color: var(--pf-primary);
 }
@@ -92,14 +121,14 @@
 .cardHeading {
   display: flex;
   flex-direction: column;
-  gap: var(--pf-space-1);
+  gap: 0.1rem;
   flex: 1;
   min-width: 0;
 }
 
 .cardTitle {
   margin: 0;
-  font-size: 1.1rem;
+  font-size: 0.95rem;
   line-height: 1.25;
   overflow-wrap: anywhere;
 }
@@ -108,7 +137,7 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--pf-space-1);
+  gap: 0.25rem;
   margin: 0;
 }
 
@@ -116,57 +145,49 @@
 .currencyTag {
   display: inline-flex;
   align-items: center;
-  padding: 0.1rem 0.5rem;
-  border-radius: var(--pf-radius-pill);
-  font-size: 0.75rem;
-  font-weight: 700;
-  letter-spacing: 0.02em;
+  color: var(--pf-text-subtle);
+  font-size: 0.72rem;
+  font-weight: 650;
 }
 
-.typeTag {
-  background: var(--pf-surface-muted);
-  color: var(--pf-text-strong);
-}
-
-.currencyTag {
-  border: 1px solid var(--pf-border-strong);
-  color: var(--pf-text-muted);
+.metaDot {
+  color: var(--pf-text-subtle);
+  font-size: 0.72rem;
 }
 
 .balanceBlock {
   display: flex;
+  flex-shrink: 0;
   flex-direction: column;
-  gap: var(--pf-space-1);
+  align-items: flex-end;
+  min-width: 0;
 }
 
-.balanceLabel {
-  font-size: 0.8rem;
-  font-weight: 650;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+.balanceSkeleton {
+  width: 5rem;
 }
 
 .balance {
-  font-size: 1.6rem;
+  font-size: 1.05rem;
   font-weight: 750;
-  line-height: 1.15;
+  line-height: 1.2;
   overflow-wrap: anywhere;
   font-variant-numeric: tabular-nums;
 }
 
-.defaultRow {
+.actions {
   display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 var(--pf-space-4);
 }
 
-.actions,
 .formActions {
   display: grid;
   grid-template-columns: 1fr;
   gap: var(--pf-space-2);
-  margin-top: auto;
 }
 
-.edit,
 .secondary {
   width: 100%;
   background: var(--pf-surface-muted);
@@ -194,19 +215,24 @@
 .formError {
   background: #fef2f2;
   color: #991b1b;
+  font-size: 0.82rem;
 }
 
 .inlineError {
   display: flex;
-  flex-direction: column;
+  flex-wrap: wrap;
+  align-items: center;
   gap: var(--pf-space-2);
-  padding: var(--pf-space-2) var(--pf-space-3);
-  border-radius: var(--pf-radius-md);
+  padding: var(--pf-space-1) var(--pf-space-2);
+  border-radius: var(--pf-radius-sm);
 }
 
 .retry {
+  min-height: 1.9rem;
+  padding: 0 0.6rem;
   background: #991b1b;
   color: #fff;
+  font-size: 0.8rem;
 }
 
 .field {
@@ -252,20 +278,15 @@
 @media (min-width: 768px) {
   .primaryCta {
     width: auto;
-    min-width: 14rem;
+    min-width: 12rem;
     align-self: flex-start;
   }
 
   .grid {
-    grid-auto-flow: row;
-    grid-auto-columns: auto;
+    display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    overflow-x: visible;
-    scroll-snap-type: none;
-    padding-bottom: 0;
   }
 
-  .actions,
   .formActions {
     grid-template-columns: 1fr 1fr;
   }

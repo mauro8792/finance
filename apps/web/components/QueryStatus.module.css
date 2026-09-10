@@ -1,17 +1,20 @@
 .loading {
   margin: 0;
   color: #57534e;
+  font-size: 0.88rem;
 }
 
 .error,
 .empty {
   display: flex;
   flex-direction: column;
-  gap: 0.7rem;
+  align-items: flex-start;
+  gap: 0.5rem;
   min-width: 0;
   width: 100%;
-  padding: 1rem 0.95rem;
-  border-radius: 1.1rem;
+  padding: 0.7rem 0.75rem;
+  border-radius: var(--pf-radius-md, 0.75rem);
+  font-size: 0.88rem;
 }
 
 .error {
@@ -20,6 +23,7 @@
 }
 
 .empty {
+  border: 1px solid #e7e5e4;
   background: #fffcf7;
 }
 
@@ -33,10 +37,12 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 2.75rem;
+  min-height: 2.25rem;
+  padding: 0 0.8rem;
   border: 0;
-  border-radius: 0.75rem;
+  border-radius: 0.6rem;
   font: inherit;
+  font-size: 0.85rem;
   font-weight: 700;
   cursor: pointer;
   text-decoration: none;
@@ -53,13 +59,7 @@
 }
 
 .compact {
-  padding: 0.65rem 0.75rem;
-  gap: 0.45rem;
-}
-
-.compact .retry {
-  width: auto;
-  min-height: 2.75rem;
-  align-self: flex-start;
-  padding: 0 0.85rem;
+  padding: 0.5rem 0.65rem;
+  gap: 0.35rem;
+  font-size: 0.84rem;
 }

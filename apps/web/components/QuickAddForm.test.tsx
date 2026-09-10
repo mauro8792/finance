@@ -122,9 +122,6 @@ describe("QuickAddForm", () => {
     await screen.findByRole("button", { name: "Guardar" });
     expect(screen.getByRole("button", { name: "Transferencia" })).toBeTruthy();
     await user.click(screen.getByRole("button", { name: "Transferencia" }));
-    expect(
-      screen.getByText("Mové dinero entre tus cuentas sin registrarlo como gasto o ingreso.")
-    ).toBeTruthy();
     expect(screen.queryByLabelText("Categoría")).toBeNull();
     expect(screen.getByLabelText("Desde")).toBeTruthy();
     expect(screen.getByLabelText("Hacia")).toBeTruthy();

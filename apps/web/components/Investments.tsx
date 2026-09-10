@@ -66,17 +66,19 @@ export function InvestmentsPage() {
       <PageHeader
         kicker="Inversiones"
         title="Cauciones"
-        description="Tu capital colocado, cuándo vence y cuánto rinde."
-        actions={<PrivacyToggle />}
+        actions={
+          <>
+            <button
+              type="button"
+              className={styles.headerCta}
+              onClick={() => setPanel({ mode: "create" })}
+            >
+              Nueva caución
+            </button>
+            <PrivacyToggle />
+          </>
+        }
       />
-
-      <button
-        type="button"
-        className={styles.primaryCta}
-        onClick={() => setPanel({ mode: "create" })}
-      >
-        Nueva caución
-      </button>
 
       {panel?.mode === "create" ? (
         <CreateInvestmentForm
@@ -94,7 +96,7 @@ export function InvestmentsPage() {
       ) : null}
 
       {query.isPending ? (
-        <Skeleton count={3} height="12rem" label="Cargando inversiones" />
+        <Skeleton count={3} height="6rem" label="Cargando inversiones" />
       ) : null}
 
       {query.isError ? (
@@ -108,7 +110,7 @@ export function InvestmentsPage() {
 
       {query.data && query.data.length === 0 && panel?.mode !== "create" ? (
         <EmptyState
-          message="No hay inversiones. Creá una caución para seguir su vencimiento y su rendimiento."
+          message="No hay inversiones todavía."
           action={{ label: "Crear inversión", onClick: () => setPanel({ mode: "create" }) }}
         />
       ) : null}
@@ -117,35 +119,6 @@ export function InvestmentsPage() {
         <>
           {grouped.active.length > 0 ? (
             <PortfolioSummary active={grouped.active} />
-          ) : null}
-
-          {grouped.upcoming.length > 0 ? (
-            <section className={styles.section}>
-              <SectionHeader
-                title="Próximos vencimientos"
-                description="Ordenados por fecha de vencimiento."
-              />
-              <ul className={styles.upcoming}>
-                {grouped.upcoming.map((item) => (
-                  <li key={item.id} className={styles.upcomingItem}>
-                    <span className={styles.upcomingType}>
-                      {INVESTMENT_TYPE_LABELS[item.type]}
-                    </span>
-                    <Money
-                      amount={item.principal}
-                      currency={item.currency}
-                      className={styles.upcomingAmount}
-                    />
-                    <time
-                      className={styles.upcomingDate}
-                      dateTime={item.maturityDate ?? undefined}
-                    >
-                      {item.maturityDate ? formatArtDate(item.maturityDate) : "—"}
-                    </time>
-                  </li>
-                ))}
-              </ul>
-            </section>
           ) : null}
 
           {grouped.active.length > 0 ? (
@@ -231,6 +204,8 @@ function PortfolioSummary({ active }: { active: Investment[] }) {
     .filter((date): date is string => Boolean(date))
     .sort((left, right) => left.localeCompare(right))[0];
 
+  // Único bloque de totales de la página: el resto de los datos ya vive en las
+  // tarjetas de la lista.
   return (
     <FinancialCard variant="hero" className={styles.summary}>
       <p className={styles.summaryLabel}>Capital colocado</p>
@@ -275,131 +250,122 @@ function InvestmentCard({
   const showMature = panel?.mode === "mature" && panel.investment.id === investment.id;
   const showRenew = panel?.mode === "renew" && panel.investment.id === investment.id;
 
+  // Ficha financiera arriba (estado, capital, vencimiento/interés real), datos
+  // secundarios después y acciones al final, sin dominar la tarjeta.
   return (
     <FinancialCard className={styles.card}>
-      <header className={styles.cardHeader}>
+      <div className={styles.cardTop}>
         <div className={styles.cardHeading}>
-          <h3 className={styles.cardTitle}>{INVESTMENT_TYPE_LABELS[investment.type]}</h3>
-          <p className={styles.tags}>
+          <h3 className={styles.cardTitle}>
+            {INVESTMENT_TYPE_LABELS[investment.type]}
             <span className={styles.currencyTag}>{investment.currency}</span>
-          </p>
-        </div>
-        <StatusBadge
-          label={INVESTMENT_STATUS_LABELS[investment.status]}
-          tone={statusTone(investment.status)}
-        />
-      </header>
-
-      <div className={styles.capitalBlock}>
-        <p className={styles.capitalLabel}>Capital</p>
-        <Money
-          amount={investment.principal}
-          currency={investment.currency}
-          className={styles.capital}
-        />
-      </div>
-
-      {isActive ? (
-        <div className={styles.highlight}>
-          <p className={styles.highlightLabel}>Vence</p>
-          <p className={styles.highlightValue}>
-            {investment.maturityDate ? (
-              <time dateTime={investment.maturityDate}>
-                {formatArtDate(investment.maturityDate)}
-              </time>
-            ) : (
-              "Sin fecha de vencimiento"
-            )}
-          </p>
-        </div>
-      ) : null}
-
-      {isMatured && investment.actualReturn ? (
-        <div className={styles.highlight}>
-          <p className={styles.highlightLabel}>Interés real cobrado</p>
+          </h3>
           <Money
-            amount={investment.actualReturn}
+            amount={investment.principal}
             currency={investment.currency}
-            className={styles.highlightValue}
+            className={styles.capital}
           />
         </div>
-      ) : null}
-
-      <div className={styles.cardLayout}>
-        <dl className={styles.meta}>
-          <div>
-            <dt>TNA</dt>
-            <dd>{investment.annualRate ? formatAnnualRatePercent(investment.annualRate) : "—"}</dd>
-          </div>
-          <div>
-            <dt>Inicio</dt>
-            <dd>
-              <time dateTime={investment.startDate}>{formatArtDate(investment.startDate)}</time>
-            </dd>
-          </div>
-          {!isActive ? (
-            <div>
-              <dt>Vencimiento</dt>
-              <dd>
+        <div className={styles.cardAside}>
+          <StatusBadge
+            label={INVESTMENT_STATUS_LABELS[investment.status]}
+            tone={statusTone(investment.status)}
+          />
+          {isActive ? (
+            <p className={styles.highlight}>
+              <span className={styles.highlightLabel}>Vence</span>
+              <span className={styles.highlightValue}>
                 {investment.maturityDate ? (
                   <time dateTime={investment.maturityDate}>
                     {formatArtDate(investment.maturityDate)}
                   </time>
                 ) : (
-                  "—"
+                  "Sin fecha"
                 )}
-              </dd>
-            </div>
+              </span>
+            </p>
           ) : null}
-          {investment.expectedReturn ? (
-            <div>
-              <dt>Rendimiento esperado</dt>
-              <dd>
-                <Money
-                  amount={investment.expectedReturn}
-                  currency={investment.currency}
-                />
-                <small>Estimación, todavía no cobrada</small>
-              </dd>
-            </div>
-          ) : null}
-          {!isMatured && investment.actualReturn ? (
-            <div>
-              <dt>Interés real</dt>
-              <dd>
-                <Money amount={investment.actualReturn} currency={investment.currency} />
-              </dd>
-            </div>
-          ) : null}
-          <div>
-            <dt>Cuenta origen</dt>
-            <dd>{account?.name ?? "Cuenta no disponible"}</dd>
-          </div>
-        </dl>
-
-        <div className={styles.side}>
-          {investment.notes ? <p className={styles.notes}>{investment.notes}</p> : null}
-          {investment.renewedFromInvestmentId ? (
-            <p className={styles.relation}>Renovada desde una inversión anterior</p>
-          ) : null}
-
-          {isActive ? (
-            <div className={styles.actions}>
-              <button type="button" className={styles.primaryCta} onClick={onMature}>
-                Registrar vencimiento
-              </button>
-              <button type="button" className={styles.secondary} onClick={onRenew}>
-                Renovar
-              </button>
-              {onEdit ? (
-                <button type="button" className={styles.secondary} onClick={onEdit}>
-                  Editar
-                </button>
-              ) : null}
-            </div>
+          {isMatured && investment.actualReturn ? (
+            <p className={styles.highlight}>
+              <span className={styles.highlightLabel}>Interés real cobrado</span>
+              <Money
+                amount={investment.actualReturn}
+                currency={investment.currency}
+                className={styles.highlightValue}
+              />
+            </p>
           ) : null}
         </div>
       </div>
+
+      <dl className={styles.meta}>
+        <div>
+          <dt>TNA</dt>
+          <dd>{investment.annualRate ? formatAnnualRatePercent(investment.annualRate) : "—"}</dd>
+        </div>
+        <div>
+          <dt>Inicio</dt>
+          <dd>
+            <time dateTime={investment.startDate}>{formatArtDate(investment.startDate)}</time>
+          </dd>
+        </div>
+        {!isActive ? (
+          <div>
+            <dt>Vencimiento</dt>
+            <dd>
+              {investment.maturityDate ? (
+                <time dateTime={investment.maturityDate}>
+                  {formatArtDate(investment.maturityDate)}
+                </time>
+              ) : (
+                "—"
+              )}
+            </dd>
+          </div>
+        ) : null}
+        {investment.expectedReturn ? (
+          <div>
+            <dt>Rendimiento esperado</dt>
+            <dd>
+              <Money amount={investment.expectedReturn} currency={investment.currency} />
+              <small>Estimación, todavía no cobrada</small>
+            </dd>
+          </div>
+        ) : null}
+        {!isMatured && investment.actualReturn ? (
+          <div>
+            <dt>Interés real</dt>
+            <dd>
+              <Money amount={investment.actualReturn} currency={investment.currency} />
+            </dd>
+          </div>
+        ) : null}
+        <div>
+          <dt>Cuenta origen</dt>
+          <dd>{account?.name ?? "Cuenta no disponible"}</dd>
+        </div>
+      </dl>
+
+      {investment.notes ? <p className={styles.notes}>{investment.notes}</p> : null}
+      {investment.renewedFromInvestmentId ? (
+        <p className={styles.relation}>Renovada desde una inversión anterior</p>
+      ) : null}
+
+      {isActive ? (
+        <div className={styles.actions}>
+          <button type="button" className={styles.linkStrong} onClick={onMature}>
+            Registrar vencimiento
+          </button>
+          <button type="button" className={styles.linkAction} onClick={onRenew}>
+            Renovar
+          </button>
+          {onEdit ? (
+            <button type="button" className={styles.linkAction} onClick={onEdit}>
+              Editar
+            </button>
+          ) : null}
+        </div>
+      ) : null}
 
       {showMature ? (
         <MatureInvestmentForm

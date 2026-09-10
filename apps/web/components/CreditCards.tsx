@@ -124,12 +124,7 @@ export function CreditCardsPage() {
 
   return (
     <section className={styles.page} aria-label="Tarjetas">
-      <PageHeader
-        kicker="Tarjetas"
-        title="Tarjetas"
-        description="Seguí la deuda real, los cierres y los cargos recurrentes de cada tarjeta."
-        actions={<PrivacyToggle />}
-      />
+      <PageHeader kicker="Tarjetas" title="Tarjetas" actions={<PrivacyToggle />} />
 
       {panel === "create-card" ? (
         <CreateCardForm

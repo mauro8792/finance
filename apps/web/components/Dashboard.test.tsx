@@ -213,7 +213,7 @@ describe("Dashboard", () => {
 
     expect(await screen.findByText("$ 20.800.000,00")).toBeTruthy();
     expect(screen.getByText("Disponible")).toBeTruthy();
-    expect(screen.getByText("Fondo ARS líquido para el día a día.")).toBeTruthy();
+    expect(screen.getByText("Runway")).toBeTruthy();
     expect(screen.getByText("10,4 meses")).toBeTruthy();
   });
 
@@ -304,7 +304,7 @@ describe("Dashboard", () => {
     renderDashboard();
 
     expect(await screen.findByText("USD 8.800,00")).toBeTruthy();
-    expect(screen.getByText("Reserva vivienda")).toBeTruthy();
+    expect(screen.getByText("Reserva USD")).toBeTruthy();
     expect(screen.getByText("8,00 cuotas cubiertas")).toBeTruthy();
     expect(screen.getByText("8,00")).toBeTruthy();
     expect(screen.getByText("37 cuotas pendientes")).toBeTruthy();
@@ -316,9 +316,11 @@ describe("Dashboard", () => {
     getHousing.mockResolvedValue([casa]);
     renderDashboard();
 
+    // Con montos en USD presentes, el hero aclara la moneda en su label en vez
+    // de repetir el importe en una métrica aparte.
     expect(await screen.findByText("Disponible ARS")).toBeTruthy();
-    expect(screen.getByText("Sólo pesos: no se suma con los montos en USD.")).toBeTruthy();
-    expect(screen.getAllByText("$ 20.800.000,00").length).toBe(2);
+    expect(screen.queryByText("Disponible")).toBeNull();
+    expect(screen.getAllByText("$ 20.800.000,00").length).toBe(1);
     expect(screen.getByText("USD 8.800,00")).toBeTruthy();
   });
 
@@ -348,7 +350,7 @@ describe("Dashboard", () => {
     expect(
       await screen.findByText("Tu vivienda no tiene una cuenta de reserva configurada.")
     ).toBeTruthy();
-    expect(screen.queryByText("Reserva vivienda")).toBeNull();
+    expect(screen.queryByText("Reserva USD")).toBeNull();
     expect(screen.queryByText("Cuotas cubiertas")).toBeNull();
   });
 

@@ -41,13 +41,13 @@
   --pf-radius-xl: 1.25rem;
   --pf-radius-pill: 999px;
 
-  /* Espaciados */
-  --pf-space-1: 0.25rem;
-  --pf-space-2: 0.5rem;
-  --pf-space-3: 0.75rem;
-  --pf-space-4: 1rem;
-  --pf-space-5: 1.5rem;
-  --pf-space-6: 2rem;
+  /* Espaciados: escala compacta, pensada para 360/390 de ancho. */
+  --pf-space-1: 0.2rem;
+  --pf-space-2: 0.4rem;
+  --pf-space-3: 0.6rem;
+  --pf-space-4: 0.85rem;
+  --pf-space-5: 1.15rem;
+  --pf-space-6: 1.5rem;
 
   /* Sombras */
   --pf-shadow-sm: 0 1px 2px rgb(28 25 23 / 6%);
@@ -60,7 +60,7 @@
 
   /* Layout */
   --pf-touch-target: 2.75rem;
-  --pf-bottom-nav-height: 4.5rem;
+  --pf-bottom-nav-height: 3.85rem;
 }
 
 *,

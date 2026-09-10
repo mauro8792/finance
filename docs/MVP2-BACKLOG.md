@@ -517,6 +517,27 @@ basado en Tarjetas P0.13 (teal/slate/cream).
 
 ---
 
+## P1.1 — VISUAL POLISH (densidad)
+
+**Estado: DONE LIVE** (solo UI web / Vercel; sin API, sin migraciones, sin Neon, sin Render).
+
+**Objetivo:** Densidad tipo app bancaria compacta en 360/390: menos padding, menos
+copy explicativo, menos tarjetas anidadas, sin métricas repetidas, acciones
+secundarias como links de texto.
+
+**Entregado:** tokens `--pf-space-*` y primitivas (FinancialCard, PageHeader,
+Metric, SectionHeader, SummaryCard, ActionCard, StatusBadge, BottomSheet, estados
+vacíos); bottom nav + sheet "Más"; Home con hero + una fila de métricas y análisis
+del mes plegable; Cuentas, Movimientos, Alta rápida (Monto primero), Inversiones
+(sin "Próximos vencimientos" duplicado), Vivienda (una sola historia de cobertura)
+y Tarjetas.
+
+**No tocó:** reglas financieras, API, Neon, deploys.
+
+**Tests web:** 40 archivos / 346 tests verdes + `typecheck` limpio.
+
+---
+
 | ID | Ítem | Notas |
 |----|------|--------|
 | P1.1 | Tarjeta principal + matching IA/voz | §3.3; siempre confirmación — pendiente |

@@ -12,9 +12,7 @@
 .card,
 .form,
 .meta,
-.side,
 .actions,
-.upcoming,
 .preview {
   min-width: 0;
 }
@@ -22,7 +20,7 @@
 .section {
   display: flex;
   flex-direction: column;
-  gap: var(--pf-space-3);
+  gap: var(--pf-space-2);
 }
 
 .formHint,
@@ -31,11 +29,13 @@
 .readonly {
   margin: 0;
   color: var(--pf-text-muted);
+  font-size: 0.8rem;
   overflow-wrap: anywhere;
 }
 
 .primaryCta,
-.secondary {
+.secondary,
+.headerCta {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -46,6 +46,42 @@
   font: inherit;
   font-weight: 700;
   cursor: pointer;
+}
+
+.headerCta {
+  min-height: 2.1rem;
+  padding: 0 0.7rem;
+  background: var(--pf-primary);
+  color: var(--pf-on-primary);
+  font-size: 0.82rem;
+}
+
+.headerCta:hover {
+  background: var(--pf-primary-strong);
+}
+
+/* Acciones de la ficha: links de texto al pie, no botones dominantes. */
+.linkAction,
+.linkStrong {
+  min-height: 1.9rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--pf-primary);
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.linkStrong {
+  color: var(--pf-primary-strong);
+  text-decoration: underline;
+}
+
+.linkAction:hover,
+.linkStrong:hover {
+  text-decoration: underline;
 }
 
 .primaryCta {
@@ -70,15 +106,16 @@
   color: var(--pf-text);
 }
 
-/* Resumen de cartera */
+/* Resumen de cartera: única cabecera con totales. */
 .summary {
-  gap: var(--pf-space-1);
+  gap: 0.1rem;
+  padding: var(--pf-space-3) var(--pf-space-4);
 }
 
 .summaryLabel {
   margin: 0;
   color: var(--pf-hero-text-muted);
-  font-size: 0.78rem;
+  font-size: 0.68rem;
   font-weight: 650;
   letter-spacing: 0.05em;
   text-transform: uppercase;
@@ -96,7 +133,7 @@
 }
 
 .summaryValue {
-  font-size: 1.7rem;
+  font-size: 1.5rem;
   font-weight: 750;
   line-height: 1.15;
   overflow-wrap: anywhere;
@@ -106,57 +143,16 @@
 .summaryHint {
   margin: 0;
   color: var(--pf-hero-text-muted);
-  font-size: 0.85rem;
+  font-size: 0.75rem;
   position: relative;
   z-index: 1;
-}
-
-/* Próximos vencimientos */
-.upcoming {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: var(--pf-space-2);
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.upcomingItem {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: baseline;
-  gap: 0 var(--pf-space-3);
-  min-width: 0;
-  padding: var(--pf-space-3);
-  border: 1px solid var(--pf-border);
-  border-radius: var(--pf-radius-lg);
-  background: var(--pf-surface);
-  overflow-wrap: anywhere;
-}
-
-.upcomingType {
-  color: var(--pf-text-strong);
-  font-weight: 650;
-}
-
-.upcomingAmount {
-  grid-column: 2;
-  grid-row: 1 / span 2;
-  align-self: center;
-  font-weight: 750;
-  font-variant-numeric: tabular-nums;
-}
-
-.upcomingDate {
-  color: var(--pf-text-subtle);
-  font-size: 0.85rem;
 }
 
 /* Grilla de cauciones */
 .grid {
   display: grid;
   grid-template-columns: 1fr;
-  gap: var(--pf-space-3);
+  gap: var(--pf-space-2);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -168,10 +164,10 @@
 }
 
 .card {
-  gap: var(--pf-space-3);
+  gap: var(--pf-space-2);
 }
 
-.cardHeader {
+.cardTop {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
@@ -181,98 +177,75 @@
 .cardHeading {
   display: flex;
   flex-direction: column;
-  gap: var(--pf-space-1);
+  gap: 0.05rem;
   min-width: 0;
 }
 
 .cardTitle {
+  display: flex;
+  align-items: baseline;
+  gap: 0.35rem;
   margin: 0;
-  font-size: 1.1rem;
+  font-size: 0.9rem;
   line-height: 1.25;
   overflow-wrap: anywhere;
 }
 
-.tags {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--pf-space-1);
-  margin: 0;
-}
-
 .currencyTag {
-  display: inline-flex;
-  align-items: center;
-  padding: 0.1rem 0.5rem;
-  border: 1px solid var(--pf-border-strong);
-  border-radius: var(--pf-radius-pill);
-  color: var(--pf-text-muted);
-  font-size: 0.75rem;
-  font-weight: 700;
+  color: var(--pf-text-subtle);
+  font-size: 0.7rem;
+  font-weight: 650;
   letter-spacing: 0.02em;
 }
 
-.capitalBlock {
-  display: flex;
-  flex-direction: column;
-  gap: var(--pf-space-1);
-}
-
-.capitalLabel {
-  margin: 0;
-  color: var(--pf-text-muted);
-  font-size: 0.78rem;
-  font-weight: 650;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-}
-
 .capital {
-  font-size: 1.55rem;
+  font-size: 1.2rem;
   font-weight: 750;
-  line-height: 1.15;
+  line-height: 1.2;
   overflow-wrap: anywhere;
   font-variant-numeric: tabular-nums;
+}
+
+.cardAside {
+  display: flex;
+  flex-shrink: 0;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.2rem;
 }
 
 .highlight {
   display: flex;
   flex-direction: column;
-  gap: 0.15rem;
-  padding: var(--pf-space-2) var(--pf-space-3);
-  border-radius: var(--pf-radius-lg);
-  background: var(--pf-primary-soft);
+  align-items: flex-end;
+  gap: 0;
+  margin: 0;
 }
 
 .highlightLabel {
-  margin: 0;
-  color: var(--pf-primary);
-  font-size: 0.75rem;
+  color: var(--pf-text-subtle);
+  font-size: 0.66rem;
   font-weight: 700;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
 }
 
 .highlightValue {
-  margin: 0;
   color: var(--pf-teal-deep);
-  font-size: 1.05rem;
+  font-size: 0.9rem;
   font-weight: 750;
   overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
 }
 
-.cardLayout,
-.side {
-  display: flex;
-  flex-direction: column;
-  gap: var(--pf-space-3);
-}
-
+/* Datos secundarios de la ficha. */
 .meta {
   display: grid;
-  grid-template-columns: 1fr;
-  gap: var(--pf-space-2);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--pf-space-1) var(--pf-space-3);
   margin: 0;
+  padding-top: var(--pf-space-2);
+  border-top: 1px solid var(--pf-border);
 }
 
 .meta div {
@@ -282,29 +255,29 @@
 .meta dt {
   margin: 0;
   color: var(--pf-text-subtle);
-  font-size: 0.8rem;
+  font-size: 0.68rem;
   font-weight: 650;
 }
 
 .meta dd {
-  margin: 0.1rem 0 0;
+  margin: 0;
+  font-size: 0.82rem;
   font-weight: 700;
   overflow-wrap: anywhere;
 }
 
 .meta small {
   display: block;
-  margin-top: 0.1rem;
   color: var(--pf-text-subtle);
-  font-size: 0.75rem;
+  font-size: 0.68rem;
   font-weight: 500;
 }
 
 .actions {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: var(--pf-space-2);
-  margin-top: auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 var(--pf-space-4);
 }
 
 .form {
@@ -314,21 +287,22 @@
   width: 100%;
   padding: var(--pf-space-4);
   border: 1px solid var(--pf-border);
-  border-radius: var(--pf-radius-xl);
+  border-radius: var(--pf-radius-lg);
   background: var(--pf-surface);
   box-shadow: var(--pf-shadow-sm);
 }
 
 .formTitle {
   margin: 0;
-  font-size: 1.1rem;
+  font-size: 1rem;
 }
 
 .field {
   display: flex;
   flex-direction: column;
-  gap: var(--pf-space-1);
+  gap: 0.15rem;
   min-width: 0;
+  font-size: 0.82rem;
   font-weight: 650;
 }
 
@@ -336,14 +310,15 @@
 .field input {
   width: 100%;
   min-width: 0;
-  min-height: var(--pf-touch-target);
+  min-height: 2.6rem;
   box-sizing: border-box;
   border: 1px solid var(--pf-border-strong);
   border-radius: var(--pf-radius-md);
   background: var(--pf-surface-raised);
   font: inherit;
   font-size: 1rem;
-  padding: 0.4rem 0.65rem;
+  font-weight: 500;
+  padding: 0.35rem 0.6rem;
 }
 
 .formActions {
@@ -364,10 +339,11 @@
 .preview {
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
-  padding: var(--pf-space-3);
-  border-radius: var(--pf-radius-lg);
+  gap: 0.1rem;
+  padding: var(--pf-space-2) var(--pf-space-3);
+  border-radius: var(--pf-radius-sm);
   background: var(--pf-primary-soft);
+  font-size: 0.85rem;
 }
 
 .preview p {
@@ -405,27 +381,12 @@
 @media (min-width: 768px) {
   .primaryCta {
     width: auto;
-    min-width: 14rem;
+    min-width: 12rem;
     align-self: flex-start;
   }
 
   .grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .upcoming {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .actions {
-    grid-template-columns: auto auto;
-    justify-content: start;
-  }
-
-  .actions .secondary,
-  .actions .primaryCta {
-    width: auto;
-    min-width: 10rem;
   }
 
   .form {
@@ -437,11 +398,11 @@
   }
 
   .meta {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
   .summaryValue {
-    font-size: 2rem;
+    font-size: 1.75rem;
   }
 }
 

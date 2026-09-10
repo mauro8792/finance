@@ -58,6 +58,12 @@ type DashboardProps = {
 
 type CurrencyTotal = { currency: Currency; amount: string };
 
+type HousingReserve = {
+  currency: Currency;
+  balance: string;
+  covered: string | null;
+};
+
 type HousingData = {
   list: UseQueryResult<HousingObligation[]>;
   coverage: UseQueryResult<HousingCoverage>;
@@ -75,32 +81,28 @@ type CardsData = {
 };
 
 const ACCOUNTS_PREVIEW_LIMIT = 3;
-const EXPENSES_PREVIEW_LIMIT = 5;
+const EXPENSES_PREVIEW_LIMIT = 3;
 const INVESTMENTS_PREVIEW_LIMIT = 2;
-const CARDS_PREVIEW_LIMIT = 3;
+const CARDS_PREVIEW_LIMIT = 2;
 
 const QUICK_ACTIONS = [
   {
     label: "Registrar gasto",
-    hint: "Cargá lo que gastaste",
     href: "/registrar",
     icon: "M13 4v11.2l4.6-4.6L19 12l-7 7-7-7 1.4-1.4L11 15.2V4h2Z",
   },
   {
     label: "Registrar ingreso",
-    hint: "Sumá plata a una cuenta",
     href: "/registrar",
     icon: "M11 20V8.8l-4.6 4.6L5 12l7-7 7 7-1.4 1.4L13 8.8V20h-2Z",
   },
   {
     label: "Transferir",
-    hint: "Mové plata entre cuentas",
     href: "/transfers",
     icon: "M7 7h9V4l5 4-5 4V9H7V7Zm10 10H8v3l-5-4 5-4v3h9v2Z",
   },
   {
     label: "Ver movimientos",
-    hint: "Todo tu historial",
     href: "/transactions",
     icon: "M4 6h16v2H4V6Zm0 5h16v2H4v-2Zm0 5h16v2H4v-2Z",
   },
@@ -127,7 +129,6 @@ export function Dashboard({ year, month }: DashboardProps) {
       <PageHeader
         kicker="Inicio"
         title={formatMonthLabel(selectedYear, selectedMonth)}
-        description="Tu foto financiera del mes, en un vistazo."
         actions={<PrivacyToggle />}
       />
 
@@ -182,13 +183,22 @@ function SummarySection({
     );
   }
 
+  const investedByCurrency = activeInvestmentTotals(investments.data ?? []);
+  const reserve = housingReserve(housing);
+  // Si hay montos en USD el hero aclara la moneda en su propio label, en lugar
+  // de repetir el mismo importe en una métrica aparte.
+  const hasForeignAmount =
+    reserve?.currency === "USD" ||
+    investedByCurrency.some((total) => total.currency === "USD") ||
+    cards.debtByCurrency.some((total) => total.currency === "USD");
+
   return (
     <div className={styles.summary}>
-      <Hero summary={query.data} />
+      <Hero summary={query.data} label={hasForeignAmount ? "Disponible ARS" : "Disponible"} />
       <SecondaryMetrics
-        summary={query.data}
         housing={housing}
-        investments={investments}
+        reserve={reserve}
+        investedByCurrency={investedByCurrency}
         cards={cards}
       />
       <MonthAnalysis summary={query.data} />
@@ -196,16 +206,17 @@ function SummarySection({
   );
 }
 
-function Hero({ summary }: { summary: FinancialSummary }) {
+function Hero({ summary, label }: { summary: FinancialSummary; label: string }) {
   return (
-    <FinancialCard variant="hero">
-      <p className={styles.heroLabel}>Disponible</p>
-      <Money
-        amount={summary.totalAvailableARS}
-        currency="ARS"
-        className={styles.heroValue}
-      />
-      <p className={styles.heroHint}>Fondo ARS líquido para el día a día.</p>
+    <FinancialCard variant="hero" className={styles.hero}>
+      <div className={styles.heroMain}>
+        <p className={styles.heroLabel}>{label}</p>
+        <Money
+          amount={summary.totalAvailableARS}
+          currency="ARS"
+          className={styles.heroValue}
+        />
+      </div>
       <p className={styles.runway}>
         <span className={styles.runwayLabel}>Runway</span>
         <span className={styles.runwayValue}>{formatRunway(summary.runwayMonths)}</span>
@@ -214,23 +225,19 @@ function Hero({ summary }: { summary: FinancialSummary }) {
   );
 }
 
+// Una sola fila compacta: reserva, inversiones y deuda de tarjetas. Cada moneda
+// se muestra por separado y nunca se suman entre sí.
 function SecondaryMetrics({
-  summary,
   housing,
-  investments,
+  reserve,
+  investedByCurrency,
   cards,
 }: {
-  summary: FinancialSummary;
   housing: HousingData;
-  investments: UseQueryResult<Investment[]>;
+  reserve: HousingReserve | null;
+  investedByCurrency: CurrencyTotal[];
   cards: CardsData;
 }) {
-  const investedByCurrency = activeInvestmentTotals(investments.data ?? []);
-  const reserve = housingReserve(housing);
-  const hasForeignAmount =
-    reserve?.currency === "USD" ||
-    investedByCurrency.some((total) => total.currency === "USD") ||
-    cards.debtByCurrency.some((total) => total.currency === "USD");
   const isEmpty =
     !housing.isPending &&
     !reserve &&
@@ -243,21 +250,14 @@ function SecondaryMetrics({
 
   return (
     <div className={styles.metrics}>
-      {hasForeignAmount ? (
-        <Metric
-          label="Disponible ARS"
-          value={<Money amount={summary.totalAvailableARS} currency="ARS" />}
-          hint="Sólo pesos: no se suma con los montos en USD."
-        />
-      ) : null}
-
       {housing.isPending ? (
-        <Skeleton count={1} height="4.5rem" label="Cargando vivienda" />
+        <Skeleton count={1} height="3rem" label="Cargando vivienda" />
       ) : null}
 
       {reserve ? (
         <Metric
-          label="Reserva vivienda"
+          compact
+          label={reserve.currency === "ARS" ? "Reserva" : `Reserva ${reserve.currency}`}
           value={<Money amount={reserve.balance} currency={reserve.currency} />}
           hint={reserve.covered ? `${reserve.covered} cuotas cubiertas` : undefined}
         />
@@ -266,18 +266,18 @@ function SecondaryMetrics({
       {investedByCurrency.map((total) => (
         <Metric
           key={`investment-${total.currency}`}
+          compact
           label={total.currency === "ARS" ? "Inversiones" : "Inversiones USD"}
           value={<Money amount={total.amount} currency={total.currency} />}
-          hint="Capital en inversiones activas."
         />
       ))}
 
       {cards.debtByCurrency.map((total) => (
         <Metric
           key={`card-debt-${total.currency}`}
+          compact
           label={total.currency === "ARS" ? "Deuda tarjetas" : "Deuda tarjetas USD"}
           value={<Money amount={total.amount} currency={total.currency} />}
-          hint="Consumos sin pagar."
         />
       ))}
     </div>
@@ -295,37 +295,44 @@ function MonthAnalysis({ summary }: { summary: FinancialSummary }) {
   const averageScale =
     average === null ? null : maxAmount(summary.monthlyFundConsumption, average);
 
+  // Secundario y plegado: el detalle del mes no debe empujar las secciones
+  // operativas fuera de la primera pantalla.
   return (
-    <section className={styles.section} aria-label="Análisis del mes">
-      <SectionHeader
-        title="Análisis del mes"
-        description="Cómo se movió tu plata en el mes seleccionado."
-      />
+    <details className={styles.analysis}>
+      <summary className={styles.analysisSummary}>
+        <h2 className={styles.analysisTitle}>Análisis del mes</h2>
+      </summary>
 
       <div className={styles.metrics}>
         <Metric
+          compact
           label="Gasto neto"
           value={<Money amount={summary.monthlyNetExpenses} currency="ARS" />}
         />
         <Metric
+          compact
           label="Consumo del fondo"
           value={<Money amount={summary.monthlyFundConsumption} currency="ARS" />}
         />
         <Metric
+          compact
           label="Ingreso operativo"
           value={<Money amount={summary.monthlyOperatingIncome} currency="ARS" />}
         />
         {isPositiveAmount(summary.monthlySurplus) ? (
           <Metric
+            compact
             label="Superávit del mes"
             value={<Money amount={summary.monthlySurplus} currency="ARS" />}
           />
         ) : null}
         <Metric
+          compact
           label="Gasto bruto"
           value={<Money amount={summary.monthlyGrossExpenses} currency="ARS" />}
         />
         <Metric
+          compact
           label="Promedio de consumo"
           value={
             average === null ? (
@@ -374,7 +381,7 @@ function MonthAnalysis({ summary }: { summary: FinancialSummary }) {
           </figure>
         ) : null}
       </div>
-    </section>
+    </details>
   );
 }
 
@@ -403,13 +410,11 @@ function MetricBar({
 function QuickActions() {
   return (
     <section className={styles.section} aria-label="Acciones rápidas">
-      <SectionHeader title="Acciones rápidas" />
       <div className={styles.actions}>
         {QUICK_ACTIONS.map((action) => (
           <ActionCard
             key={action.label}
             label={action.label}
-            hint={action.hint}
             href={action.href}
             icon={<ActionIcon path={action.icon} />}
           />
@@ -421,7 +426,7 @@ function QuickActions() {
 
 function ActionIcon({ path }: { path: string }) {
   return (
-    <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false">
+    <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true" focusable="false">
       <path fill="currentColor" d={path} />
     </svg>
   );
@@ -457,12 +462,12 @@ function AccountsPreview() {
             className={styles.sectionLink}
             aria-label="Ver todas las cuentas"
           >
-            Ver todas
+            Ver todo
           </Link>
         }
       />
 
-      {query.isPending ? <Skeleton count={2} height="4rem" label="Cargando cuentas" /> : null}
+      {query.isPending ? <Skeleton count={2} height="2.4rem" label="Cargando cuentas" /> : null}
 
       {query.isError ? (
         <ErrorState
@@ -482,27 +487,25 @@ function AccountsPreview() {
       ) : null}
 
       {accounts.length > 0 ? (
-        <ul className={styles.cardList}>
-          {accounts.map((account) => (
-            <li key={account.id}>
-              <FinancialCard>
-                <div className={styles.row}>
-                  <div className={styles.rowText}>
-                    <p className={styles.rowTitle}>{account.name}</p>
-                    <p className={styles.rowMeta}>
-                      {accountTypeLabel(account.type)} · {account.currency}
-                    </p>
-                  </div>
-                  <AccountBalance
-                    currency={account.currency}
-                    balance={balances.data?.[account.id] ?? null}
-                    isPending={balances.isPending}
-                  />
+        <FinancialCard>
+          <ul className={styles.rowList}>
+            {accounts.map((account) => (
+              <li key={account.id} className={styles.row}>
+                <div className={styles.rowText}>
+                  <p className={styles.rowTitle}>{account.name}</p>
+                  <p className={styles.rowMeta}>
+                    {accountTypeLabel(account.type)} · {account.currency}
+                  </p>
                 </div>
-              </FinancialCard>
-            </li>
-          ))}
-        </ul>
+                <AccountBalance
+                  currency={account.currency}
+                  balance={balances.data?.[account.id] ?? null}
+                  isPending={balances.isPending}
+                />
+              </li>
+            ))}
+          </ul>
+        </FinancialCard>
       ) : null}
     </section>
   );
@@ -552,13 +555,13 @@ function RecentExpenses() {
             className={styles.sectionLink}
             aria-label="Ver todos los gastos"
           >
-            Ver todos
+            Ver todo
           </Link>
         }
       />
 
       {query.isPending ? (
-        <Skeleton count={3} height="2.5rem" label="Cargando gastos recientes" />
+        <Skeleton count={3} height="2rem" label="Cargando gastos recientes" />
       ) : null}
 
       {query.isError ? (
@@ -618,13 +621,13 @@ function InvestmentsPreview({ query }: { query: UseQueryResult<Investment[]> }) 
             className={styles.sectionLink}
             aria-label="Ver todas las inversiones"
           >
-            Ver todas
+            Ver todo
           </Link>
         }
       />
 
       {query.isPending ? (
-        <Skeleton count={1} height="4rem" label="Cargando inversiones" />
+        <Skeleton count={1} height="2.4rem" label="Cargando inversiones" />
       ) : null}
 
       {query.isError ? (
@@ -645,29 +648,27 @@ function InvestmentsPreview({ query }: { query: UseQueryResult<Investment[]> }) 
       ) : null}
 
       {active.length > 0 ? (
-        <ul className={styles.cardList}>
-          {active.map((investment) => (
-            <li key={investment.id}>
-              <FinancialCard>
-                <div className={styles.row}>
-                  <div className={styles.rowText}>
-                    <StatusBadge label="Activa" tone="active" />
-                    <p className={styles.rowMeta}>
-                      {investment.maturityDate
-                        ? `Vence el ${formatArtDate(investment.maturityDate)}`
-                        : "Sin vencimiento"}
-                    </p>
-                  </div>
-                  <Money
-                    amount={investment.principal}
-                    currency={investment.currency}
-                    className={styles.rowAmount}
-                  />
+        <FinancialCard>
+          <ul className={styles.rowList}>
+            {active.map((investment) => (
+              <li key={investment.id} className={styles.row}>
+                <div className={styles.rowText}>
+                  <StatusBadge label="Activa" tone="active" />
+                  <p className={styles.rowMeta}>
+                    {investment.maturityDate
+                      ? `Vence el ${formatArtDate(investment.maturityDate)}`
+                      : "Sin vencimiento"}
+                  </p>
                 </div>
-              </FinancialCard>
-            </li>
-          ))}
-        </ul>
+                <Money
+                  amount={investment.principal}
+                  currency={investment.currency}
+                  className={styles.rowAmount}
+                />
+              </li>
+            ))}
+          </ul>
+        </FinancialCard>
       ) : null}
     </section>
   );
@@ -682,13 +683,13 @@ function HousingPreview({ housing }: { housing: HousingData }) {
         title="Vivienda"
         action={
           <Link href="/housing" className={styles.sectionLink}>
-            Ver detalle
+            Ver todo
           </Link>
         }
       />
 
       {housing.isPending ? (
-        <Skeleton count={1} height="4rem" label="Cargando cobertura de vivienda" />
+        <Skeleton count={1} height="2.4rem" label="Cargando cobertura de vivienda" />
       ) : null}
 
       {housing.isError ? (
@@ -716,11 +717,13 @@ function HousingPreview({ housing }: { housing: HousingData }) {
       {housing.selected && housing.coverage.data && reserve ? (
         <div className={styles.metrics}>
           <Metric
+            compact
             label="Cuotas cubiertas"
             value={reserve.covered ?? "Sin datos suficientes"}
             hint={`${housing.coverage.data.remainingInstallments} cuotas pendientes`}
           />
           <Metric
+            compact
             label="Cuota mensual"
             value={
               <Money
@@ -750,13 +753,13 @@ function CardsPreview({ cards }: { cards: CardsData }) {
             className={styles.sectionLink}
             aria-label="Ver todas las tarjetas"
           >
-            Ver todas
+            Ver todo
           </Link>
         }
       />
 
       {query.isPending ? (
-        <Skeleton count={1} height="4rem" label="Cargando tarjetas" />
+        <Skeleton count={1} height="2.4rem" label="Cargando tarjetas" />
       ) : null}
 
       {query.isError ? (
@@ -777,39 +780,32 @@ function CardsPreview({ cards }: { cards: CardsData }) {
       ) : null}
 
       {preview.length > 0 ? (
-        <ul className={styles.cardList}>
-          {preview.map((card) => {
-            const commitments = cards.commitments[card.id] ?? null;
-            return (
-              <li key={card.id}>
-                <FinancialCard>
-                  <div className={styles.row}>
-                    <div className={styles.rowText}>
-                      <p className={styles.rowTitle}>{card.name}</p>
-                      <p className={styles.rowMeta}>
-                        {card.issuer} · {card.currency}
-                      </p>
-                    </div>
-                    {commitments ? (
-                      <Metric
-                        compact
-                        label="Deuda actual"
-                        value={
-                          <Money
-                            amount={commitments.currentCardDebt}
-                            currency={card.currency}
-                          />
-                        }
-                      />
-                    ) : (
-                      <span className={styles.rowMeta}>Sin datos de deuda</span>
-                    )}
+        <FinancialCard>
+          <ul className={styles.rowList}>
+            {preview.map((card) => {
+              const commitments = cards.commitments[card.id] ?? null;
+              return (
+                <li key={card.id} className={styles.row}>
+                  <div className={styles.rowText}>
+                    <p className={styles.rowTitle}>{card.name}</p>
+                    <p className={styles.rowMeta}>
+                      {card.issuer} · {card.currency}
+                    </p>
                   </div>
-                </FinancialCard>
-              </li>
-            );
-          })}
-        </ul>
+                  {commitments ? (
+                    <Money
+                      amount={commitments.currentCardDebt}
+                      currency={card.currency}
+                      className={styles.rowAmount}
+                    />
+                  ) : (
+                    <span className={styles.rowMeta}>Sin datos de deuda</span>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        </FinancialCard>
       ) : null}
     </section>
   );
@@ -877,9 +873,7 @@ function useCreditCardsData(): CardsData {
   };
 }
 
-function housingReserve(
-  housing: HousingData
-): { currency: Currency; balance: string; covered: string | null } | null {
+function housingReserve(housing: HousingData): HousingReserve | null {
   const coverage = housing.coverage.data;
   if (!housing.selected || !coverage || coverage.reserveBalance === null) {
     return null;

@@ -10,7 +10,7 @@
 .metaLine {
   margin: 0;
   color: var(--pf-text-muted);
-  font-size: 0.9rem;
+  font-size: 0.82rem;
   overflow-wrap: anywhere;
 }
 
@@ -37,14 +37,15 @@
 .filtersTrigger {
   display: inline-flex;
   align-items: center;
-  gap: var(--pf-space-2);
-  min-height: var(--pf-touch-target);
-  padding: 0 1rem;
+  gap: 0.35rem;
+  min-height: 2.1rem;
+  padding: 0 0.7rem;
   border: 1px solid var(--pf-border-strong);
   border-radius: var(--pf-radius-md);
   background: var(--pf-surface-raised);
   color: var(--pf-text);
   font: inherit;
+  font-size: 0.82rem;
   font-weight: 700;
   cursor: pointer;
 }
@@ -53,13 +54,13 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 1.4rem;
-  height: 1.4rem;
-  padding: 0 0.35rem;
+  min-width: 1.15rem;
+  height: 1.15rem;
+  padding: 0 0.25rem;
   border-radius: var(--pf-radius-pill);
   background: var(--pf-primary);
   color: var(--pf-on-primary);
-  font-size: 0.78rem;
+  font-size: 0.7rem;
   font-weight: 750;
 }
 
@@ -73,16 +74,20 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: var(--pf-touch-target);
+  min-height: 1.9rem;
   width: auto;
-  padding: 0 1rem;
+  padding: 0;
   border: 0;
-  border-radius: var(--pf-radius-md);
-  background: var(--pf-surface-muted);
-  color: var(--pf-text);
+  background: transparent;
+  color: var(--pf-primary);
   font: inherit;
+  font-size: 0.8rem;
   font-weight: 700;
   cursor: pointer;
+}
+
+.exportButton:hover:not(:disabled) {
+  text-decoration: underline;
 }
 
 .exportButton:disabled {
@@ -93,7 +98,7 @@
 .list {
   display: flex;
   flex-direction: column;
-  gap: var(--pf-space-3);
+  gap: var(--pf-space-2);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -103,17 +108,16 @@
 .form {
   display: flex;
   flex-direction: column;
-  gap: var(--pf-space-3);
+  gap: var(--pf-space-2);
   min-width: 0;
   width: 100%;
-  padding: var(--pf-space-4);
-  border-radius: var(--pf-radius-xl);
+  padding: var(--pf-space-3);
+  border-radius: var(--pf-radius-md);
 }
 
 .card {
   border: 1px solid var(--pf-border);
   background: var(--pf-surface-raised);
-  box-shadow: var(--pf-shadow-sm);
 }
 
 .cardMuted {
@@ -128,19 +132,21 @@
 .form {
   border: 1px solid var(--pf-border);
   background: var(--pf-surface);
+  padding: var(--pf-space-4);
 }
 
 .cardTop {
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--pf-space-3);
+  align-items: center;
+  gap: var(--pf-space-2);
+  min-width: 0;
 }
 
 .cardMain {
   display: flex;
+  flex: 1;
   flex-direction: column;
-  gap: 0.15rem;
+  gap: 0.05rem;
   min-width: 0;
 }
 
@@ -149,41 +155,54 @@
   text-align: right;
 }
 
-.type {
+.metaRow {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 0.35rem;
+  gap: 0.25rem;
   margin: 0;
   color: var(--pf-text-subtle);
-  font-size: 0.78rem;
+  font-size: 0.74rem;
+  line-height: 1.3;
+}
+
+.type {
   font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.context {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .typeIcon {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 1.55rem;
+  height: 1.55rem;
+  border-radius: var(--pf-radius-sm);
+  background: var(--pf-primary-soft);
   color: var(--pf-primary);
 }
 
 .title {
   margin: 0;
-  font-size: 1.05rem;
+  font-size: 0.92rem;
   font-weight: 700;
   line-height: 1.3;
   overflow-wrap: anywhere;
 }
 
 .date {
-  margin: 0;
-  color: var(--pf-text-subtle);
-  font-size: 0.85rem;
+  white-space: nowrap;
 }
 
 .amount {
   margin: 0;
-  font-size: 1.3rem;
+  font-size: 1rem;
   font-weight: 750;
   line-height: 1.2;
   white-space: nowrap;
@@ -201,10 +220,6 @@
 .amountMuted {
   color: var(--pf-text-subtle);
   text-decoration: line-through;
-}
-
-.statusRow {
-  display: flex;
 }
 
 .primaryCta,
@@ -261,14 +276,39 @@
   color: #fff;
 }
 
+/* Acciones por movimiento como links de texto: la fila no compite con el
+   monto ni con la descripción. */
 .actions {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--pf-space-2);
+  align-items: center;
+  gap: 0 var(--pf-space-4);
+  padding-left: 2rem;
 }
 
-.actions button {
-  flex: 1 1 8rem;
+.linkAction,
+.linkDanger {
+  min-height: 1.75rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.linkAction {
+  color: var(--pf-primary);
+}
+
+.linkDanger {
+  color: #9f1239;
+}
+
+.linkAction:hover,
+.linkDanger:hover {
+  text-decoration: underline;
 }
 
 .edit,
@@ -337,17 +377,18 @@
   display: flex;
   flex-direction: column;
   gap: var(--pf-space-1);
-  padding: var(--pf-space-3);
-  border-radius: var(--pf-radius-lg);
+  margin-left: 2rem;
+  padding: var(--pf-space-2);
+  border-radius: var(--pf-radius-sm);
   background: var(--pf-surface-muted);
 }
 
 @media (min-width: 768px) {
   .filters {
     display: block;
-    padding: var(--pf-space-4);
+    padding: var(--pf-space-3);
     border: 1px solid var(--pf-border);
-    border-radius: var(--pf-radius-xl);
+    border-radius: var(--pf-radius-md);
     background: var(--pf-surface);
   }
 
@@ -360,11 +401,7 @@
   }
 
   .amount {
-    font-size: 1.45rem;
-  }
-
-  .actions button {
-    flex: 0 0 auto;
+    font-size: 1.15rem;
   }
 
   .primaryCta {

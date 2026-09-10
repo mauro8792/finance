@@ -72,17 +72,19 @@ export function AccountsPage() {
       <PageHeader
         kicker="Tu dinero"
         title="Cuentas"
-        description="Administrá dónde está tu plata. El dinero entra después desde Registrar."
-        actions={<PrivacyToggle />}
+        actions={
+          <>
+            <button
+              type="button"
+              className={styles.headerCta}
+              onClick={() => setPanel({ mode: "create" })}
+            >
+              Nueva cuenta
+            </button>
+            <PrivacyToggle />
+          </>
+        }
       />
-
-      <button
-        type="button"
-        className={styles.primaryCta}
-        onClick={() => setPanel({ mode: "create" })}
-      >
-        Nueva cuenta
-      </button>
 
       {panel ? (
         <AccountForm
@@ -96,7 +98,7 @@ export function AccountsPage() {
       ) : null}
 
       {query.isPending ? (
-        <Skeleton count={3} height="10rem" label="Cargando cuentas" />
+        <Skeleton count={3} height="5rem" label="Cargando cuentas" />
       ) : null}
 
       {query.isError ? (
@@ -110,7 +112,7 @@ export function AccountsPage() {
 
       {query.data && query.data.length === 0 && panel?.mode !== "create" ? (
         <EmptyState
-          message="Todavía no tenés cuentas. Creá la primera para saber en todo momento dónde está tu plata."
+          message="Todavía no tenés cuentas."
           action={{
             label: "Crear cuenta",
             onClick: () => setPanel({ mode: "create" }),
@@ -172,7 +174,7 @@ function AccountCard({
 
   return (
     <FinancialCard className={styles.card}>
-      <header className={styles.cardHeader}>
+      <div className={styles.cardTop}>
         <span className={styles.typeIcon} aria-hidden="true">
           <AccountTypeIcon type={account.type} />
         </span>
@@ -180,38 +182,37 @@ function AccountCard({
           <h2 className={styles.cardTitle}>{account.name}</h2>
           <p className={styles.tags}>
             <span className={styles.typeTag}>{accountTypeLabel(account.type)}</span>
+            <span className={styles.metaDot} aria-hidden="true">
+              ·
+            </span>
             <span className={styles.currencyTag}>{account.currency}</span>
+            <StatusBadge
+              label={account.isActive ? "Activa" : "Inactiva"}
+              tone={account.isActive ? "active" : "inactive"}
+            />
+            {isDefault ? <StatusBadge label="Predeterminada" tone="primary" /> : null}
           </p>
         </div>
-        <StatusBadge
-          label={account.isActive ? "Activa" : "Inactiva"}
-          tone={account.isActive ? "active" : "inactive"}
-        />
-      </header>
-
-      <div className={styles.balanceBlock}>
-        <p className={styles.balanceLabel}>Saldo</p>
-        {balanceLoading ? <Skeleton height="1.6rem" label="Cargando saldo" /> : null}
-        {balanceError ? (
-          <div className={styles.inlineError}>
-            <p>No pudimos cargar el saldo.</p>
-            <button type="button" className={styles.retry} onClick={onRetryBalance}>
-              Reintentar
-            </button>
-          </div>
-        ) : null}
-        {balance !== null ? (
-          <Money
-            amount={balance}
-            currency={account.currency}
-            className={styles.balance}
-          />
-        ) : null}
+        <div className={styles.balanceBlock}>
+          {balanceLoading ? (
+            <Skeleton height="1.1rem" label="Cargando saldo" className={styles.balanceSkeleton} />
+          ) : null}
+          {balance !== null ? (
+            <Money
+              amount={balance}
+              currency={account.currency}
+              className={styles.balance}
+            />
+          ) : null}
+        </div>
       </div>
 
-      {isDefault ? (
-        <div className={styles.defaultRow}>
-          <StatusBadge label="Predeterminada" tone="primary" />
+      {balanceError ? (
+        <div className={styles.inlineError}>
+          <p>No pudimos cargar el saldo.</p>
+          <button type="button" className={styles.retry} onClick={onRetryBalance}>
+            Reintentar
+          </button>
         </div>
       ) : null}
 
@@ -223,16 +224,16 @@ function AccountCard({
 
       <div className={styles.actions}>
         {!isDefault && account.isActive ? (
-          <button type="button" className={styles.secondary} onClick={onMakeDefault}>
+          <button type="button" className={styles.linkAction} onClick={onMakeDefault}>
             Usar al registrar
           </button>
         ) : null}
-        <button type="button" className={styles.edit} onClick={onEdit}>
+        <button type="button" className={styles.linkAction} onClick={onEdit}>
           Editar
         </button>
         <button
           type="button"
-          className={styles.secondary}
+          className={styles.linkAction}
           disabled={toggle.isPending}
           onClick={() => toggle.mutate()}
         >

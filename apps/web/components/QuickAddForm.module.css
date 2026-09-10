@@ -7,13 +7,13 @@
 /* Segmentado Gasto | Ingreso | Transferencia. */
 .kind {
   margin: 0;
-  padding: 0.25rem;
+  padding: 0.15rem;
   border: 1px solid var(--pf-border-strong);
-  border-radius: var(--pf-radius-lg);
+  border-radius: var(--pf-radius-md);
   background: var(--pf-surface-muted);
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 0.25rem;
+  gap: 0.15rem;
 }
 
 .kindThree {
@@ -22,13 +22,14 @@
 
 .kindButton,
 .kindActive {
-  min-height: 3rem;
-  padding: 0 0.5rem;
+  min-height: 2.4rem;
+  padding: 0 0.4rem;
   border: 0;
-  border-radius: var(--pf-radius-md);
+  border-radius: var(--pf-radius-sm);
   background: transparent;
   color: var(--pf-text-muted);
   font: inherit;
+  font-size: 0.88rem;
   font-weight: 650;
   cursor: pointer;
 }
@@ -49,15 +50,23 @@
 .field {
   display: flex;
   flex-direction: column;
-  gap: var(--pf-space-1);
-  font-weight: 600;
+  gap: 0.15rem;
+  font-size: 0.82rem;
+  font-weight: 650;
+}
+
+.amountLabel {
+  color: var(--pf-text-subtle);
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 .amountRow {
   display: flex;
   align-items: stretch;
   border: 1px solid var(--pf-border-strong);
-  border-radius: var(--pf-radius-lg);
+  border-radius: var(--pf-radius-md);
   background: var(--pf-surface-raised);
   overflow: hidden;
 }
@@ -65,21 +74,23 @@
 .currency {
   display: flex;
   align-items: center;
-  padding: 0 0.85rem;
+  padding: 0 0.7rem;
   background: var(--pf-primary-soft);
   color: var(--pf-primary);
+  font-size: 0.85rem;
   font-weight: 750;
 }
 
+/* El monto es el protagonista del alta: se mantiene grande a propósito. */
 .amount {
   flex: 1;
   min-width: 0;
   border: 0;
   background: transparent;
   font: inherit;
-  font-size: 1.75rem;
+  font-size: 1.6rem;
   font-weight: 700;
-  padding: 0.6rem 0.85rem;
+  padding: 0.4rem 0.7rem;
   font-variant-numeric: tabular-nums;
 }
 
@@ -88,13 +99,14 @@
   width: 100%;
   max-width: 100%;
   min-width: 0;
-  min-height: 3rem;
+  min-height: 2.6rem;
   border: 1px solid var(--pf-border-strong);
   border-radius: var(--pf-radius-md);
   background: var(--pf-surface-raised);
   font: inherit;
   font-size: 1rem;
-  padding: 0.5rem 0.75rem;
+  font-weight: 500;
+  padding: 0.35rem 0.6rem;
 }
 
 .field select:focus-visible,
@@ -112,67 +124,64 @@
 .pair {
   display: grid;
   grid-template-columns: 1fr;
-  gap: var(--pf-space-3);
-}
-
-.incomeKind {
-  margin: 0;
-  padding: var(--pf-space-3);
-  border: 1px solid var(--pf-border-strong);
-  border-radius: var(--pf-radius-lg);
-  background: var(--pf-surface);
-  display: flex;
-  flex-direction: column;
   gap: var(--pf-space-2);
 }
 
+/* Sin tarjeta anidada: solo la etiqueta y las dos opciones en línea. */
+.incomeKind {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
 .incomeKind legend {
+  padding: 0;
+  color: var(--pf-text-subtle);
+  font-size: 0.72rem;
   font-weight: 650;
-  padding: 0 0.25rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.radioRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--pf-space-4);
 }
 
 .radio,
 .check {
   display: flex;
-  align-items: flex-start;
-  gap: 0.65rem;
-  min-height: var(--pf-touch-target);
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 2.25rem;
+  font-size: 0.9rem;
   font-weight: 500;
 }
 
 .radio input,
 .check input {
-  width: 1.25rem;
-  height: 1.25rem;
-  margin-top: 0.2rem;
+  width: 1.1rem;
+  height: 1.1rem;
   flex-shrink: 0;
   accent-color: var(--pf-primary);
-}
-
-.radio small {
-  display: block;
-  color: var(--pf-text-muted);
-  font-size: 0.85rem;
-  line-height: 1.35;
-  font-weight: 400;
-}
-
-.check {
-  align-items: center;
 }
 
 .submit {
   position: sticky;
   bottom: calc(var(--pf-bottom-nav-height) + var(--pf-space-2));
   z-index: 1;
-  min-height: 3.25rem;
+  min-height: 2.9rem;
   margin-top: var(--pf-space-1);
   border: 0;
   border-radius: var(--pf-radius-md);
   background: var(--pf-primary);
   color: var(--pf-on-primary);
   font: inherit;
-  font-size: 1.05rem;
+  font-size: 1rem;
   font-weight: 750;
   cursor: pointer;
   box-shadow: var(--pf-shadow-md);
@@ -192,8 +201,9 @@
 .error,
 .success {
   margin: 0;
-  padding: 0.6rem 0.8rem;
-  border-radius: var(--pf-radius-md);
+  padding: 0.45rem 0.65rem;
+  border-radius: var(--pf-radius-sm);
+  font-size: 0.85rem;
 }
 
 .status {
@@ -230,8 +240,8 @@
   }
 
   .amount {
-    font-size: 2rem;
-    padding: 0.75rem 0.9rem;
+    font-size: 1.8rem;
+    padding: 0.5rem 0.8rem;
   }
 }
 

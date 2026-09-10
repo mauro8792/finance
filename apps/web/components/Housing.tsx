@@ -65,17 +65,19 @@ export function HousingPage() {
       <PageHeader
         kicker="Vivienda"
         title="Obligación de vivienda"
-        description="Cuota, reserva, cobertura e historial de pagos."
-        actions={<PrivacyToggle />}
+        actions={
+          <>
+            <button
+              type="button"
+              className={styles.headerCta}
+              onClick={() => setPanel({ mode: "create" })}
+            >
+              Configurar vivienda
+            </button>
+            <PrivacyToggle />
+          </>
+        }
       />
-
-      <button
-        type="button"
-        className={styles.primaryCta}
-        onClick={() => setPanel({ mode: "create" })}
-      >
-        Configurar vivienda
-      </button>
 
       {panel ? (
         <HousingForm
@@ -86,7 +88,7 @@ export function HousingPage() {
       ) : null}
 
       {query.isPending ? (
-        <Skeleton count={2} height="14rem" label="Cargando vivienda" />
+        <Skeleton count={2} height="8rem" label="Cargando vivienda" />
       ) : null}
 
       {query.isError ? (
@@ -135,69 +137,69 @@ function HousingCard({
   const reserve = accounts.find((account) => account.id === obligation.reserveAccountId);
   const nextDue = nextDueDateLabel(obligation.dueDay);
 
+  // Una sola historia de cobertura arriba (reserva + cuotas cubiertas + barra)
+  // y después los datos operativos compactos, sin repetir la reserva.
   return (
     <FinancialCard className={styles.card}>
-      <header className={styles.cardHeader}>
+      <div className={styles.cardTop}>
         <div className={styles.cardHeading}>
-          <h2 className={styles.cardTitle}>{obligation.name}</h2>
-          <p className={styles.tags}>
+          <h2 className={styles.cardTitle}>
+            {obligation.name}
             <span className={styles.currencyTag}>{obligation.currency}</span>
-          </p>
+          </h2>
         </div>
         <StatusBadge
           label={obligation.isActive ? "Activa" : "Inactiva"}
           tone={obligation.isActive ? "active" : "inactive"}
         />
-      </header>
-
-      <div className={styles.installmentBlock}>
-        <p className={styles.installmentLabel}>Cuota mensual</p>
-        <Money
-          amount={obligation.installmentAmount}
-          currency={obligation.currency}
-          className={styles.installment}
-        />
       </div>
 
-      <div className={styles.cardLayout}>
-        <HousingCoverageCard obligationId={obligation.id} />
+      <HousingCoverageCard obligationId={obligation.id} />
 
-        <dl className={styles.meta}>
-          <div>
-            <dt>Cuotas pendientes</dt>
-            <dd>{obligation.remainingInstallments}</dd>
-          </div>
-          <div>
-            <dt>Próximo vencimiento</dt>
-            <dd>
-              {nextDue ?? "Sin día configurado"}
-              {obligation.dueDay === null ? null : <small>Día {obligation.dueDay}</small>}
-            </dd>
-          </div>
-          <div>
-            <dt>Cuenta reserva</dt>
-            <dd>
-              {obligation.reserveAccountId
-                ? (reserve?.name ?? "Cuenta de reserva")
-                : "Sin cuenta de reserva"}
-            </dd>
-          </div>
-        </dl>
-      </div>
+      <dl className={styles.meta}>
+        <div>
+          <dt>Cuota mensual</dt>
+          <dd>
+            <Money
+              amount={obligation.installmentAmount}
+              currency={obligation.currency}
+            />
+          </dd>
+        </div>
+        <div>
+          <dt>Cuotas pendientes</dt>
+          <dd>{obligation.remainingInstallments}</dd>
+        </div>
+        <div>
+          <dt>Próximo vencimiento</dt>
+          <dd>
+            {nextDue ?? "Sin día configurado"}
+            {obligation.dueDay === null ? null : <small>Día {obligation.dueDay}</small>}
+          </dd>
+        </div>
+        <div>
+          <dt>Cuenta reserva</dt>
+          <dd>
+            {obligation.reserveAccountId
+              ? (reserve?.name ?? "Cuenta de reserva")
+              : "Sin cuenta de reserva"}
+          </dd>
+        </div>
+      </dl>
 
       <div className={styles.actions}>
-        <button type="button" className={styles.edit} onClick={onEdit}>
-          Editar
-        </button>
         {obligation.isActive ? (
           <button
             type="button"
-            className={styles.primaryCta}
+            className={styles.linkStrong}
             onClick={() => setPaying((open) => !open)}
           >
             Registrar cuota
           </button>
         ) : null}
+        <button type="button" className={styles.linkAction} onClick={onEdit}>
+          Editar
+        </button>
       </div>
 
       {paying && obligation.isActive ? (
@@ -223,7 +225,7 @@ function HousingCoverageCard({ obligationId }: { obligationId: string }) {
     return (
       <section className={styles.coverage}>
         <h3 className={styles.sectionTitle}>Cobertura de la reserva</h3>
-        <Skeleton height="3.5rem" label="Cargando cobertura" />
+        <Skeleton height="2.4rem" label="Cargando cobertura" />
       </section>
     );
   }
@@ -264,9 +266,16 @@ function CoverageBody({ coverage }: { coverage: HousingCoverage }) {
       ) : (
         <>
           <p className={styles.coverageValue}>
+            {coverage.reserveBalance === null ? (
+              "—"
+            ) : (
+              <Money amount={coverage.reserveBalance} currency={coverage.currency} />
+            )}
+          </p>
+          <p className={styles.coverageHint}>
             {coverage.coveredInstallments === null
-              ? "—"
-              : `${formatCoveredInstallments(coverage.coveredInstallments)} cuotas`}
+              ? "Sin datos de cobertura"
+              : `${formatCoveredInstallments(coverage.coveredInstallments)} de ${coverage.remainingInstallments} cuotas cubiertas`}
           </p>
           <div className={styles.barTrack} aria-hidden="true">
             <span
@@ -279,24 +288,6 @@ function CoverageBody({ coverage }: { coverage: HousingCoverage }) {
               }}
             />
           </div>
-          {coverage.coveredInstallments === null ? null : (
-            <p className={styles.coverageHint}>
-              Cubre {formatCoveredInstallments(coverage.coveredInstallments)} de{" "}
-              {coverage.remainingInstallments} cuotas pendientes
-            </p>
-          )}
-          <dl className={styles.coverageMeta}>
-            <div>
-              <dt>Reserva actual</dt>
-              <dd>
-                {coverage.reserveBalance === null ? (
-                  "—"
-                ) : (
-                  <Money amount={coverage.reserveBalance} currency={coverage.currency} />
-                )}
-              </dd>
-            </div>
-          </dl>
         </>
       )}
     </section>
@@ -313,7 +304,7 @@ function HousingPaymentHistory({ obligationId }: { obligationId: string }) {
     return (
       <section className={styles.history}>
         <h3 className={styles.sectionTitle}>Historial de pagos</h3>
-        <Skeleton count={2} height="2.5rem" label="Cargando pagos" />
+        <Skeleton count={2} height="1.6rem" label="Cargando pagos" />
       </section>
     );
   }

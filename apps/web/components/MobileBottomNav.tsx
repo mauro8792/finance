@@ -7,17 +7,17 @@ import { BottomSheet } from "./ui/BottomSheet";
 import styles from "./MobileBottomNav.module.css";
 
 const PRIMARY_ITEMS = [
-  { href: "/", label: "Inicio", icon: <HomeIcon /> },
-  { href: "/registrar", label: "Registrar", icon: <PlusIcon /> },
-  { href: "/transactions", label: "Movimientos", icon: <ListIcon /> },
-  { href: "/accounts", label: "Cuentas", icon: <WalletIcon /> },
+  { href: "/", label: "Inicio", icon: <HomeIcon />, accent: false },
+  { href: "/registrar", label: "Registrar", icon: <PlusIcon />, accent: true },
+  { href: "/transactions", label: "Movimientos", icon: <ListIcon />, accent: false },
+  { href: "/accounts", label: "Cuentas", icon: <WalletIcon />, accent: false },
 ] as const;
 
 const MORE_ITEMS = [
   { href: "/investments", label: "Inversiones" },
   { href: "/housing", label: "Vivienda" },
   { href: "/cards", label: "Tarjetas" },
-  { href: "/transfers", label: "Mover dinero" },
+  { href: "/transfers", label: "Transferencias" },
   { href: "/budgets", label: "Presupuestos" },
   { href: "/simulations", label: "Simulaciones" },
   { href: "/assistant", label: "Asistente" },
@@ -38,7 +38,9 @@ export function MobileBottomNav({ onLogout }: { onLogout?: () => void }) {
             className={`${styles.item} ${pathname === item.href ? styles.active : ""}`.trim()}
             aria-current={pathname === item.href ? "page" : undefined}
           >
-            <span className={styles.icon}>{item.icon}</span>
+            <span className={item.accent ? `${styles.icon} ${styles.iconAccent}` : styles.icon}>
+              {item.icon}
+            </span>
             <span className={styles.label}>{item.label}</span>
           </Link>
         ))}
@@ -56,7 +58,7 @@ export function MobileBottomNav({ onLogout }: { onLogout?: () => void }) {
         </button>
       </nav>
       {moreOpen ? (
-        <BottomSheet title="Más secciones" onClose={() => setMoreOpen(false)}>
+        <BottomSheet title="Más" onClose={() => setMoreOpen(false)}>
           <div className={styles.sheetLinks}>
             {MORE_ITEMS.map((item) => (
               <Link
@@ -89,7 +91,7 @@ export function MobileBottomNav({ onLogout }: { onLogout?: () => void }) {
 
 function Icon({ path }: { path: string }): ReactNode {
   return (
-    <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false">
+    <svg viewBox="0 0 24 24" width="19" height="19" aria-hidden="true" focusable="false">
       <path fill="currentColor" d={path} />
     </svg>
   );

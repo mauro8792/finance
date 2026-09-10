@@ -233,26 +233,31 @@ export function TransactionsPage() {
   return (
     <section className={styles.page} aria-label="Movimientos">
       <PageHeader
-        kicker="Historial"
         title="Movimientos"
-        description="Consultá lo que registraste. Para cargar uno nuevo usá Registrar."
-        actions={<PrivacyToggle />}
+        actions={
+          <>
+            <button
+              type="button"
+              className={styles.filtersTrigger}
+              onClick={() => setFiltersOpen(true)}
+              aria-expanded={filtersOpen}
+            >
+              Filtros
+              {activeFilterCount > 0 ? (
+                <span
+                  className={styles.filtersCount}
+                  aria-label={`${activeFilterCount} filtros activos`}
+                >
+                  {activeFilterCount}
+                </span>
+              ) : null}
+            </button>
+            <PrivacyToggle />
+          </>
+        }
       />
 
       <div className={styles.toolbar}>
-        <button
-          type="button"
-          className={styles.filtersTrigger}
-          onClick={() => setFiltersOpen(true)}
-          aria-expanded={filtersOpen}
-        >
-          Filtros
-          {activeFilterCount > 0 ? (
-            <span className={styles.filtersCount} aria-label={`${activeFilterCount} filtros activos`}>
-              {activeFilterCount}
-            </span>
-          ) : null}
-        </button>
         <button
           type="button"
           className={styles.exportButton}
@@ -366,6 +371,8 @@ function MovementIcon({ type }: { type: TransactionType }) {
   );
 }
 
+// Dos líneas por movimiento: descripción + monto arriba, contexto + fecha
+// abajo. El estado sólo aparece cuando no es ACTIVE.
 function MovementRow({
   type,
   typeLabel,
@@ -373,6 +380,7 @@ function MovementRow({
   context,
   date,
   amount,
+  status,
   muted,
   children,
 }: {
@@ -382,22 +390,30 @@ function MovementRow({
   context?: ReactNode;
   date: string;
   amount: ReactNode;
+  status?: ReactNode;
   muted?: boolean;
   children?: ReactNode;
 }) {
   return (
     <article className={muted ? `${styles.card} ${styles.cardMuted}` : styles.card}>
       <div className={styles.cardTop}>
+        <span className={styles.typeIcon} aria-hidden="true">
+          <MovementIcon type={type} />
+        </span>
         <div className={styles.cardMain}>
-          <p className={styles.type}>
-            <span className={styles.typeIcon}>
-              <MovementIcon type={type} />
-            </span>
-            {typeLabel}
-          </p>
           <p className={styles.title}>{title}</p>
-          {context ? <p className={styles.metaLine}>{context}</p> : null}
-          <p className={styles.date}>{formatTransactionDate(date)}</p>
+          <p className={styles.metaRow}>
+            <span className={styles.type}>{typeLabel}</span>
+            {context ? (
+              <>
+                <span aria-hidden="true">·</span>
+                <span className={styles.context}>{context}</span>
+              </>
+            ) : null}
+            <span aria-hidden="true">·</span>
+            <span className={styles.date}>{formatTransactionDate(date)}</span>
+            {status}
+          </p>
         </div>
         <div className={styles.cardAmount}>{amount}</div>
       </div>
@@ -442,16 +458,13 @@ function TransferCard({
       context={description}
       date={item.out.occurredAt}
       muted={!isActive}
-      amount={
-        <span className={styles.amount}>{money}</span>
-      }
-    >
-      {!isActive ? (
-        <div className={styles.statusRow}>
+      status={
+        isActive ? null : (
           <StatusBadge label={transactionStatusLabel(item.out.status)} tone="muted" />
-        </div>
-      ) : null}
-
+        )
+      }
+      amount={<span className={styles.amount}>{money}</span>}
+    >
       {expanded ? (
         <div className={styles.details}>
           <p className={styles.metaLine}>Desde: {sourceName}</p>
@@ -469,7 +482,7 @@ function TransferCard({
       <div className={styles.actions}>
         <button
           type="button"
-          className={styles.secondary}
+          className={styles.linkAction}
           onClick={() => setExpanded((value) => !value)}
         >
           {expanded ? "Ocultar detalle" : "Ver detalle"}
@@ -477,7 +490,7 @@ function TransferCard({
         {allowVoid ? (
           <button
             type="button"
-            className={styles.danger}
+            className={styles.linkDanger}
             onClick={() => setConfirmVoid(true)}
           >
             Anular transferencia
@@ -582,6 +595,11 @@ function TransactionCard({
       context={context || null}
       date={transaction.occurredAt}
       muted={!isActive}
+      status={
+        isActive ? null : (
+          <StatusBadge label={transactionStatusLabel(transaction.status)} tone="muted" />
+        )
+      }
       amount={
         <p
           className={`${styles.amount} ${
@@ -599,12 +617,6 @@ function TransactionCard({
         </p>
       }
     >
-      {!isActive ? (
-        <div className={styles.statusRow}>
-          <StatusBadge label={transactionStatusLabel(transaction.status)} tone="muted" />
-        </div>
-      ) : null}
-
       {expanded ? (
         <div className={styles.details}>
           {direction ? <p className={styles.metaLine}>{direction}</p> : null}
@@ -615,27 +627,31 @@ function TransactionCard({
       <div className={styles.actions}>
         <button
           type="button"
-          className={styles.secondary}
+          className={styles.linkAction}
           onClick={() => setExpanded((value) => !value)}
         >
           {expanded ? "Ocultar detalle" : "Ver detalle"}
         </button>
         {allowEdit ? (
-          <button type="button" className={styles.edit} onClick={() => setEditing(true)}>
+          <button type="button" className={styles.linkAction} onClick={() => setEditing(true)}>
             Editar
           </button>
         ) : null}
         {allowCorrect ? (
           <button
             type="button"
-            className={styles.secondary}
+            className={styles.linkAction}
             onClick={() => setConfirmCorrect(true)}
           >
             Corregir
           </button>
         ) : null}
         {allowVoid ? (
-          <button type="button" className={styles.danger} onClick={() => setConfirmVoid(true)}>
+          <button
+            type="button"
+            className={styles.linkDanger}
+            onClick={() => setConfirmVoid(true)}
+          >
             Anular
           </button>
         ) : null}

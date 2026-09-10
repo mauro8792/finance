@@ -48,7 +48,7 @@ describe("MobileBottomNav", () => {
       ["Inversiones", "/investments"],
       ["Vivienda", "/housing"],
       ["Tarjetas", "/cards"],
-      ["Mover dinero", "/transfers"],
+      ["Transferencias", "/transfers"],
       ["Presupuestos", "/budgets"],
       ["Simulaciones", "/simulations"],
       ["Asistente", "/assistant"],

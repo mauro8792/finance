@@ -1,10 +1,10 @@
 .card {
   display: flex;
   flex-direction: column;
-  gap: var(--pf-space-1);
+  gap: 0.1rem;
   min-width: 0;
-  padding: var(--pf-space-3) var(--pf-space-4);
-  border-radius: var(--pf-radius-lg);
+  padding: var(--pf-space-2) var(--pf-space-3);
+  border-radius: var(--pf-radius-md);
 }
 
 .surface {
@@ -24,7 +24,7 @@
 .label {
   margin: 0;
   color: var(--pf-text-subtle);
-  font-size: 0.78rem;
+  font-size: 0.68rem;
   font-weight: 650;
   letter-spacing: 0.03em;
   text-transform: uppercase;
@@ -35,17 +35,18 @@
 }
 
 .value {
-  font-size: 1.35rem;
+  font-size: 1.15rem;
   font-weight: 700;
   line-height: 1.2;
   word-break: break-word;
+  font-variant-numeric: tabular-nums;
 }
 
 .hint {
   margin: 0;
   color: var(--pf-text-subtle);
-  font-size: 0.82rem;
-  line-height: 1.35;
+  font-size: 0.74rem;
+  line-height: 1.3;
 }
 
 .hero .hint {
