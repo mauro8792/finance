@@ -3,6 +3,13 @@ import { randomUUID } from "node:crypto";
 import type { Currency } from "shared";
 import { getPrismaClient } from "../../shared/db/prisma.js";
 import { AppError } from "../../shared/errors/app-error.js";
+import {
+  assertCorrectionTarget,
+  findCorrectionByKey,
+  isUniqueViolation,
+  recordCorrection,
+} from "../corrections/correction.repository.js";
+import type { CorrectionOperation } from "../corrections/correction.types.js";
 import type {
   CreateTransferAtomicInput,
   CreateTransactionInput,
@@ -16,6 +23,10 @@ import type {
   TransferCreateResult,
   TransferView,
   UpdateTransactionRecord,
+  VoidTransactionAtomicInput,
+  VoidTransactionResult,
+  VoidTransferAtomicInput,
+  VoidTransferResult,
 } from "./transaction.types.js";
 
 export function toCreateData(input: CreateTransactionInput) {
@@ -343,6 +354,246 @@ export class PrismaTransactionRepository implements TransactionRepository {
     });
     return row ? toTransferView(row) : null;
   }
+
+  async voidTransactionAtomic(
+    input: VoidTransactionAtomicInput
+  ): Promise<VoidTransactionResult> {
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const replay = await findCorrectionByKey(
+          tx,
+          input.userId,
+          input.idempotencyKey
+        );
+        if (replay) {
+          assertCorrectionTarget(replay, "TRANSACTION_VOID", input.transactionId);
+          return this.replayTransactionVoid(tx, input, replay);
+        }
+
+        const locked = await lockTransaction(tx, input.transactionId);
+        if (locked.user_id !== input.userId) {
+          throw new AppError("NOT_FOUND", "Movimiento no encontrado.", 404);
+        }
+        if (locked.status !== "ACTIVE") {
+          throw new AppError(
+            "TRANSACTION_ALREADY_VOIDED",
+            "El movimiento ya está anulado.",
+            409
+          );
+        }
+
+        /**
+         * A card EXPENSE recognized from an installment is reversed, not
+         * plainly voided: the installment goes back to PENDING so the
+         * scheduler can recognize it again after the correction.
+         */
+        const installment = await tx.creditCardInstallment.findUnique({
+          where: { recognizedTransactionId: input.transactionId },
+        });
+
+        const resultStatus = installment ? "REVERSED" : "VOIDED";
+        const updated = await tx.transaction.update({
+          where: { id: input.transactionId },
+          data: { status: resultStatus },
+        });
+
+        if (installment) {
+          await tx.creditCardInstallment.update({
+            where: { id: installment.id },
+            data: {
+              status: "PENDING",
+              recognizedTransactionId: null,
+              recognizedAt: null,
+            },
+          });
+        }
+
+        await recordCorrection(tx, {
+          userId: input.userId,
+          idempotencyKey: input.idempotencyKey,
+          kind: "TRANSACTION_VOID",
+          targetId: input.transactionId,
+          resultStatus,
+          result: {
+            transactionId: input.transactionId,
+            status: resultStatus,
+            installmentId: installment?.id ?? null,
+            purchaseId: installment?.purchaseId ?? null,
+          },
+        });
+
+        return {
+          created: true,
+          transaction: toTransaction(updated),
+          resultStatus,
+          installmentId: installment?.id ?? null,
+          purchaseId: installment?.purchaseId ?? null,
+        };
+      });
+    } catch (error) {
+      if (isUniqueViolation(error)) {
+        const replay = await findCorrectionByKey(
+          this.prisma,
+          input.userId,
+          input.idempotencyKey
+        );
+        if (replay) {
+          assertCorrectionTarget(replay, "TRANSACTION_VOID", input.transactionId);
+          return this.replayTransactionVoid(this.prisma, input, replay);
+        }
+      }
+      throw error;
+    }
+  }
+
+  async voidTransferAtomic(
+    input: VoidTransferAtomicInput
+  ): Promise<VoidTransferResult> {
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const replay = await findCorrectionByKey(
+          tx,
+          input.userId,
+          input.idempotencyKey
+        );
+        if (replay) {
+          assertCorrectionTarget(replay, "TRANSFER_VOID", input.transferId);
+          return this.replayTransferVoid(tx, input);
+        }
+
+        const link = await tx.transferLink.findFirst({
+          where: { userId: input.userId, transferId: input.transferId },
+        });
+        if (!link) {
+          throw new AppError("NOT_FOUND", "Transferencia no encontrada.", 404);
+        }
+
+        // Both legs under one lock: never leave a half-voided transfer.
+        const [firstId, secondId] =
+          link.outTransactionId < link.inTransactionId
+            ? [link.outTransactionId, link.inTransactionId]
+            : [link.inTransactionId, link.outTransactionId];
+        const first = await lockTransaction(tx, firstId);
+        const second = await lockTransaction(tx, secondId);
+
+        if (
+          first.user_id !== input.userId ||
+          second.user_id !== input.userId
+        ) {
+          throw new AppError("NOT_FOUND", "Transferencia no encontrada.", 404);
+        }
+        if (link.voidedAt != null || first.status !== "ACTIVE" || second.status !== "ACTIVE") {
+          throw new AppError(
+            "TRANSFER_ALREADY_VOIDED",
+            "La transferencia ya está anulada.",
+            409
+          );
+        }
+
+        await tx.transaction.updateMany({
+          where: {
+            id: { in: [link.outTransactionId, link.inTransactionId] },
+            status: "ACTIVE",
+          },
+          data: { status: "REVERSED" },
+        });
+
+        const voidedAt = new Date();
+        const updatedLink = await tx.transferLink.update({
+          where: { id: link.id },
+          data: { voidedAt, voidIdempotencyKey: input.idempotencyKey },
+        });
+
+        await recordCorrection(tx, {
+          userId: input.userId,
+          idempotencyKey: input.idempotencyKey,
+          kind: "TRANSFER_VOID",
+          targetId: input.transferId,
+          resultStatus: "REVERSED",
+          result: {
+            transferId: input.transferId,
+            outTransactionId: link.outTransactionId,
+            inTransactionId: link.inTransactionId,
+            status: "REVERSED",
+          },
+        });
+
+        const out = await tx.transaction.findUniqueOrThrow({
+          where: { id: link.outTransactionId },
+        });
+        const incoming = await tx.transaction.findUniqueOrThrow({
+          where: { id: link.inTransactionId },
+        });
+
+        return {
+          created: true,
+          transfer: toTransferView(updatedLink),
+          out: toTransaction(out),
+          in: toTransaction(incoming),
+        };
+      });
+    } catch (error) {
+      if (isUniqueViolation(error)) {
+        const replay = await findCorrectionByKey(
+          this.prisma,
+          input.userId,
+          input.idempotencyKey
+        );
+        if (replay) {
+          assertCorrectionTarget(replay, "TRANSFER_VOID", input.transferId);
+          return this.replayTransferVoid(this.prisma, input);
+        }
+      }
+      throw error;
+    }
+  }
+
+  private async replayTransactionVoid(
+    db: TxClient | ReturnType<typeof getPrismaClient>,
+    input: VoidTransactionAtomicInput,
+    correction: CorrectionOperation
+  ): Promise<VoidTransactionResult> {
+    const current = await db.transaction.findUniqueOrThrow({
+      where: { id: input.transactionId },
+    });
+    const recorded = (correction.result ?? {}) as {
+      installmentId?: unknown;
+      purchaseId?: unknown;
+    };
+    return {
+      created: false,
+      transaction: toTransaction(current),
+      resultStatus: correction.resultStatus,
+      installmentId:
+        typeof recorded.installmentId === "string" ? recorded.installmentId : null,
+      purchaseId:
+        typeof recorded.purchaseId === "string" ? recorded.purchaseId : null,
+    };
+  }
+
+  private async replayTransferVoid(
+    db: TxClient | ReturnType<typeof getPrismaClient>,
+    input: VoidTransferAtomicInput
+  ): Promise<VoidTransferResult> {
+    const link = await db.transferLink.findFirst({
+      where: { userId: input.userId, transferId: input.transferId },
+    });
+    if (!link) {
+      throw new AppError("NOT_FOUND", "Transferencia no encontrada.", 404);
+    }
+    const out = await db.transaction.findUniqueOrThrow({
+      where: { id: link.outTransactionId },
+    });
+    const incoming = await db.transaction.findUniqueOrThrow({
+      where: { id: link.inTransactionId },
+    });
+    return {
+      created: false,
+      transfer: toTransferView(link),
+      out: toTransaction(out),
+      in: toTransaction(incoming),
+    };
+  }
 }
 
 export function toTransaction(record: PrismaTransaction): Transaction {
@@ -372,6 +623,13 @@ type TxClient = Prisma.TransactionClient;
 
 type LockedAccount = { id: string };
 
+type LockedTransaction = {
+  id: string;
+  user_id: string;
+  type: string;
+  status: string;
+};
+
 async function lockAccount(tx: TxClient, accountId: string): Promise<void> {
   const rows = await tx.$queryRaw<LockedAccount[]>`
     SELECT id
@@ -382,6 +640,23 @@ async function lockAccount(tx: TxClient, accountId: string): Promise<void> {
   if (rows.length === 0) {
     throw new AppError("NOT_FOUND", "Cuenta no encontrada.", 404);
   }
+}
+
+async function lockTransaction(
+  tx: TxClient,
+  transactionId: string
+): Promise<LockedTransaction> {
+  const rows = await tx.$queryRaw<LockedTransaction[]>`
+    SELECT id, user_id, type::text AS type, status::text AS status
+    FROM transactions
+    WHERE id = ${transactionId}::uuid
+    FOR UPDATE
+  `;
+  const row = rows[0];
+  if (!row) {
+    throw new AppError("NOT_FOUND", "Movimiento no encontrado.", 404);
+  }
+  return row;
 }
 
 function assertTransferIdempotentReplay(
@@ -431,6 +706,7 @@ function toTransferView(row: {
   occurredAt: Date;
   outTransactionId: string;
   inTransactionId: string;
+  voidedAt: Date | null;
   createdAt: Date;
 }): TransferView {
   return {
@@ -443,6 +719,7 @@ function toTransferView(row: {
     occurredAt: row.occurredAt,
     outTransactionId: row.outTransactionId,
     inTransactionId: row.inTransactionId,
+    voidedAt: row.voidedAt,
     createdAt: row.createdAt,
   };
 }

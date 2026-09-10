@@ -431,9 +431,9 @@ test("POST /api/housing/:id/payments registers a valid payment", async () => {
   const patch = await request(app)
     .patch(`/api/transactions/${paid.body.transaction.id}`)
     .send({ description: "no" });
-  const voided = await request(app).post(
-    `/api/transactions/${paid.body.transaction.id}/void`
-  );
+  const voided = await request(app)
+    .post(`/api/transactions/${paid.body.transaction.id}/void`)
+    .send({ idempotencyKey: `void-${randomUUID()}` });
   assert.equal(patch.status, 400);
   assert.equal(patch.body.error.code, "HOUSING_PAYMENT_IMMUTABLE");
   assert.equal(voided.status, 400);

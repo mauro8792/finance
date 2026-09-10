@@ -356,9 +356,9 @@ test("PATCH and VOID reject a CURRENCY_EXCHANGE leg", async () => {
   const patch = await request(app)
     .patch(`/api/transactions/${created.body.out.id}`)
     .send({ description: "no" });
-  const voided = await request(app).post(
-    `/api/transactions/${created.body.in.id}/void`
-  );
+  const voided = await request(app)
+    .post(`/api/transactions/${created.body.in.id}/void`)
+    .send({ idempotencyKey: `void-${randomUUID()}` });
 
   assert.equal(patch.status, 400);
   assert.equal(patch.body.error.code, "CURRENCY_EXCHANGE_IMMUTABLE");

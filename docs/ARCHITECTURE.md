@@ -2000,7 +2000,7 @@ Metadata:
 { transferId, direction: "OUT" | "IN" }
 ```
 
-PATCH/void de una pierna se rechazan (`TRANSFER_IMMUTABLE`). Void atómico: P0.15.
+PATCH/void de una pierna se rechazan (`TRANSFER_IMMUTABLE`). Void atómico: `POST /api/transfers/:id/void` (P0.15 DONE LOCAL).
 
 No se rechaza por saldo insuficiente en transfers (balance derivado puede quedar negativo).
 

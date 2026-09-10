@@ -12,6 +12,7 @@ export function createCreditCardRefundRouter(
   router.get("/expected/:id", controller.getExpected);
   router.post("/expected/:id/cancel", controller.cancelExpected);
   router.post("/accredit", controller.accredit);
+  router.post("/accreditations/:id/void", controller.voidAccreditation);
   return router;
 }
 

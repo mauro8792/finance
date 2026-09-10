@@ -13,9 +13,11 @@
   "files": ["dist"],
   "scripts": {
     "build": "tsc",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test src/money/parse-money.test.ts"
   },
   "devDependencies": {
+    "tsx": "^4.23.13",
     "typescript": "^7.0.2"
   }
 }

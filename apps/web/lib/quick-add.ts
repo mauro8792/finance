@@ -1,6 +1,11 @@
+import {
+  isValidAmount,
+  normalizeAmountInput,
+  toApiAmount,
+} from "shared";
 import type { Account, Category, IncomeKind, MovementKind, PaymentMethod } from "./types";
 
-const AMOUNT_PATTERN = /^(?:0|[1-9]\d{0,15})(?:\.\d{1,2})?$/;
+export { isValidAmount, normalizeAmountInput, toApiAmount };
 
 export const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
   CASH: "Efectivo",
@@ -13,60 +18,6 @@ export const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
 
 export const LAST_ACCOUNT_KEY = "pf.quickAdd.accountId";
 export const LAST_PAYMENT_KEY = "pf.quickAdd.paymentMethod";
-
-export function normalizeAmountInput(raw: string): string {
-  const trimmed = raw.trim().replace(/\s/g, "");
-  if (!trimmed) {
-    return "";
-  }
-
-  const hasComma = trimmed.includes(",");
-  const hasDot = trimmed.includes(".");
-
-  // es-AR: 25.400.000,00 → miles con punto, decimal con coma
-  if (hasComma && hasDot) {
-    return trimmed.replace(/\./g, "").replace(",", ".");
-  }
-
-  // Solo coma: decimal (12,5 / 25400000,00)
-  if (hasComma) {
-    return trimmed.replace(",", ".");
-  }
-
-  if (hasDot) {
-    const dotCount = (trimmed.match(/\./g) ?? []).length;
-    // Varios puntos: miles (25.400.000)
-    if (dotCount > 1) {
-      return trimmed.replace(/\./g, "");
-    }
-    const [whole = "", fraction = ""] = trimmed.split(".");
-    // Un solo grupo de 3 dígitos tras el punto → miles es-AR (25.400)
-    // 1–2 dígitos → decimal (12.5 / 12.50)
-    if (/^\d+$/.test(whole) && /^\d{3}$/.test(fraction)) {
-      return `${whole}${fraction}`;
-    }
-  }
-
-  return trimmed;
-}
-
-export function isValidAmount(raw: string): boolean {
-  const value = normalizeAmountInput(raw);
-
-  if (!AMOUNT_PATTERN.test(value)) {
-    return false;
-  }
-
-  const [whole, fraction = ""] = value.split(".");
-  const scaled = BigInt(whole) * BigInt(100) + BigInt(fraction.padEnd(2, "0"));
-  return scaled > BigInt(0);
-}
-
-export function toApiAmount(raw: string): string {
-  const value = normalizeAmountInput(raw);
-  const [whole, fraction = ""] = value.split(".");
-  return `${whole}.${fraction.padEnd(2, "0")}`;
-}
 
 export function filterActiveAccounts(accounts: Account[]): Account[] {
   return accounts.filter((account) => account.isActive);

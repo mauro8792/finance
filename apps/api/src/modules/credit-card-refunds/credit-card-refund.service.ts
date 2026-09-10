@@ -1,10 +1,12 @@
 import { AppError } from "../../shared/errors/app-error.js";
+import { requireIdempotencyKey } from "../corrections/correction.repository.js";
 import type {
   AccreditAtomicResult,
   AccreditCreditCardRefundInput,
   CreateCreditCardRefundExpectationInput,
   CreditCardRefundExpectationView,
   CreditCardRefundRepository,
+  VoidAccreditationAtomicResult,
 } from "./credit-card-refund.types.js";
 
 export class CreditCardRefundService {
@@ -51,5 +53,26 @@ export class CreditCardRefundService {
     input: AccreditCreditCardRefundInput
   ): Promise<AccreditAtomicResult> {
     return this.refunds.accreditAtomic(input);
+  }
+
+  /**
+   * P0.15: reverses one accreditation. Card debt and bank balance are derived
+   * from ACTIVE movements, so both restore without compensating rows.
+   */
+  async voidAccreditation(
+    userId: string,
+    accreditationId: string,
+    input: { idempotencyKey: string }
+  ): Promise<VoidAccreditationAtomicResult> {
+    const idempotencyKey = requireIdempotencyKey(input?.idempotencyKey);
+    const record = await this.refunds.findAccreditationById(accreditationId);
+    if (!record || record.userId !== userId) {
+      throw new AppError("NOT_FOUND", "Acreditación no encontrada.", 404);
+    }
+    return this.refunds.voidAccreditationAtomic({
+      userId,
+      accreditationId,
+      idempotencyKey,
+    });
   }
 }

@@ -560,7 +560,9 @@ test("PATCH and VOID of INVESTMENT_OUTFLOW are rejected over HTTP", async () => 
   const patch = await request(app)
     .patch(`/api/transactions/${outflowId}`)
     .send({ description: "no" });
-  const voided = await request(app).post(`/api/transactions/${outflowId}/void`);
+  const voided = await request(app)
+    .post(`/api/transactions/${outflowId}/void`)
+    .send({ idempotencyKey: `void-${randomUUID()}` });
   assert.equal(patch.status, 400);
   assert.equal(patch.body.error.code, "INVESTMENT_OUTFLOW_IMMUTABLE");
   assert.equal(voided.status, 400);
@@ -630,11 +632,15 @@ test("POST /api/investments/:id/mature records return and rejects extra fields",
   const patchPrincipal = await request(app)
     .patch(`/api/transactions/${principal.id}`)
     .send({ description: "no" });
-  const voidPrincipal = await request(app).post(`/api/transactions/${principal.id}/void`);
+  const voidPrincipal = await request(app)
+    .post(`/api/transactions/${principal.id}/void`)
+    .send({ idempotencyKey: `void-${randomUUID()}` });
   const patchYield = await request(app)
     .patch(`/api/transactions/${yieldTx.id}`)
     .send({ description: "no" });
-  const voidYield = await request(app).post(`/api/transactions/${yieldTx.id}/void`);
+  const voidYield = await request(app)
+    .post(`/api/transactions/${yieldTx.id}/void`)
+    .send({ idempotencyKey: `void-${randomUUID()}` });
   assert.equal(patchPrincipal.body.error.code, "INVESTMENT_PRINCIPAL_RETURN_IMMUTABLE");
   assert.equal(voidPrincipal.body.error.code, "INVESTMENT_PRINCIPAL_RETURN_IMMUTABLE");
   assert.equal(patchYield.body.error.code, "INVESTMENT_RETURN_IMMUTABLE");

@@ -9,6 +9,7 @@ import {
   getTransactions,
   updateTransaction,
   voidTransaction,
+  voidTransfer,
 } from "../lib/api";
 import { formatMoney, formatMonthLabel } from "../lib/format-money";
 import {
@@ -19,8 +20,10 @@ import {
   toLocalDateTimeInput,
 } from "../lib/quick-add";
 import {
+  canCorrectTransaction,
   canEditTransaction,
   canVoidTransaction,
+  canVoidTransfer,
   directionLabel,
   filterYearOptions,
   formatTransactionDate,
@@ -31,9 +34,11 @@ import {
   TRANSACTION_TYPES,
   transactionAmountSign,
   transactionFormError,
+  toCorrectionInitialValues,
   toTransactionListFilters,
   transactionStatusLabel,
   transactionTypeLabel,
+  VOID_HISTORY_NOTICE,
   type MovementListItem,
 } from "../lib/transactions";
 import type {
@@ -44,6 +49,7 @@ import type {
   TransactionStatus,
   TransactionType,
 } from "../lib/types";
+import { QuickAddForm } from "./QuickAddForm";
 import { EmptyState, ErrorState } from "./QueryStatus";
 import styles from "./Transactions.module.css";
 
@@ -208,6 +214,7 @@ export function TransactionsPage() {
             <option value="">Todos</option>
             <option value="ACTIVE">Activo</option>
             <option value="VOIDED">Anulado</option>
+            <option value="REVERSED">Reversado</option>
           </select>
         </label>
       </div>
@@ -255,6 +262,7 @@ export function TransactionsPage() {
                 <TransferCard
                   item={item}
                   accountNames={accountNames}
+                  onChanged={refreshAfterChange}
                 />
               ) : (
                 <TransactionCard
@@ -294,15 +302,29 @@ function movementItemKey(item: MovementListItem): string {
 function TransferCard({
   item,
   accountNames,
+  onChanged,
 }: {
   item: Extract<MovementListItem, { kind: "transfer" }>;
   accountNames: Record<string, string>;
+  onChanged: () => Promise<void>;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const [confirmVoid, setConfirmVoid] = useState(false);
   const sourceName = accountNames[item.out.accountId] ?? "Cuenta origen";
   const destinationName = accountNames[item.in.accountId] ?? "Cuenta destino";
   const money = formatMoney(item.out.amount, item.out.currency);
   const description = item.out.description ?? item.in.description;
+  const allowVoid = canVoidTransfer(item.out, item.in);
+
+  // P0.15: las patas son inmutables por separado; se anulan las dos juntas.
+  const voidMut = useMutation({
+    mutationFn: () =>
+      voidTransfer(item.transferId, { idempotencyKey: crypto.randomUUID() }),
+    onSuccess: async () => {
+      await onChanged();
+      setConfirmVoid(false);
+    },
+  });
 
   return (
     <article className={styles.card}>
@@ -317,7 +339,11 @@ function TransferCard({
         {sourceName} → {destinationName}
       </p>
       {description ? <p className={styles.metaLine}>{description}</p> : null}
-      <span className={styles.badge}>{transactionStatusLabel(item.out.status)}</span>
+      <span
+        className={item.out.status === "ACTIVE" ? styles.badge : styles.badgeVoided}
+      >
+        {transactionStatusLabel(item.out.status)}
+      </span>
 
       {expanded ? (
         <div className={styles.details}>
@@ -341,7 +367,44 @@ function TransferCard({
         >
           {expanded ? "Ocultar detalle" : "Ver detalle"}
         </button>
+        {allowVoid ? (
+          <button
+            type="button"
+            className={styles.danger}
+            onClick={() => setConfirmVoid(true)}
+          >
+            Anular transferencia
+          </button>
+        ) : null}
       </div>
+
+      {confirmVoid ? (
+        <div className={styles.form}>
+          <p className={styles.confirm}>
+            ¿Querés anular esta transferencia? {VOID_HISTORY_NOTICE}
+          </p>
+          {voidMut.isError ? (
+            <p className={styles.formError}>{transactionFormError(voidMut.error)}</p>
+          ) : null}
+          <div className={styles.formActions}>
+            <button
+              type="button"
+              className={styles.danger}
+              disabled={voidMut.isPending}
+              onClick={() => voidMut.mutate()}
+            >
+              Confirmar anulación
+            </button>
+            <button
+              type="button"
+              className={styles.secondary}
+              onClick={() => setConfirmVoid(false)}
+            >
+              Cancelar
+            </button>
+          </div>
+        </div>
+      ) : null}
     </article>
   );
 }
@@ -362,6 +425,8 @@ function TransactionCard({
   const [expanded, setExpanded] = useState(false);
   const [editing, setEditing] = useState(false);
   const [confirmVoid, setConfirmVoid] = useState(false);
+  const [confirmCorrect, setConfirmCorrect] = useState(false);
+  const [correcting, setCorrecting] = useState(false);
   const sign = transactionAmountSign(transaction);
   const money = formatMoney(transaction.amount, transaction.currency);
   const signedAmount = sign ? `${sign} ${money}` : money;
@@ -371,12 +436,25 @@ function TransactionCard({
   const direction = directionLabel(transaction.metadata);
   const allowEdit = canEditTransaction(transaction);
   const allowVoid = canVoidTransaction(transaction);
+  const allowCorrect = canCorrectTransaction(transaction);
 
   const voidMut = useMutation({
-    mutationFn: () => voidTransaction(transaction.id),
+    mutationFn: () =>
+      voidTransaction(transaction.id, { idempotencyKey: crypto.randomUUID() }),
     onSuccess: async () => {
       await onChanged();
       setConfirmVoid(false);
+    },
+  });
+
+  // P0.15: corregir = anular el movimiento y volver a cargarlo prellenado.
+  const correctMut = useMutation({
+    mutationFn: () =>
+      voidTransaction(transaction.id, { idempotencyKey: crypto.randomUUID() }),
+    onSuccess: async () => {
+      await onChanged();
+      setConfirmCorrect(false);
+      setCorrecting(true);
     },
   });
 
@@ -412,7 +490,7 @@ function TransactionCard({
       {kind && transaction.type === "INCOME" ? (
         <p className={styles.metaLine}>{kind}</p>
       ) : null}
-      <span className={transaction.status === "VOIDED" ? styles.badgeVoided : styles.badge}>
+      <span className={transaction.status === "ACTIVE" ? styles.badge : styles.badgeVoided}>
         {transactionStatusLabel(transaction.status)}
       </span>
       {method ? <p className={styles.metaLine}>{method}</p> : null}
@@ -439,6 +517,15 @@ function TransactionCard({
             Editar
           </button>
         ) : null}
+        {allowCorrect ? (
+          <button
+            type="button"
+            className={styles.secondary}
+            onClick={() => setConfirmCorrect(true)}
+          >
+            Corregir
+          </button>
+        ) : null}
         {allowVoid ? (
           <button type="button" className={styles.danger} onClick={() => setConfirmVoid(true)}>
             Anular
@@ -458,9 +545,61 @@ function TransactionCard({
         />
       ) : null}
 
+      {confirmCorrect ? (
+        <div className={styles.form}>
+          <p className={styles.confirm}>
+            Vamos a anular este movimiento y abrir el alta prellenada.{" "}
+            {VOID_HISTORY_NOTICE}
+          </p>
+          {correctMut.isError ? (
+            <p className={styles.formError}>{transactionFormError(correctMut.error)}</p>
+          ) : null}
+          <div className={styles.formActions}>
+            <button
+              type="button"
+              className={styles.edit}
+              disabled={correctMut.isPending}
+              onClick={() => correctMut.mutate()}
+            >
+              Anular y corregir
+            </button>
+            <button
+              type="button"
+              className={styles.secondary}
+              onClick={() => setConfirmCorrect(false)}
+            >
+              Cancelar
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {correcting ? (
+        <div className={styles.form}>
+          <QuickAddForm
+            initialValues={toCorrectionInitialValues(transaction)}
+            onSaved={() => {
+              setCorrecting(false);
+              void onChanged();
+            }}
+          />
+          <div className={styles.formActions}>
+            <button
+              type="button"
+              className={styles.secondary}
+              onClick={() => setCorrecting(false)}
+            >
+              Cerrar
+            </button>
+          </div>
+        </div>
+      ) : null}
+
       {confirmVoid ? (
         <div className={styles.form}>
-          <p className={styles.confirm}>¿Querés anular este movimiento?</p>
+          <p className={styles.confirm}>
+            ¿Querés anular este movimiento? {VOID_HISTORY_NOTICE}
+          </p>
           {voidMut.isError ? (
             <p className={styles.formError}>{transactionFormError(voidMut.error)}</p>
           ) : null}

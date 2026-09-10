@@ -21,5 +21,6 @@ export function createPaymentControllerStub(): CreditCardPaymentController {
     list: notUsedInCardCrudTests,
     getById: notUsedInCardCrudTests,
     create: notUsedInCardCrudTests,
+    void: notUsedInCardCrudTests,
   } as unknown as CreditCardPaymentController;
 }

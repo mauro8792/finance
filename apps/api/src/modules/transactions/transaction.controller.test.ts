@@ -36,6 +36,10 @@ import type {
   TransferCreateResult,
   TransferView,
   UpdateTransactionRecord,
+  VoidTransactionAtomicInput,
+  VoidTransactionResult,
+  VoidTransferAtomicInput,
+  VoidTransferResult,
 } from "./transaction.types.js";
 
 type TransferLinkRecord = {
@@ -51,6 +55,7 @@ type TransferLinkRecord = {
   idempotencyKey: string;
   outTransactionId: string;
   inTransactionId: string;
+  voidedAt: Date | null;
   createdAt: Date;
 };
 
@@ -93,6 +98,7 @@ function toTransferView(row: TransferLinkRecord): TransferView {
     occurredAt: row.occurredAt,
     outTransactionId: row.outTransactionId,
     inTransactionId: row.inTransactionId,
+    voidedAt: row.voidedAt,
     createdAt: row.createdAt,
   };
 }
@@ -202,6 +208,8 @@ class MemoryTransactionRepository implements TransactionRepository {
   readonly items: Transaction[] = [];
   accounts: AccountRepository | null = null;
   private readonly transferLinksByKey = new Map<string, TransferLinkRecord>();
+  /** idempotencyKey → target id, standing in for correction_operations. */
+  private readonly corrections = new Map<string, string>();
 
   async create(input: CreateTransactionInput): Promise<Transaction> {
     const now = new Date();
@@ -411,6 +419,7 @@ class MemoryTransactionRepository implements TransactionRepository {
       idempotencyKey: input.idempotencyKey,
       outTransactionId: out.id,
       inTransactionId: inn.id,
+      voidedAt: null,
       createdAt: out.createdAt,
     };
     this.transferLinksByKey.set(key, link);
@@ -433,6 +442,80 @@ class MemoryTransactionRepository implements TransactionRepository {
       (item) => item.userId === userId && item.transferId === transferId
     );
     return row ? toTransferView(row) : null;
+  }
+
+  async voidTransactionAtomic(
+    input: VoidTransactionAtomicInput
+  ): Promise<VoidTransactionResult> {
+    const correctionKey = `${input.userId}::${input.idempotencyKey}`;
+    const replay = this.corrections.get(correctionKey);
+    const current = await this.findById(input.transactionId);
+    if (!current || current.userId !== input.userId) {
+      throw new AppError("NOT_FOUND", "Movimiento no encontrado.", 404);
+    }
+    if (replay) {
+      return {
+        created: false,
+        transaction: current,
+        resultStatus: "VOIDED",
+        installmentId: null,
+        purchaseId: null,
+      };
+    }
+    if (current.status !== "ACTIVE") {
+      throw new AppError(
+        "TRANSACTION_ALREADY_VOIDED",
+        "El movimiento ya está anulado.",
+        409
+      );
+    }
+    const updated = await this.update(input.transactionId, { status: "VOIDED" });
+    this.corrections.set(correctionKey, input.transactionId);
+    return {
+      created: true,
+      transaction: updated,
+      resultStatus: "VOIDED",
+      installmentId: null,
+      purchaseId: null,
+    };
+  }
+
+  async voidTransferAtomic(
+    input: VoidTransferAtomicInput
+  ): Promise<VoidTransferResult> {
+    const link = [...this.transferLinksByKey.values()].find(
+      (item) =>
+        item.userId === input.userId && item.transferId === input.transferId
+    );
+    if (!link) {
+      throw new AppError("NOT_FOUND", "Transferencia no encontrada.", 404);
+    }
+    const correctionKey = `${input.userId}::${input.idempotencyKey}`;
+    const replay = this.corrections.get(correctionKey);
+    if (!replay) {
+      if (link.voidedAt != null) {
+        throw new AppError(
+          "TRANSFER_ALREADY_VOIDED",
+          "La transferencia ya está anulada.",
+          409
+        );
+      }
+      await this.update(link.outTransactionId, { status: "REVERSED" });
+      await this.update(link.inTransactionId, { status: "REVERSED" });
+      link.voidedAt = new Date();
+      this.corrections.set(correctionKey, input.transferId);
+    }
+    const out = await this.findById(link.outTransactionId);
+    const inn = await this.findById(link.inTransactionId);
+    if (!out || !inn) {
+      throw new Error("missing transfer legs");
+    }
+    return {
+      created: !replay,
+      transfer: toTransferView(link),
+      out,
+      in: inn,
+    };
   }
 }
 
@@ -768,7 +851,9 @@ test("GET /api/transactions filters by accountId and status", async () => {
     accountId: account.id,
     categoryId: category.id,
   });
-  await request(app).post(`/api/transactions/${toVoid.body.id}/void`);
+  await request(app)
+    .post(`/api/transactions/${toVoid.body.id}/void`)
+    .send({ idempotencyKey: `void-${randomUUID()}` });
 
   const byAccount = await request(app).get("/api/transactions").query({
     accountId: account.id,
@@ -955,9 +1040,9 @@ test("POST /api/transactions/:id/void voids an expense", async () => {
     categoryId: category.id,
   });
 
-  const response = await request(app).post(
-    `/api/transactions/${created.body.id}/void`
-  );
+  const response = await request(app)
+    .post(`/api/transactions/${created.body.id}/void`)
+    .send({ idempotencyKey: `void-${randomUUID()}` });
 
   assert.equal(response.status, 200);
   assert.equal(response.body.id, created.body.id);
@@ -974,11 +1059,13 @@ test("POST /api/transactions/:id/void rejects an already voided movement", async
     accountId: account.id,
     categoryId: category.id,
   });
-  await request(app).post(`/api/transactions/${created.body.id}/void`);
+  await request(app)
+    .post(`/api/transactions/${created.body.id}/void`)
+    .send({ idempotencyKey: `void-${randomUUID()}` });
 
-  const response = await request(app).post(
-    `/api/transactions/${created.body.id}/void`
-  );
+  const response = await request(app)
+    .post(`/api/transactions/${created.body.id}/void`)
+    .send({ idempotencyKey: `void-other-${randomUUID()}` });
 
   assert.equal(response.status, 409);
   assert.equal(response.body.error.code, "TRANSACTION_ALREADY_VOIDED");
@@ -1063,7 +1150,9 @@ test("POST /api/transactions/:id/reimbursements rejects a VOIDED expense", async
     accountId: account.id,
     categoryId: category.id,
   });
-  await request(app).post(`/api/transactions/${expense.body.id}/void`);
+  await request(app)
+    .post(`/api/transactions/${expense.body.id}/void`)
+    .send({ idempotencyKey: `void-${randomUUID()}` });
 
   const response = await request(app)
     .post(`/api/transactions/${expense.body.id}/reimbursements`)
@@ -1205,9 +1294,9 @@ test("POST /api/transactions/:id/void rejects an individual TRANSFER leg", async
     idempotencyKey: transferIdempotencyKey(),
   });
 
-  const response = await request(app).post(
-    `/api/transactions/${created.body.in.id}/void`
-  );
+  const response = await request(app)
+    .post(`/api/transactions/${created.body.in.id}/void`)
+    .send({ idempotencyKey: `void-${randomUUID()}` });
 
   assert.equal(response.status, 400);
   assert.equal(response.body.error.code, "TRANSFER_IMMUTABLE");

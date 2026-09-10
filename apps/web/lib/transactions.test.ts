@@ -2,9 +2,14 @@ import assert from "node:assert/strict";
 import { describe, it } from "vitest";
 import type { Transaction } from "./types";
 import {
+  canCorrectTransaction,
   canEditTransaction,
   canVoidTransaction,
+  canVoidTransfer,
   filterYearOptions,
+  isActiveTransaction,
+  toCorrectionInitialValues,
+  VOID_HISTORY_NOTICE,
   formatTransactionDate,
   groupTransactionsForDisplay,
   incomeKindLabel,
@@ -50,6 +55,7 @@ describe("transactions helpers", () => {
     assert.equal(incomeKindLabel("CAPITAL"), "Capital");
     assert.equal(transactionStatusLabel("ACTIVE"), "Activo");
     assert.equal(transactionStatusLabel("VOIDED"), "Anulado");
+    assert.equal(transactionStatusLabel("REVERSED"), "Reversado");
   });
 
   it("uses presentation signs without inventing direction", () => {
@@ -103,6 +109,79 @@ describe("transactions helpers", () => {
     assert.equal(
       canVoidTransaction(tx({ type: "EXPENSE", relatedTransactionId: "tx-2" })),
       false
+    );
+  });
+
+  it("treats REVERSED like VOIDED: out of the numbers, still in history", () => {
+    assert.equal(isActiveTransaction(tx({ type: "EXPENSE" })), true);
+    assert.equal(isActiveTransaction(tx({ type: "EXPENSE", status: "VOIDED" })), false);
+    assert.equal(
+      isActiveTransaction(tx({ type: "EXPENSE", status: "REVERSED" })),
+      false
+    );
+    assert.equal(canEditTransaction(tx({ type: "EXPENSE", status: "REVERSED" })), false);
+    assert.equal(canVoidTransaction(tx({ type: "EXPENSE", status: "REVERSED" })), false);
+  });
+
+  it("voids a transfer as a whole, never a single leg", () => {
+    const out = tx({
+      id: "tx-out",
+      type: "TRANSFER",
+      categoryId: null,
+      metadata: { transferId: "tr-1", direction: "OUT" },
+    });
+    const incoming = tx({
+      id: "tx-in",
+      type: "TRANSFER",
+      categoryId: null,
+      metadata: { transferId: "tr-1", direction: "IN" },
+    });
+
+    assert.equal(canVoidTransfer(out, incoming), true);
+    // Las patas individuales siguen siendo inmutables.
+    assert.equal(canVoidTransaction(out), false);
+    assert.equal(canVoidTransaction(incoming), false);
+    assert.equal(
+      canVoidTransfer({ ...out, status: "REVERSED" }, { ...incoming, status: "REVERSED" }),
+      false
+    );
+    assert.equal(canVoidTransfer(out, { ...incoming, status: "REVERSED" }), false);
+    assert.equal(
+      VOID_HISTORY_NOTICE,
+      "El movimiento original se conserva por historial."
+    );
+  });
+
+  it("offers Corregir only for simple EXPENSE/INCOME movements", () => {
+    assert.equal(canCorrectTransaction(tx({ type: "EXPENSE" })), true);
+    assert.equal(canCorrectTransaction(tx({ type: "INCOME" })), true);
+    assert.equal(canCorrectTransaction(tx({ type: "ADJUSTMENT" })), false);
+    assert.equal(canCorrectTransaction(tx({ type: "REIMBURSEMENT" })), false);
+    assert.equal(canCorrectTransaction(tx({ type: "TRANSFER" })), false);
+    assert.equal(
+      canCorrectTransaction(tx({ type: "EXPENSE", status: "VOIDED" })),
+      false
+    );
+    assert.deepEqual(
+      toCorrectionInitialValues(
+        tx({
+          type: "EXPENSE",
+          amount: "1234.50",
+          accountId: "acc-9",
+          categoryId: "cat-9",
+          description: "Súper",
+          paymentMethod: "CASH",
+        })
+      ),
+      {
+        kind: "EXPENSE",
+        amount: "1234.50",
+        accountId: "acc-9",
+        categoryId: "cat-9",
+        description: "Súper",
+        paymentMethod: "CASH",
+        incomeKind: null,
+      }
     );
   });
 

@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { CURRENCIES, type Currency } from "shared";
 import { AppError } from "../../shared/errors/app-error.js";
+import { requireIdempotencyKey } from "../corrections/correction.repository.js";
 import type { CategoryRepository } from "../categories/category.types.js";
 import type { CreditCardRepository } from "../credit-cards/credit-card.types.js";
 import { sumAmounts } from "../transactions/net-expense.js";
@@ -20,6 +21,7 @@ import {
 import type {
   CreditCardPurchaseRepository,
   PurchaseWithInstallments,
+  VoidPurchaseAtomicResult,
 } from "./credit-card-purchase.types.js";
 
 export type CreateCreditCardPurchaseRequest = {
@@ -36,7 +38,7 @@ export type CreateCreditCardPurchaseRequest = {
  * P0.7–P0.8: N-installment purchases + safe due recognition.
  * Create: #1 RECOGNIZED immediately; #2..N PENDING.
  * recognizeDueInstallments: PENDING due → RECOGNIZED + EXPENSE (idempotent).
- * Void endpoint deferred to P0.15.
+ * P0.15: void reverses recognized EXPENSEs and cancels the schedule.
  */
 export class CreditCardPurchaseService {
   constructor(
@@ -56,6 +58,28 @@ export class CreditCardPurchaseService {
       throw new AppError("NOT_FOUND", "Compra no encontrada.", 404);
     }
     return item;
+  }
+
+  /**
+   * P0.15: void a purchase. Without recognized installments this only cancels
+   * the schedule; with recognized ones the EXPENSEs are reversed first so card
+   * debt and spending drop back on their own (both derived from ACTIVE).
+   */
+  async void(
+    userId: string,
+    id: string,
+    input: { idempotencyKey: string }
+  ): Promise<VoidPurchaseAtomicResult> {
+    const idempotencyKey = requireIdempotencyKey(input?.idempotencyKey);
+    const current = await this.purchases.findById(id);
+    if (!current || current.purchase.userId !== userId) {
+      throw new AppError("NOT_FOUND", "Compra no encontrada.", 404);
+    }
+    return this.purchases.voidPurchaseAtomic({
+      userId,
+      purchaseId: id,
+      idempotencyKey,
+    });
   }
 
   /**

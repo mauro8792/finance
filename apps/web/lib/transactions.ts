@@ -20,6 +20,7 @@ export const TRANSACTION_TYPES: TransactionType[] = [
   "INVESTMENT_RETURN",
   "CURRENCY_EXCHANGE",
   "HOUSING_PAYMENT",
+  "CREDIT_CARD_PAYMENT",
 ];
 
 export const TRANSACTION_TYPE_LABELS: Record<TransactionType, string> = {
@@ -33,6 +34,7 @@ export const TRANSACTION_TYPE_LABELS: Record<TransactionType, string> = {
   INVESTMENT_RETURN: "Rendimiento",
   CURRENCY_EXCHANGE: "Cambio de moneda",
   HOUSING_PAYMENT: "Pago vivienda",
+  CREDIT_CARD_PAYMENT: "Pago de tarjeta",
 };
 
 export const INCOME_KIND_LABELS: Record<IncomeKind, string> = {
@@ -43,6 +45,7 @@ export const INCOME_KIND_LABELS: Record<IncomeKind, string> = {
 export const TRANSACTION_STATUS_LABELS: Record<TransactionStatus, string> = {
   ACTIVE: "Activo",
   VOIDED: "Anulado",
+  REVERSED: "Reversado",
 };
 
 const IMMUTABLE_TYPES = new Set<TransactionType>([
@@ -52,6 +55,7 @@ const IMMUTABLE_TYPES = new Set<TransactionType>([
   "INVESTMENT_OUTFLOW",
   "INVESTMENT_PRINCIPAL_RETURN",
   "INVESTMENT_RETURN",
+  "CREDIT_CARD_PAYMENT",
 ]);
 
 export type AmountSign = "+" | "-" | "";
@@ -159,11 +163,64 @@ export function canVoidTransaction(transaction: Transaction): boolean {
   return true;
 }
 
+/**
+ * P0.15 — sólo ACTIVE participa de saldos, deuda y gasto; VOIDED y REVERSED
+ * quedan en el historial pero no impactan los números.
+ */
+export function isActiveTransaction(transaction: Transaction): boolean {
+  return transaction.status === "ACTIVE";
+}
+
+/**
+ * P0.15 — una transferencia se anula entera desde
+ * POST /api/transfers/:id/void; las patas individuales siguen inmutables.
+ */
+export function canVoidTransfer(out: Transaction, incoming: Transaction): boolean {
+  return out.status === "ACTIVE" && incoming.status === "ACTIVE";
+}
+
+/** Aviso de confirmación: anular no borra, deja el registro en el historial. */
+export const VOID_HISTORY_NOTICE =
+  "El movimiento original se conserva por historial.";
+
+/**
+ * P0.15 — "Corregir" = anular + volver a cargar. Sólo tiene sentido en
+ * movimientos simples editables (gasto/ingreso propios sin vínculos).
+ */
+export function canCorrectTransaction(transaction: Transaction): boolean {
+  if (!canVoidTransaction(transaction)) {
+    return false;
+  }
+  return transaction.type === "EXPENSE" || transaction.type === "INCOME";
+}
+
+/** Prellenado del alta rápida al corregir un movimiento simple. */
+export function toCorrectionInitialValues(transaction: Transaction): {
+  kind: "EXPENSE" | "INCOME";
+  amount: string;
+  accountId: string;
+  categoryId: string;
+  description: string;
+  paymentMethod: Transaction["paymentMethod"];
+  incomeKind: IncomeKind | null;
+} {
+  return {
+    kind: transaction.type === "INCOME" ? "INCOME" : "EXPENSE",
+    amount: transaction.amount,
+    accountId: transaction.accountId,
+    categoryId: transaction.categoryId ?? "",
+    description: transaction.description ?? "",
+    paymentMethod: transaction.paymentMethod,
+    incomeKind: transaction.metadata?.incomeKind ?? null,
+  };
+}
+
 export function transactionAmountSign(transaction: Transaction): AmountSign {
   switch (transaction.type) {
     case "EXPENSE":
     case "HOUSING_PAYMENT":
     case "INVESTMENT_OUTFLOW":
+    case "CREDIT_CARD_PAYMENT":
       return "-";
     case "INCOME":
     case "REIMBURSEMENT":
@@ -267,6 +324,15 @@ const TRANSACTION_ERRORS: Record<string, string> = {
   TRANSACTION_ALREADY_VOIDED: "El movimiento ya está anulado.",
   TRANSACTION_RELATED:
     "No se puede anular un movimiento relacionado sin resolver los movimientos vinculados.",
+  IDEMPOTENCY_CONFLICT: "Esa clave de anulación ya se usó para otra operación.",
+  CREDIT_CARD_PAYMENT_VOID_REQUIRED:
+    "Un pago de tarjeta se anula desde el detalle de la tarjeta.",
+  TRANSFER_ALREADY_VOIDED: "La transferencia ya está anulada.",
+  PAYMENT_ALREADY_VOIDED: "El pago ya está anulado.",
+  PURCHASE_ALREADY_VOIDED: "La compra ya está anulada.",
+  PURCHASE_HAS_ACTIVE_REFUNDS:
+    "Anulá primero los reintegros acreditados de la compra.",
+  REFUND_ACCREDITATION_ALREADY_VOIDED: "La acreditación ya está anulada.",
   TRANSFER_IMMUTABLE: "Este movimiento no se puede modificar.",
   CURRENCY_EXCHANGE_IMMUTABLE: "Este movimiento no se puede modificar.",
   HOUSING_PAYMENT_IMMUTABLE: "Este movimiento no se puede modificar.",

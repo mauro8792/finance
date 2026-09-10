@@ -12,6 +12,7 @@ import {
   TransactionIdParamsSchema,
   TransferIdParamsSchema,
   UpdateTransactionSchema,
+  VoidRequestSchema,
 } from "./transaction.schema.js";
 import type { TransactionService } from "./transaction.service.js";
 import type { Transaction, TransferView } from "./transaction.types.js";
@@ -59,8 +60,25 @@ export class TransactionController {
   void = async (req: Request, res: Response): Promise<void> => {
     const userId = getAuthUserId(req);
     const { id } = parseBody(TransactionIdParamsSchema, req.params);
-    const voided = await this.transactions.void(userId, id);
+    const body = parseBody(VoidRequestSchema, req.body);
+    const voided = await this.transactions.void(userId, id, {
+      idempotencyKey: body.idempotencyKey,
+    });
     res.status(200).json(toTransactionResponse(voided));
+  };
+
+  voidTransfer = async (req: Request, res: Response): Promise<void> => {
+    const userId = getAuthUserId(req);
+    const { id } = parseBody(TransferIdParamsSchema, req.params);
+    const body = parseBody(VoidRequestSchema, req.body);
+    const result = await this.transactions.voidTransfer(userId, id, {
+      idempotencyKey: body.idempotencyKey,
+    });
+    res.status(200).json({
+      ...toTransferResponse(result.transfer),
+      out: toTransactionResponse(result.out),
+      in: toTransactionResponse(result.in),
+    });
   };
 
   registerReimbursement = async (req: Request, res: Response): Promise<void> => {
@@ -208,6 +226,7 @@ function toTransferResponse(item: TransferView) {
     occurredAt: item.occurredAt.toISOString(),
     outTransactionId: item.outTransactionId,
     inTransactionId: item.inTransactionId,
+    voidedAt: item.voidedAt ? item.voidedAt.toISOString() : null,
     createdAt: item.createdAt.toISOString(),
   };
 }

@@ -49,11 +49,26 @@ enum TransactionType {
   @@map("transaction_type_enum")
 }
 
+/// P0.15: VOIDED = plain single-movement void. REVERSED = leg voided as part of
+/// a compound correction (transfer, card payment, installment, refund accreditation).
+/// Only ACTIVE participates in balances, card debt and spending.
 enum TransactionStatus {
   ACTIVE
   VOIDED
+  REVERSED
 
   @@map("transaction_status_enum")
+}
+
+/// P0.15: audit trail + idempotency unit for every void/correction path.
+enum CorrectionKind {
+  TRANSACTION_VOID
+  TRANSFER_VOID
+  PAYMENT_VOID
+  PURCHASE_VOID
+  REFUND_ACCREDITATION_VOID
+
+  @@map("correction_kind_enum")
 }
 
 enum PaymentMethod {
@@ -199,9 +214,29 @@ model User {
   creditCardRecurringCharges       CreditCardRecurringCharge[]
   creditCardRecurringChargeOccurrences CreditCardRecurringChargeOccurrence[]
   transferLinks                    TransferLink[]
+  correctionOperations             CorrectionOperation[]
   sessions                         Session[]
 
   @@map("users")
+}
+
+/// P0.15: one row per applied void/correction. Unique per (user, idempotencyKey)
+/// so replays return the recorded result instead of applying the change twice.
+model CorrectionOperation {
+  id             String            @id @default(uuid()) @db.Uuid
+  userId         String            @map("user_id") @db.Uuid
+  idempotencyKey String            @map("idempotency_key") @db.VarChar(128)
+  kind           CorrectionKind
+  /// VOIDED or REVERSED (the status left on the affected transaction legs).
+  resultStatus   TransactionStatus @map("result_status")
+  targetId       String            @map("target_id") @db.Uuid
+  resultJson     Json?             @map("result_json") @db.JsonB
+  createdAt      DateTime          @default(now()) @map("created_at") @db.Timestamptz
+  user           User              @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@unique([userId, idempotencyKey])
+  @@index([userId, kind, targetId])
+  @@map("correction_operations")
 }
 
 model Session {
@@ -322,6 +357,9 @@ model TransferLink {
   /// True when the client sent occurredAt (participates in idempotency canonical payload).
   clientSentOccurredAt Boolean  @default(false) @map("client_sent_occurred_at")
   idempotencyKey       String   @map("idempotency_key") @db.VarChar(128)
+  /// P0.15: set when both legs were atomically reversed. Null while active.
+  voidedAt             DateTime? @map("voided_at") @db.Timestamptz
+  voidIdempotencyKey   String?  @map("void_idempotency_key") @db.VarChar(128)
   createdAt            DateTime @default(now()) @map("created_at") @db.Timestamptz
   user                 User     @relation(fields: [userId], references: [id], onDelete: Restrict)
   sourceAccount        Account  @relation("TransferLinkSource", fields: [sourceAccountId], references: [id], onDelete: Restrict)
@@ -412,6 +450,9 @@ model HousingPayment {
   @@map("housing_payments")
 }
 
+/// P0.15: investments stay IMMUTABLE. Their INVESTMENT_OUTFLOW /
+/// INVESTMENT_PRINCIPAL_RETURN / INVESTMENT_RETURN legs have no void path;
+/// corrections go through the investment lifecycle (mature/renew/cancel).
 model Investment {
   id                       String           @id @default(uuid()) @db.Uuid
   userId                   String           @map("user_id") @db.Uuid
@@ -507,6 +548,9 @@ model CreditCardPaymentLink {
   creditCardId   String               @map("credit_card_id") @db.Uuid
   statementId    String?              @map("statement_id") @db.Uuid
   idempotencyKey String               @map("idempotency_key") @db.VarChar(128)
+  /// P0.15: set when the CREDIT_CARD_PAYMENT leg was reversed. Null while active.
+  voidedAt       DateTime?            @map("voided_at") @db.Timestamptz
+  voidIdempotencyKey String?          @map("void_idempotency_key") @db.VarChar(128)
   createdAt      DateTime             @default(now()) @map("created_at") @db.Timestamptz
   user           User                 @relation(fields: [userId], references: [id], onDelete: Restrict)
   transaction    Transaction          @relation(fields: [transactionId], references: [id], onDelete: Restrict)
@@ -653,6 +697,9 @@ model CreditCardRefundAccreditation {
   creditCardId                  String                          @map("credit_card_id") @db.Uuid
   destinationType               CreditCardRefundDestinationType @map("destination_type")
   idempotencyKey                String                          @map("idempotency_key") @db.VarChar(128)
+  /// P0.15: set when the REIMBURSEMENT leg was reversed. Null while active.
+  voidedAt                      DateTime?                       @map("voided_at") @db.Timestamptz
+  voidIdempotencyKey            String?                         @map("void_idempotency_key") @db.VarChar(128)
   createdAt                     DateTime                        @default(now()) @map("created_at") @db.Timestamptz
   user                          User                            @relation(fields: [userId], references: [id], onDelete: Restrict)
   transaction                   Transaction                     @relation(fields: [transactionId], references: [id], onDelete: Restrict)

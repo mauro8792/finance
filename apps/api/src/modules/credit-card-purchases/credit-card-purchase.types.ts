@@ -85,6 +85,20 @@ export type CreatePurchaseAtomicInput = {
   transaction: CreateTransactionInput;
 };
 
+export type VoidCreditCardPurchaseInput = {
+  userId: string;
+  purchaseId: string;
+  idempotencyKey: string;
+};
+
+export type VoidPurchaseAtomicResult = {
+  created: boolean;
+  purchase: PurchaseWithInstallments;
+  /** EXPENSE ids moved to REVERSED (empty when nothing was recognized yet). */
+  reversedTransactionIds: string[];
+  cancelledInstallmentsCount: number;
+};
+
 export interface CreditCardPurchaseRepository {
   createPurchaseAtomic(
     input: CreatePurchaseAtomicInput
@@ -109,4 +123,13 @@ export interface CreditCardPurchaseRepository {
     recognizedAt: Date;
     transactionId: string;
   }): Promise<RecognizeInstallmentOutcome>;
+  /**
+   * P0.15: controlled void. Recognized installment EXPENSEs are reversed and
+   * their recognition cleared; every installment ends CANCELLED and the
+   * purchase VOIDED. Rejected while accredited refunds still point at the
+   * recognized expenses.
+   */
+  voidPurchaseAtomic(
+    input: VoidCreditCardPurchaseInput
+  ): Promise<VoidPurchaseAtomicResult>;
 }

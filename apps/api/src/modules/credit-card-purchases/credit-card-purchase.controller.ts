@@ -5,6 +5,7 @@ import { getAuthUserId } from "../auth/auth-request.js";
 import {
   CreateCreditCardPurchaseSchema,
   CreditCardPurchaseIdParamsSchema,
+  VoidCreditCardPurchaseSchema,
 } from "./credit-card-purchase.schema.js";
 import type { CreditCardPurchaseService } from "./credit-card-purchase.service.js";
 import type { PurchaseWithInstallments } from "./credit-card-purchase.types.js";
@@ -38,6 +39,20 @@ export class CreditCardPurchaseController {
       installmentsCount: body.installmentsCount,
     });
     res.status(201).json(toPurchaseDetailResponse(created));
+  };
+
+  void = async (req: Request, res: Response): Promise<void> => {
+    const userId = getAuthUserId(req);
+    const { id } = parseBody(CreditCardPurchaseIdParamsSchema, req.params);
+    const body = parseBody(VoidCreditCardPurchaseSchema, req.body);
+    const result = await this.purchases.void(userId, id, {
+      idempotencyKey: body.idempotencyKey,
+    });
+    res.status(200).json({
+      ...toPurchaseDetailResponse(result.purchase),
+      reversedTransactionIds: result.reversedTransactionIds,
+      cancelledInstallmentsCount: result.cancelledInstallmentsCount,
+    });
   };
 }
 

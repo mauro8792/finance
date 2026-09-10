@@ -48,6 +48,8 @@ import type {
   UpdateAccountRequest,
   UpdateHousingRequest,
   UpdateTransactionRequest,
+  VoidRequest,
+  VoidTransferResult,
 } from "./types";
 import { downloadBlob } from "./download-file";
 
@@ -239,9 +241,27 @@ export async function updateTransaction(
   });
 }
 
-export async function voidTransaction(id: string): Promise<Transaction> {
+export async function voidTransaction(
+  id: string,
+  payload: VoidRequest
+): Promise<Transaction> {
   return requestJson<Transaction>(`/api/transactions/${id}/void`, {
     method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+/**
+ * P0.15 — anula las dos patas de la transferencia en una sola operación
+ * atómica. Nunca se anula una pata sola.
+ */
+export async function voidTransfer(
+  transferId: string,
+  payload: VoidRequest
+): Promise<VoidTransferResult> {
+  return requestJson<VoidTransferResult>(`/api/transfers/${transferId}/void`, {
+    method: "POST",
+    body: JSON.stringify(payload),
   });
 }
 
@@ -553,5 +573,45 @@ export async function getRecurringChargeOutlook(
   });
   return requestJson<RecurringChargeOutlook>(
     `/api/credit-card-recurring-charges/outlook?${params}`
+  );
+}
+
+/** P0.15 — void card payment (dedicated; not generic transaction void). */
+export async function voidCreditCardPayment(
+  creditCardId: string,
+  paymentId: string,
+  payload: VoidRequest
+): Promise<unknown> {
+  return requestJson(
+    `/api/credit-cards/${creditCardId}/payments/${paymentId}/void`,
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }
+  );
+}
+
+/** P0.15 — void purchase + unwind recognized installments. */
+export async function voidCreditCardPurchase(
+  purchaseId: string,
+  payload: VoidRequest
+): Promise<unknown> {
+  return requestJson(`/api/credit-card-purchases/${purchaseId}/void`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+/** P0.15 — void refund accreditation. */
+export async function voidRefundAccreditation(
+  accreditationId: string,
+  payload: VoidRequest
+): Promise<unknown> {
+  return requestJson(
+    `/api/credit-card-refunds/accreditations/${accreditationId}/void`,
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }
   );
 }

@@ -16,7 +16,7 @@ La AI puede explicar resultados, pero estas reglas pertenecen al backend.
 
 Los saldos y métricas se derivan de movimientos `ACTIVE`.
 
-Una transacción `VOIDED` conserva historial pero no participa en cálculos.
+Una transacción `VOIDED` o `REVERSED` conserva historial pero no participa en cálculos.
 
 No modificar saldos directamente.
 
@@ -818,6 +818,45 @@ Ejemplo: anular un gasto con reintegros existentes.
 MVP debe impedir la anulación directa si deja relaciones inconsistentes o requerir resolver/anular movimientos relacionados.
 
 No hacer cascadas financieras silenciosas.
+
+## 34.1 Void seguro / correcciones (P0.15 DONE definitivo LIVE)
+
+Nunca hay borrado físico. Anular es cambiar el estado del movimiento y dejar
+el rastro: `VOIDED` para la anulación simple, `REVERSED` para la pata anulada
+dentro de una corrección compuesta. Los saldos, la deuda de tarjeta y el gasto
+se derivan sólo de `ACTIVE`, así que no se crean movimientos compensatorios.
+
+Toda anulación exige `idempotencyKey` (mínimo 8 caracteres) y queda registrada
+en `correction_operations`. Repetir la misma clave devuelve el mismo resultado;
+usar la misma clave sobre otro target es `409 IDEMPOTENCY_CONFLICT`; usar una
+clave nueva sobre algo ya anulado devuelve el error `*_ALREADY_VOIDED`
+correspondiente.
+
+Caminos, uno por tipo de operación:
+
+- movimiento simple (`EXPENSE` de banco, `INCOME`, `ADJUSTMENT`,
+  `REIMBURSEMENT` sin acreditación) → `POST /api/transactions/:id/void` → `VOIDED`;
+- `EXPENSE` de tarjeta vinculado a una cuota reconocida → mismo endpoint, pero
+  el resultado es `REVERSED` y la cuota vuelve a `PENDING` con la reconocimiento
+  limpia; si la compra estaba `ACTIVE` sigue `ACTIVE`;
+- transferencia → `POST /api/transfers/:id/void` anula **las dos** patas a
+  `REVERSED` en una sola transacción; nunca se anula una pata sola
+  (`TRANSFER_IMMUTABLE` sigue vigente sobre las patas);
+- pago de tarjeta → `POST /api/credit-cards/:id/payments/:paymentId/void`; el
+  banco y `currentCardDebt` se restauran por derivación y el estado de pago del
+  resumen se recalcula contando sólo pagos `ACTIVE`, sin reescribir el snapshot
+  de cierre;
+- compra en cuotas → `POST /api/credit-card-purchases/:id/void`; sin cuotas
+  reconocidas sólo cancela el cronograma; con cuotas reconocidas reversa esos
+  `EXPENSE` y cancela el resto. Si quedan reintegros acreditados vivos sobre la
+  compra se rechaza con `PURCHASE_HAS_ACTIVE_REFUNDS`;
+- acreditación de reintegro →
+  `POST /api/credit-card-refunds/accreditations/:id/void`; recalcula el estado
+  de la expectativa (`EXPECTED` / `PARTIALLY_ACCREDITED` / `ACCREDITED`) desde
+  las acreditaciones `ACTIVE` restantes, y una expectativa cerrada por
+  cancelación nunca se reabre.
+
+Las inversiones siguen **inmutables**: no hay camino de void.
 
 ---
 

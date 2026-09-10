@@ -149,7 +149,7 @@ Gastos no tarjeta: `accountId` obligatorio, `creditCardId = null`.
 **API:**
 - `GET/POST /api/credit-card-purchases`
 - `GET /api/credit-card-purchases/:id`
-- Void diferido a P0.15 (no endpoint void en P0.6)
+- Void diferido a P0.15 → hoy `POST /api/credit-card-purchases/:id/void`
 
 **Tests:** `credit-card-purchase.service.test.ts` (A–L) + schema test.
 
@@ -295,7 +295,7 @@ currentCardDebt = SUM ACTIVE EXPENSE(card) − SUM ACTIVE CREDIT_CARD_PAYMENT(ca
 **API:**
 - `POST/GET /api/credit-cards/:id/payments`
 - `GET /api/credit-cards/:id/payments/:paymentId`
-- sin PATCH/DELETE (void = P0.15)
+- sin PATCH/DELETE; void en P0.15 → `POST /api/credit-cards/:id/payments/:paymentId/void`
 
 **Migración:** `20260909120000_add_credit_card_payment` (enum + link table).
 
@@ -364,7 +364,7 @@ No auto-acreditar. Estados expectativa: `EXPECTED` | `PARTIALLY_ACCREDITED` | `A
 - QuickAdd tab Transferencia → mismo `POST /api/transfers`;
 - Movimientos agrupan par completo; legacy incompleto = fila individual;
 - CSV sigue 2 filas físicas “Transferencia”;
-- void atómico de transferencia → P0.15;
+- void atómico de transferencia → P0.15 (`POST /api/transfers/:id/void`);
 - sin AI parsing de transferencias.
 
 **Migraciones:** `20260910120000_add_transfer_link` (additive). Aplicada en Neon.
@@ -377,7 +377,7 @@ No auto-acreditar. Estados expectativa: `EXPECTED` | `PARTIALLY_ACCREDITED` | `A
 
 ## P0.13 — Comisiones / recurrentes (registro real)
 
-**Estado: DONE definitivo LIVE** (código + Neon migrate + Render API + Vercel web smoke 2026-09-10). **P0.14 NOT STARTED.** **P0.15 void/correcciones pendiente.**
+**Estado: DONE definitivo LIVE** (código + Neon migrate + Render API + Vercel web smoke 2026-09-10). **P0.14 DONE definitivo LIVE.** **P0.15 DONE definitivo LIVE.**
 
 **Objetivo:** Plantillas de cargos recurrentes en tarjeta + confirmación explícita → `EXPENSE` tarjeta. `feeStatus` solo configuración.
 
@@ -396,21 +396,29 @@ No auto-acreditar. Estados expectativa: `EXPECTED` | `PARTIALLY_ACCREDITED` | `A
 
 **UI:** `/cards` — card heroes visuales, recurrentes, confirm sheet, expected vs confirmed separados. Primer hito visual fuerte MVP2 (solo Tarjetas).
 
-**Dependencias:** P0.3, P0.5, P0.9. **Siguiente:** P0.14 NOT STARTED; P0.15 void/correcciones pendiente.
+**Dependencias:** P0.3, P0.5, P0.9. **Siguiente:** P0.16 NOT STARTED.
 
 ---
 
 ## P0.14 — Parsing monetario es-AR
 
-**Estado: NOT STARTED.**
+**Estado: DONE definitivo LIVE** (shared + API/web + deploy 2026-09-10). **P0.16 NOT STARTED.**
 
 Sin cambio por F1–F8. Paralelizable.
 
 **Criterio:** shared + tests es-AR; UI/API consumen shared.
 
+`packages/shared/src/money/parse-money.ts` es la única fuente de verdad: los
+schemas de monto de la API y `parsePositiveAmount` la consumen, y el web la usa
+vía los alias `normalizeAmountInput` / `isValidAmount` / `toApiAmount`.
+Ambigüedad documentada: un separador con exactamente 3 dígitos es miles
+(Argentina-first), así que `10.123` = 10123.00 y sólo >2 decimales reales fallan.
+
 ---
 
 ## P0.15 — Void / correcciones (F8)
+
+**Estado: DONE definitivo LIVE** (código + Neon migrate + Render/Vercel smoke 2026-09-10). **P0.16 NOT STARTED.**
 
 **Objetivo:** Política F8 sin hard delete ni cascada indiscriminada.
 
@@ -424,7 +432,40 @@ Sin cambio por F1–F8. Paralelizable.
 - reintegro acreditado: reversión explícita/coordinada;
 - trazabilidad.
 
-**Tests:** cada fila de la política; invariantes current/future/banco.
+**Modelo:** `TransactionStatus` agrega `REVERSED` (pata anulada dentro de una
+corrección compuesta; `VOIDED` queda para la anulación simple de un movimiento).
+`CorrectionOperation` (`correction_operations`) es la unidad de auditoría e
+idempotencia: `UNIQUE (user_id, idempotency_key)` + índice
+`(user_id, kind, target_id)`. Columnas aditivas `voided_at` /
+`void_idempotency_key` en `transfer_links`, `credit_card_payment_links` y
+`credit_card_refund_accreditations`.
+
+**Migración:** `20260910180000_add_corrections_void` (additive only: sin DROP,
+sin DELETE, sin UPDATE financiero, sin backfill).
+
+**API:**
+
+- `POST /api/transactions/:id/void` — anulación simple → `VOIDED`; si el EXPENSE
+  está vinculado a una cuota reconocida → `REVERSED` + cuota de vuelta a
+  `PENDING`; rechaza `CREDIT_CARD_PAYMENT` (`CREDIT_CARD_PAYMENT_VOID_REQUIRED`)
+  y patas `TRANSFER` (`TRANSFER_IMMUTABLE`);
+- `POST /api/transfers/:id/void` — anula las dos patas → `REVERSED`;
+- `POST /api/credit-cards/:id/payments/:paymentId/void`;
+- `POST /api/credit-card-purchases/:id/void`;
+- `POST /api/credit-card-refunds/accreditations/:id/void`.
+
+Todos piden body `{ idempotencyKey }` (mínimo 8 caracteres): misma clave
+→ mismo resultado; misma clave con otro target → 409 `IDEMPOTENCY_CONFLICT`.
+Las inversiones siguen **inmutables**: no hay camino de void en P0.15.
+
+**UI:** `/transactions` muestra el estado (Activo / Anulado / Reversado), ofrece
+"Anular transferencia" sobre la tarjeta agrupada y "Corregir" (anular + alta
+prellenada) en gastos/ingresos simples. Sin botones de borrado.
+
+**Tests:** `transaction-void-p015.test.ts`,
+`credit-card-payment-void-p015.test.ts`,
+`credit-card-purchase-void-p015.test.ts`,
+`credit-card-refund-void-p015.test.ts` + helpers web en `lib/transactions.test.ts`.
 
 **Criterio de aceptación:** F8 en CI; sin hard delete.
 
@@ -433,6 +474,8 @@ Sin cambio por F1–F8. Paralelizable.
 ---
 
 ## P0.16 — Suite anti-doble-conteo + checklist deploy
+
+**Estado: NOT STARTED.**
 
 **Objetivo:** Automatizar la matriz de 4 columnas + casos F4 + checklist migrate.
 

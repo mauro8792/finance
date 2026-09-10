@@ -1,5 +1,6 @@
 import { CURRENCIES } from "shared";
 import { z } from "zod";
+import { OptionalNullablePositiveMoneyAmountSchema } from "../../shared/money/amount-schema.js";
 import { CREDIT_CARD_FEE_STATUSES } from "./credit-card.types.js";
 
 export const CurrencySchema = z.enum(CURRENCIES, {
@@ -19,34 +20,7 @@ const DayOfMonthSchema = z
 
 const NullableDayOfMonthSchema = z.union([DayOfMonthSchema, z.null()]);
 
-const FeeExpectedAmountSchema = z
-  .union([
-    z
-      .union([z.string(), z.number()])
-      .transform((value, ctx) => {
-        const raw = String(value).trim();
-        if (!/^\d+(\.\d{1,2})?$/.test(raw)) {
-          ctx.addIssue({
-            code: "custom",
-            message: "feeExpectedAmount inválido: use hasta 2 decimales.",
-          });
-          return z.NEVER;
-        }
-        const normalized = raw.includes(".") ? raw : `${raw}.00`;
-        const [whole, fraction = "00"] = normalized.split(".");
-        const cents = BigInt(whole) * 100n + BigInt(fraction.padEnd(2, "0"));
-        if (cents <= 0n) {
-          ctx.addIssue({
-            code: "custom",
-            message: "feeExpectedAmount debe ser mayor a 0.",
-          });
-          return z.NEVER;
-        }
-        return `${whole}.${fraction.padEnd(2, "0").slice(0, 2)}`;
-      }),
-    z.null(),
-  ])
-  .optional();
+const FeeExpectedAmountSchema = OptionalNullablePositiveMoneyAmountSchema;
 
 export const CreateCreditCardSchema = z.object({
   name: z.string().trim().min(1, "El nombre es obligatorio.").max(120),

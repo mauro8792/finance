@@ -5,7 +5,9 @@ import { getAuthUserId } from "../auth/auth-request.js";
 import {
   AccreditCreditCardRefundSchema,
   CreateCreditCardRefundExpectationSchema,
+  RefundAccreditationIdParamsSchema,
   RefundExpectationIdParamsSchema,
+  VoidCreditCardRefundAccreditationSchema,
 } from "./credit-card-refund.schema.js";
 import type { CreditCardRefundService } from "./credit-card-refund.service.js";
 import type {
@@ -72,6 +74,24 @@ export class CreditCardRefundController {
     });
 
     res.status(result.created ? 201 : 200).json({
+      accreditation: toAccreditationResponse(result.accreditation),
+      expectation: result.expectation
+        ? toExpectationResponse(result.expectation)
+        : null,
+    });
+  };
+
+  voidAccreditation = async (req: Request, res: Response): Promise<void> => {
+    const userId = getAuthUserId(req);
+    const { id } = parseBody(RefundAccreditationIdParamsSchema, req.params);
+    const body = parseBody(
+      VoidCreditCardRefundAccreditationSchema,
+      req.body
+    );
+    const result = await this.refunds.voidAccreditation(userId, id, {
+      idempotencyKey: body.idempotencyKey,
+    });
+    res.status(200).json({
       accreditation: toAccreditationResponse(result.accreditation),
       expectation: result.expectation
         ? toExpectationResponse(result.expectation)
@@ -149,5 +169,6 @@ function toAccreditationResponse(item: CreditCardRefundAccreditationView) {
     description: item.description,
     status: item.status,
     idempotencyKey: item.idempotencyKey,
+    voidedAt: item.voidedAt ? item.voidedAt.toISOString() : null,
   };
 }

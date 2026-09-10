@@ -16,6 +16,7 @@ import type {
   CreateCategoryInput,
   UpdateCategoryInput,
 } from "../categories/category.types.js";
+import type { CorrectionKind } from "../corrections/correction.types.js";
 import { CSV_DELIMITER, TRANSACTION_CSV_HEADERS } from "./transaction-csv.js";
 import { TransactionService } from "./transaction.service.js";
 import { computeBalance, toCents } from "./transaction-balance.js";
@@ -28,6 +29,10 @@ import type {
   TransferCreateResult,
   TransferView,
   UpdateTransactionRecord,
+  VoidTransactionAtomicInput,
+  VoidTransactionResult,
+  VoidTransferAtomicInput,
+  VoidTransferResult,
 } from "./transaction.types.js";
 import { DEFAULT_USER_TIMEZONE } from "../users/user.types.js";
 
@@ -44,6 +49,7 @@ type TransferLinkRecord = {
   idempotencyKey: string;
   outTransactionId: string;
   inTransactionId: string;
+  voidedAt: Date | null;
   createdAt: Date;
 };
 
@@ -86,6 +92,7 @@ function toTransferView(row: TransferLinkRecord): TransferView {
     occurredAt: row.occurredAt,
     outTransactionId: row.outTransactionId,
     inTransactionId: row.inTransactionId,
+    voidedAt: row.voidedAt,
     createdAt: row.createdAt,
   };
 }
@@ -190,6 +197,10 @@ class MemoryTransactionRepository implements TransactionRepository {
   readonly items: Transaction[] = [];
   accounts: AccountRepository | null = null;
   private readonly transferLinksByKey = new Map<string, TransferLinkRecord>();
+  private readonly corrections = new Map<
+    string,
+    { kind: CorrectionKind; targetId: string; resultStatus: "VOIDED" | "REVERSED" }
+  >();
 
   async create(input: CreateTransactionInput): Promise<Transaction> {
     const now = new Date();
@@ -399,6 +410,7 @@ class MemoryTransactionRepository implements TransactionRepository {
       idempotencyKey: input.idempotencyKey,
       outTransactionId: out.id,
       inTransactionId: inn.id,
+      voidedAt: null,
       createdAt: out.createdAt,
     };
     this.transferLinksByKey.set(key, link);
@@ -421,6 +433,100 @@ class MemoryTransactionRepository implements TransactionRepository {
       (item) => item.userId === userId && item.transferId === transferId
     );
     return row ? toTransferView(row) : null;
+  }
+
+  async voidTransactionAtomic(
+    input: VoidTransactionAtomicInput
+  ): Promise<VoidTransactionResult> {
+    const replay = this.corrections.get(
+      `${input.userId}::${input.idempotencyKey}`
+    );
+    if (replay) {
+      const current = await this.findById(input.transactionId);
+      if (!current) {
+        throw new AppError("NOT_FOUND", "Movimiento no encontrado.", 404);
+      }
+      return {
+        created: false,
+        transaction: current,
+        resultStatus: replay.resultStatus,
+        installmentId: null,
+        purchaseId: null,
+      };
+    }
+
+    const current = await this.findById(input.transactionId);
+    if (!current || current.userId !== input.userId) {
+      throw new AppError("NOT_FOUND", "Movimiento no encontrado.", 404);
+    }
+    if (current.status !== "ACTIVE") {
+      throw new AppError(
+        "TRANSACTION_ALREADY_VOIDED",
+        "El movimiento ya está anulado.",
+        409
+      );
+    }
+
+    // No installment schedule in the in-memory fake: always a plain void.
+    const updated = await this.update(input.transactionId, { status: "VOIDED" });
+    this.corrections.set(`${input.userId}::${input.idempotencyKey}`, {
+      kind: "TRANSACTION_VOID",
+      targetId: input.transactionId,
+      resultStatus: "VOIDED",
+    });
+    return {
+      created: true,
+      transaction: updated,
+      resultStatus: "VOIDED",
+      installmentId: null,
+      purchaseId: null,
+    };
+  }
+
+  async voidTransferAtomic(
+    input: VoidTransferAtomicInput
+  ): Promise<VoidTransferResult> {
+    const link = [...this.transferLinksByKey.values()].find(
+      (item) => item.userId === input.userId && item.transferId === input.transferId
+    );
+    if (!link) {
+      throw new AppError("NOT_FOUND", "Transferencia no encontrada.", 404);
+    }
+    const correctionKey = `${input.userId}::${input.idempotencyKey}`;
+    const replay = this.corrections.get(correctionKey);
+    if (!replay) {
+      if (link.voidedAt != null) {
+        throw new AppError(
+          "TRANSFER_ALREADY_VOIDED",
+          "La transferencia ya está anulada.",
+          409
+        );
+      }
+      await this.update(link.outTransactionId, { status: "REVERSED" });
+      await this.update(link.inTransactionId, { status: "REVERSED" });
+      link.voidedAt = new Date();
+      this.corrections.set(correctionKey, {
+        kind: "TRANSFER_VOID",
+        targetId: input.transferId,
+        resultStatus: "REVERSED",
+      });
+    }
+
+    const out = await this.findById(link.outTransactionId);
+    const inn = await this.findById(link.inTransactionId);
+    if (!out || !inn) {
+      throw new Error("missing transfer legs");
+    }
+    return {
+      created: !replay,
+      transfer: toTransferView(link),
+      out,
+      in: inn,
+    };
+  }
+
+  correctionByKey(userId: string, idempotencyKey: string) {
+    return this.corrections.get(`${userId}::${idempotencyKey}`) ?? null;
   }
 }
 
@@ -513,13 +619,15 @@ test("TransactionService rejects a negative amount", async () => {
   );
 });
 
+// P0.14: a single dot with exactly 3 digits is thousands (es-AR), so "10.123"
+// is a valid 10123.00. Only >3 fraction digits stay invalid.
 test("TransactionService rejects an invalid amount", async () => {
   const { service, account, category } = await setup();
 
   await assert.rejects(
     () =>
       service.createExpense(userId, {
-        amount: "10.123",
+        amount: "10.1234",
         currency: "ARS",
         accountId: account.id,
         categoryId: category.id,
@@ -1081,7 +1189,7 @@ test("TransactionService filters by accountId and status", async () => {
     accountId: account.id,
     categoryId: category.id,
   });
-  await service.void(userId, voided.id);
+  await service.void(userId, voided.id, { idempotencyKey: `void-${randomUUID()}` });
 
   const byAccount = await service.list(
     userId,
@@ -1302,7 +1410,7 @@ test("TransactionService voids an ACTIVE movement without deleting it", async ()
     categoryId: category.id,
   });
 
-  const voided = await service.void(userId, created.id);
+  const voided = await service.void(userId, created.id, { idempotencyKey: `void-${randomUUID()}` });
 
   assert.equal(voided.id, created.id);
   assert.equal(voided.status, "VOIDED");
@@ -1322,7 +1430,10 @@ test("TransactionService rejects voiding another user's movement", async () => {
   });
 
   await assert.rejects(
-    () => service.void(randomUUID(), created.id),
+    () =>
+      service.void(randomUUID(), created.id, {
+        idempotencyKey: `void-${randomUUID()}`,
+      }),
     (error: unknown) =>
       error instanceof AppError && error.statusCode === 404
   );
@@ -1336,10 +1447,10 @@ test("TransactionService rejects voiding an already VOIDED movement", async () =
     accountId: account.id,
     categoryId: category.id,
   });
-  await service.void(userId, created.id);
+  await service.void(userId, created.id, { idempotencyKey: `void-${randomUUID()}` });
 
   await assert.rejects(
-    () => service.void(userId, created.id),
+    () => service.void(userId, created.id, { idempotencyKey: `void-${randomUUID()}` }),
     (error: unknown) =>
       error instanceof AppError && error.code === "TRANSACTION_ALREADY_VOIDED"
   );
@@ -1356,7 +1467,7 @@ test("TransactionService rejects voiding a related movement without cascade", as
   transactions.items[0]!.relatedTransactionId = randomUUID();
 
   await assert.rejects(
-    () => service.void(userId, created.id),
+    () => service.void(userId, created.id, { idempotencyKey: `void-${randomUUID()}` }),
     (error: unknown) =>
       error instanceof AppError && error.code === "TRANSACTION_RELATED"
   );
@@ -1543,7 +1654,7 @@ test("TransactionService rejects reimbursement on a VOIDED expense", async () =>
     accountId: account.id,
     categoryId: category.id,
   });
-  await service.void(userId, expense.id);
+  await service.void(userId, expense.id, { idempotencyKey: `void-${randomUUID()}` });
 
   await assert.rejects(
     () =>
@@ -1711,7 +1822,7 @@ test("TransactionService net expense rejects a VOIDED expense", async () => {
     accountId: account.id,
     categoryId: category.id,
   });
-  await service.void(userId, expense.id);
+  await service.void(userId, expense.id, { idempotencyKey: `void-${randomUUID()}` });
 
   await assert.rejects(
     () => service.getNetExpense(userId, expense.id),
@@ -1734,12 +1845,12 @@ test("TransactionService rejects voiding an expense that has reimbursements", as
   });
 
   await assert.rejects(
-    () => service.void(userId, expense.id),
+    () => service.void(userId, expense.id, { idempotencyKey: `void-${randomUUID()}` }),
     (error: unknown) =>
       error instanceof AppError && error.code === "TRANSACTION_RELATED"
   );
   await assert.rejects(
-    () => service.void(userId, reimbursement.id),
+    () => service.void(userId, reimbursement.id, { idempotencyKey: `void-${randomUUID()}` }),
     (error: unknown) =>
       error instanceof AppError && error.code === "TRANSACTION_RELATED"
   );
@@ -2222,12 +2333,12 @@ test("TransactionService rejects VOID of an individual TRANSFER leg", async () =
   });
 
   await assert.rejects(
-    () => service.void(userId, created.out.id),
+    () => service.void(userId, created.out.id, { idempotencyKey: `void-${randomUUID()}` }),
     (error: unknown) =>
       error instanceof AppError && error.code === "TRANSFER_IMMUTABLE"
   );
   await assert.rejects(
-    () => service.void(userId, created.in.id),
+    () => service.void(userId, created.in.id, { idempotencyKey: `void-${randomUUID()}` }),
     (error: unknown) =>
       error instanceof AppError && error.code === "TRANSFER_IMMUTABLE"
   );
@@ -2363,7 +2474,7 @@ test("exportCsv applies date, type, account and category filters like list", asy
   assert.doesNotMatch(combined, /junio|capital agosto/);
 
   const listedJune = await service.list(userId, { month: 6 }, DEFAULT_USER_TIMEZONE);
-  await service.void(userId, listedJune[0]!.id);
+  await service.void(userId, listedJune[0]!.id, { idempotencyKey: `void-${randomUUID()}` });
   const byStatus = await service.exportCsv(userId, { status: "VOIDED" }, DEFAULT_USER_TIMEZONE);
   assert.match(byStatus, /junio/);
   assert.doesNotMatch(byStatus, /agosto banco|capital agosto/);

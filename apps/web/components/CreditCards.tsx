@@ -25,6 +25,7 @@ import {
   recurringChargeKindLabel,
 } from "../lib/credit-cards";
 import { currentYearMonth, formatMoney } from "../lib/format-money";
+import { isValidAmount, toApiAmount } from "../lib/quick-add";
 import type {
   CreditCard,
   CreditCardCommitments,
@@ -458,13 +459,17 @@ function ConfirmChargeSheet({
   const [error, setError] = useState<string | null>(null);
 
   const mutation = useMutation({
-    mutationFn: () =>
-      confirmRecurringCharge(template.id, {
+    mutationFn: () => {
+      if (!isValidAmount(amount)) {
+        throw new Error("Ingresá un monto válido.");
+      }
+      return confirmRecurringCharge(template.id, {
         occurrenceKey,
-        amount: amount.trim(),
+        amount: toApiAmount(amount),
         idempotencyKey: crypto.randomUUID(),
         occurredAt: new Date(`${occurredAt}T12:00:00`).toISOString(),
-      }),
+      });
+    },
     onSuccess: async () => {
       await onConfirmed();
     },

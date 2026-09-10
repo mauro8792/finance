@@ -1,10 +1,12 @@
 import { AppError } from "../../shared/errors/app-error.js";
+import { requireIdempotencyKey } from "../corrections/correction.repository.js";
 import type { CreditCardRepository } from "../credit-cards/credit-card.types.js";
 import type { TransactionRepository } from "../transactions/transaction.types.js";
 import type {
   CreateCreditCardPaymentInput,
   CreditCardPaymentRepository,
   CreditCardPaymentView,
+  VoidPaymentAtomicResult,
 } from "./credit-card-payment.types.js";
 
 export class CreditCardPaymentService {
@@ -47,12 +49,30 @@ export class CreditCardPaymentService {
     return view;
   }
 
+  /** P0.15: reverses the payment; bank balance and card debt restore derived. */
+  async void(
+    userId: string,
+    creditCardId: string,
+    paymentId: string,
+    input: { idempotencyKey: string }
+  ): Promise<VoidPaymentAtomicResult> {
+    const idempotencyKey = requireIdempotencyKey(input?.idempotencyKey);
+    const card = await this.requireOwnedCard(userId, creditCardId);
+    return this.payments.voidPaymentAtomic({
+      userId,
+      creditCardId: card.id,
+      paymentId,
+      idempotencyKey,
+    });
+  }
+
   private async toViews(
     links: Array<{
       transactionId: string;
       creditCardId: string;
       statementId: string | null;
       idempotencyKey: string;
+      voidedAt: Date | null;
     }>
   ): Promise<CreditCardPaymentView[]> {
     const views: CreditCardPaymentView[] = [];
@@ -72,6 +92,7 @@ export class CreditCardPaymentService {
         description: tx.description,
         status: tx.status,
         idempotencyKey: link.idempotencyKey,
+        voidedAt: link.voidedAt,
       });
     }
     return views;

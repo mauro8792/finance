@@ -6,6 +6,7 @@ import {
   CreateCreditCardPaymentSchema,
   CreditCardIdParamsSchema,
   CreditCardPaymentIdParamsSchema,
+  VoidCreditCardPaymentSchema,
 } from "./credit-card-payment.schema.js";
 import type { CreditCardPaymentService } from "./credit-card-payment.service.js";
 import type { CreditCardPaymentView } from "./credit-card-payment.types.js";
@@ -54,6 +55,22 @@ export class CreditCardPaymentController {
       .status(result.created ? 201 : 200)
       .json(toPaymentResponse(result.payment));
   };
+
+  void = async (req: Request, res: Response): Promise<void> => {
+    const userId = getAuthUserId(req);
+    const { id, paymentId } = parseBody(
+      CreditCardPaymentIdParamsSchema,
+      req.params
+    );
+    const body = parseBody(VoidCreditCardPaymentSchema, req.body);
+    const result = await this.payments.void(userId, id, paymentId, {
+      idempotencyKey: body.idempotencyKey,
+    });
+    res.status(200).json({
+      ...toPaymentResponse(result.payment),
+      statementStatus: result.statementStatus,
+    });
+  };
 }
 
 function parseBody<T>(schema: ZodType<T>, data: unknown): T {
@@ -94,5 +111,6 @@ function toPaymentResponse(item: CreditCardPaymentView) {
     description: item.description,
     status: item.status,
     idempotencyKey: item.idempotencyKey,
+    voidedAt: item.voidedAt ? item.voidedAt.toISOString() : null,
   };
 }

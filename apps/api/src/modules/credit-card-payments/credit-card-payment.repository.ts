@@ -8,6 +8,12 @@ import type { Currency } from "shared";
 import { AppError } from "../../shared/errors/app-error.js";
 import { getPrismaClient } from "../../shared/db/prisma.js";
 import {
+  assertCorrectionTarget,
+  findCorrectionByKey,
+  isUniqueViolation,
+  recordCorrection,
+} from "../corrections/correction.repository.js";
+import {
   computeCurrentCardDebt,
   deriveStatementPaymentStatus,
   statementTargetAmount,
@@ -20,6 +26,8 @@ import type {
   CreditCardPaymentLinkRecord,
   CreditCardPaymentRepository,
   CreditCardPaymentView,
+  VoidCreditCardPaymentInput,
+  VoidPaymentAtomicResult,
 } from "./credit-card-payment.types.js";
 
 type LockedCard = {
@@ -34,6 +42,13 @@ type LockedAccount = {
   user_id: string;
   currency: string;
   is_active: boolean;
+};
+
+type LockedPayment = {
+  id: string;
+  user_id: string;
+  type: string;
+  status: string;
 };
 
 type LockedStatement = {
@@ -354,6 +369,182 @@ export class PrismaCreditCardPaymentRepository
       throw error;
     }
   }
+
+  async voidPaymentAtomic(
+    input: VoidCreditCardPaymentInput
+  ): Promise<VoidPaymentAtomicResult> {
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const replay = await findCorrectionByKey(
+          tx,
+          input.userId,
+          input.idempotencyKey
+        );
+        if (replay) {
+          assertCorrectionTarget(replay, "PAYMENT_VOID", input.paymentId);
+          return this.replayPaymentVoid(tx, input);
+        }
+
+        // Same lock order as createPaymentAtomic: card first.
+        const cards = await tx.$queryRaw<LockedCard[]>`
+          SELECT id, user_id, currency::text AS currency, is_active
+          FROM credit_cards
+          WHERE id = ${input.creditCardId}::uuid
+          FOR UPDATE
+        `;
+        const card = cards[0];
+        if (!card || card.user_id !== input.userId) {
+          throw new AppError("NOT_FOUND", "Tarjeta no encontrada.", 404);
+        }
+
+        const link = await tx.creditCardPaymentLink.findUnique({
+          where: { transactionId: input.paymentId },
+        });
+        if (
+          !link ||
+          link.userId !== input.userId ||
+          link.creditCardId !== card.id
+        ) {
+          throw new AppError("NOT_FOUND", "Pago no encontrado.", 404);
+        }
+
+        const payments = await tx.$queryRaw<LockedPayment[]>`
+          SELECT id, user_id, type::text AS type, status::text AS status
+          FROM transactions
+          WHERE id = ${input.paymentId}::uuid
+          FOR UPDATE
+        `;
+        const payment = payments[0];
+        if (!payment || payment.user_id !== input.userId) {
+          throw new AppError("NOT_FOUND", "Pago no encontrado.", 404);
+        }
+        if (link.voidedAt != null || payment.status !== "ACTIVE") {
+          throw new AppError(
+            "PAYMENT_ALREADY_VOIDED",
+            "El pago ya está anulado.",
+            409
+          );
+        }
+
+        const reversedTx = await tx.transaction.update({
+          where: { id: input.paymentId },
+          data: { status: "REVERSED" },
+        });
+        const voidedLink = await tx.creditCardPaymentLink.update({
+          where: { id: link.id },
+          data: {
+            voidedAt: new Date(),
+            voidIdempotencyKey: input.idempotencyKey,
+          },
+        });
+
+        const statementStatus = link.statementId
+          ? await recomputeStatementPaymentStatus(tx, link.statementId)
+          : null;
+
+        await recordCorrection(tx, {
+          userId: input.userId,
+          idempotencyKey: input.idempotencyKey,
+          kind: "PAYMENT_VOID",
+          targetId: input.paymentId,
+          resultStatus: "REVERSED",
+          result: {
+            paymentId: input.paymentId,
+            creditCardId: card.id,
+            statementId: link.statementId,
+            statementStatus,
+            status: "REVERSED",
+          },
+        });
+
+        return {
+          created: true,
+          payment: toPaymentView(voidedLink, reversedTx),
+          statementStatus,
+        };
+      });
+    } catch (error) {
+      if (isUniqueViolation(error)) {
+        const replay = await findCorrectionByKey(
+          this.prisma,
+          input.userId,
+          input.idempotencyKey
+        );
+        if (replay) {
+          assertCorrectionTarget(replay, "PAYMENT_VOID", input.paymentId);
+          return this.replayPaymentVoid(this.prisma, input);
+        }
+      }
+      throw error;
+    }
+  }
+
+  private async replayPaymentVoid(
+    db: Prisma.TransactionClient | ReturnType<typeof getPrismaClient>,
+    input: VoidCreditCardPaymentInput
+  ): Promise<VoidPaymentAtomicResult> {
+    const link = await db.creditCardPaymentLink.findUnique({
+      where: { transactionId: input.paymentId },
+    });
+    if (!link || link.userId !== input.userId) {
+      throw new AppError("NOT_FOUND", "Pago no encontrado.", 404);
+    }
+    const tx = await db.transaction.findUniqueOrThrow({
+      where: { id: input.paymentId },
+    });
+    const statement = link.statementId
+      ? await db.creditCardStatement.findUnique({
+          where: { id: link.statementId },
+        })
+      : null;
+    return {
+      created: false,
+      payment: toPaymentView(link, tx),
+      statementStatus: statement?.status ?? null,
+    };
+  }
+}
+
+/**
+ * Statement payment status is derived from the remaining ACTIVE payments only,
+ * so reversing one payment can move PAID → PARTIALLY_PAID → CLOSED.
+ * Snapshots (closedProjectedAmount / actualAmount) are never rewritten.
+ */
+async function recomputeStatementPaymentStatus(
+  tx: Prisma.TransactionClient,
+  statementId: string
+): Promise<string | null> {
+  const statement = await tx.creditCardStatement.findUnique({
+    where: { id: statementId },
+  });
+  if (!statement) {
+    return null;
+  }
+  const target = statementTargetAmount({
+    actualAmount: statement.actualAmount?.toFixed(2) ?? null,
+    closedProjectedAmount: statement.closedProjectedAmount?.toFixed(2) ?? null,
+  });
+  if (target == null) {
+    return statement.status;
+  }
+  const links = await tx.creditCardPaymentLink.findMany({
+    where: { statementId },
+    include: { transaction: true },
+  });
+  const paidAmount = fromCents(
+    links
+      .filter((row) => row.transaction.status === "ACTIVE")
+      .reduce((acc, row) => acc + toCents(row.transaction.amount.toFixed(2)), 0n)
+  );
+  const nextStatus = deriveStatementPaymentStatus({
+    paidAmount,
+    targetAmount: target,
+  });
+  const updated = await tx.creditCardStatement.update({
+    where: { id: statementId },
+    data: { status: nextStatus },
+  });
+  return updated.status;
 }
 
 function assertIdempotentReplay(
@@ -397,6 +588,8 @@ function toLink(record: PrismaPaymentLink): CreditCardPaymentLinkRecord {
     creditCardId: record.creditCardId,
     statementId: record.statementId,
     idempotencyKey: record.idempotencyKey,
+    voidedAt: record.voidedAt,
+    voidIdempotencyKey: record.voidIdempotencyKey,
     createdAt: record.createdAt,
   };
 }
@@ -404,7 +597,11 @@ function toLink(record: PrismaPaymentLink): CreditCardPaymentLinkRecord {
 function toPaymentView(
   link: Pick<
     PrismaPaymentLink,
-    "transactionId" | "creditCardId" | "statementId" | "idempotencyKey"
+    | "transactionId"
+    | "creditCardId"
+    | "statementId"
+    | "idempotencyKey"
+    | "voidedAt"
   >,
   tx: PrismaTransaction
 ): CreditCardPaymentView {
@@ -426,20 +623,6 @@ function toPaymentView(
     description: tx.description,
     status: tx.status as CreditCardPaymentView["status"],
     idempotencyKey: link.idempotencyKey,
+    voidedAt: link.voidedAt,
   };
-}
-
-function isUniqueViolation(error: unknown): boolean {
-  if (
-    error instanceof Prisma.PrismaClientKnownRequestError &&
-    error.code === "P2002"
-  ) {
-    return true;
-  }
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    "code" in error &&
-    (error as { code: unknown }).code === "P2002"
-  );
 }

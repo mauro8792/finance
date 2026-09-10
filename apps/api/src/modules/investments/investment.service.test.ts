@@ -641,7 +641,7 @@ test("TransactionService rejects PATCH and VOID of INVESTMENT_OUTFLOW", async ()
       error instanceof AppError && error.code === "INVESTMENT_OUTFLOW_IMMUTABLE"
   );
   await assert.rejects(
-    () => txService.void(userId, created.transaction.id),
+    () => txService.void(userId, created.transaction.id, { idempotencyKey: `void-${randomUUID()}` }),
     (error: unknown) =>
       error instanceof AppError && error.code === "INVESTMENT_OUTFLOW_IMMUTABLE"
   );
@@ -970,7 +970,7 @@ test("TransactionService rejects PATCH and VOID of maturity movements", async ()
       error instanceof AppError && error.code === "INVESTMENT_PRINCIPAL_RETURN_IMMUTABLE"
   );
   await assert.rejects(
-    () => txService.void(userId, matured.principalReturn.id),
+    () => txService.void(userId, matured.principalReturn.id, { idempotencyKey: `void-${randomUUID()}` }),
     (error: unknown) =>
       error instanceof AppError && error.code === "INVESTMENT_PRINCIPAL_RETURN_IMMUTABLE"
   );
@@ -981,7 +981,7 @@ test("TransactionService rejects PATCH and VOID of maturity movements", async ()
       error instanceof AppError && error.code === "INVESTMENT_RETURN_IMMUTABLE"
   );
   await assert.rejects(
-    () => txService.void(userId, matured.investmentReturn!.id),
+    () => txService.void(userId, matured.investmentReturn!.id, { idempotencyKey: `void-${randomUUID()}` }),
     (error: unknown) =>
       error instanceof AppError && error.code === "INVESTMENT_RETURN_IMMUTABLE"
   );
@@ -1401,7 +1401,7 @@ test("TransactionService rejects PATCH and VOID of renewal movements", async () 
       error instanceof AppError && error.code === "INVESTMENT_PRINCIPAL_RETURN_IMMUTABLE"
   );
   await assert.rejects(
-    () => txService.void(userId, renewed.principalReturn.id),
+    () => txService.void(userId, renewed.principalReturn.id, { idempotencyKey: `void-${randomUUID()}` }),
     (error: unknown) =>
       error instanceof AppError && error.code === "INVESTMENT_PRINCIPAL_RETURN_IMMUTABLE"
   );
@@ -1412,7 +1412,7 @@ test("TransactionService rejects PATCH and VOID of renewal movements", async () 
       error instanceof AppError && error.code === "INVESTMENT_RETURN_IMMUTABLE"
   );
   await assert.rejects(
-    () => txService.void(userId, renewed.investmentReturn!.id),
+    () => txService.void(userId, renewed.investmentReturn!.id, { idempotencyKey: `void-${randomUUID()}` }),
     (error: unknown) =>
       error instanceof AppError && error.code === "INVESTMENT_RETURN_IMMUTABLE"
   );
@@ -1422,7 +1422,7 @@ test("TransactionService rejects PATCH and VOID of renewal movements", async () 
       error instanceof AppError && error.code === "INVESTMENT_OUTFLOW_IMMUTABLE"
   );
   await assert.rejects(
-    () => txService.void(userId, renewed.outflow.id),
+    () => txService.void(userId, renewed.outflow.id, { idempotencyKey: `void-${randomUUID()}` }),
     (error: unknown) =>
       error instanceof AppError && error.code === "INVESTMENT_OUTFLOW_IMMUTABLE"
   );

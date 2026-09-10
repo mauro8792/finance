@@ -8,6 +8,11 @@ import {
 import type { Currency } from "shared";
 import { AppError } from "../../shared/errors/app-error.js";
 import { getPrismaClient } from "../../shared/db/prisma.js";
+import {
+  assertCorrectionTarget,
+  findCorrectionByKey,
+  recordCorrection,
+} from "../corrections/correction.repository.js";
 import { computeCurrentCardDebt } from "../credit-cards/credit-card-debt.js";
 import {
   reimbursementStatusFromTotals,
@@ -28,6 +33,8 @@ import type {
   CreditCardRefundExpectationStatus,
   CreditCardRefundExpectationView,
   CreditCardRefundRepository,
+  VoidAccreditationAtomicResult,
+  VoidCreditCardRefundAccreditationInput,
 } from "./credit-card-refund.types.js";
 
 type LockedCard = {
@@ -102,6 +109,15 @@ export class PrismaCreditCardRefundRepository
       orderBy: { createdAt: "desc" },
     });
     return rows.map(toExpectationRecord);
+  }
+
+  async findAccreditationById(
+    id: string
+  ): Promise<CreditCardRefundAccreditationRecord | null> {
+    const record = await this.prisma.creditCardRefundAccreditation.findUnique({
+      where: { id },
+    });
+    return record ? toAccreditationRecord(record) : null;
   }
 
   async findAccreditationByUserAndIdempotencyKey(
@@ -531,6 +547,170 @@ export class PrismaCreditCardRefundRepository
     }
   }
 
+  async voidAccreditationAtomic(
+    input: VoidCreditCardRefundAccreditationInput
+  ): Promise<VoidAccreditationAtomicResult> {
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const replay = await findCorrectionByKey(
+          tx,
+          input.userId,
+          input.idempotencyKey
+        );
+        if (replay) {
+          assertCorrectionTarget(
+            replay,
+            "REFUND_ACCREDITATION_VOID",
+            input.accreditationId
+          );
+          return this.replayAccreditationVoid(tx, input);
+        }
+
+        const link = await tx.creditCardRefundAccreditation.findUnique({
+          where: { id: input.accreditationId },
+        });
+        if (!link || link.userId !== input.userId) {
+          throw new AppError("NOT_FOUND", "Acreditación no encontrada.", 404);
+        }
+
+        // Locking order mirrors accreditAtomic: card → expense → expectation.
+        await lockCardForCorrection(tx, link.creditCardId, input.userId);
+        const reimbursements = await tx.$queryRaw<LockedExpense[]>`
+          SELECT id, user_id, credit_card_id, account_id, type::text AS type,
+                 status::text AS status, amount, currency::text AS currency
+          FROM transactions
+          WHERE id = ${link.transactionId}::uuid
+          FOR UPDATE
+        `;
+        const reimbursement = reimbursements[0];
+        if (!reimbursement || reimbursement.user_id !== input.userId) {
+          throw new AppError("NOT_FOUND", "Acreditación no encontrada.", 404);
+        }
+        if (link.voidedAt != null || reimbursement.status !== "ACTIVE") {
+          throw new AppError(
+            "REFUND_ACCREDITATION_ALREADY_VOIDED",
+            "La acreditación ya está anulada.",
+            409
+          );
+        }
+
+        const originalExpense = await lockExpenseForCorrection(
+          tx,
+          link.originalExpenseTransactionId,
+          input.userId
+        );
+        if (link.expectationId) {
+          await lockExpectation(tx, link.expectationId, input.userId);
+        }
+
+        const reversedTx = await tx.transaction.update({
+          where: { id: link.transactionId },
+          data: { status: "REVERSED" },
+        });
+        const voidedLink = await tx.creditCardRefundAccreditation.update({
+          where: { id: link.id },
+          data: {
+            voidedAt: new Date(),
+            voidIdempotencyKey: input.idempotencyKey,
+          },
+        });
+
+        const remainingReimbursed = await remainingReimbursedForExpense(
+          tx,
+          originalExpense.id
+        );
+        await tx.transaction.update({
+          where: { id: originalExpense.id },
+          data: {
+            reimbursementStatus:
+              toCents(remainingReimbursed) === 0n
+                ? "NONE"
+                : reimbursementStatusFromTotals(
+                    originalExpense.amount.toFixed(2),
+                    remainingReimbursed
+                  ),
+          },
+        });
+
+        let expectationView: CreditCardRefundExpectationView | null = null;
+        if (link.expectationId) {
+          expectationView = await recomputeExpectationStatus(
+            tx,
+            link.expectationId
+          );
+        }
+
+        await recordCorrection(tx, {
+          userId: input.userId,
+          idempotencyKey: input.idempotencyKey,
+          kind: "REFUND_ACCREDITATION_VOID",
+          targetId: link.id,
+          resultStatus: "REVERSED",
+          result: {
+            accreditationId: link.id,
+            transactionId: link.transactionId,
+            expectationId: link.expectationId,
+            expectationStatus: expectationView?.status ?? null,
+            status: "REVERSED",
+          },
+        });
+
+        return {
+          created: true,
+          accreditation: toAccreditationView(voidedLink, reversedTx),
+          expectation: expectationView,
+        };
+      });
+    } catch (error) {
+      if (isUniqueViolation(error)) {
+        const replay = await findCorrectionByKey(
+          this.prisma,
+          input.userId,
+          input.idempotencyKey
+        );
+        if (replay) {
+          assertCorrectionTarget(
+            replay,
+            "REFUND_ACCREDITATION_VOID",
+            input.accreditationId
+          );
+          return this.replayAccreditationVoid(this.prisma, input);
+        }
+      }
+      throw error;
+    }
+  }
+
+  private async replayAccreditationVoid(
+    db: TxClient | ReturnType<typeof getPrismaClient>,
+    input: VoidCreditCardRefundAccreditationInput
+  ): Promise<VoidAccreditationAtomicResult> {
+    const link = await db.creditCardRefundAccreditation.findUnique({
+      where: { id: input.accreditationId },
+    });
+    if (!link || link.userId !== input.userId) {
+      throw new AppError("NOT_FOUND", "Acreditación no encontrada.", 404);
+    }
+    const txRow = await db.transaction.findUniqueOrThrow({
+      where: { id: link.transactionId },
+    });
+    let expectation: CreditCardRefundExpectationView | null = null;
+    if (link.expectationId) {
+      const record = await db.creditCardRefundExpectation.findUniqueOrThrow({
+        where: { id: link.expectationId },
+      });
+      expectation = toExpectationView(
+        toExpectationRecord(record),
+        await sumAccreditedForExpectationTx(db, link.expectationId)
+      );
+    }
+    return {
+      created: false,
+      accreditation: toAccreditationView(link, txRow),
+      expectation,
+    };
+  }
+
   private async sumAccreditedForExpectation(
     expectationId: string
   ): Promise<string> {
@@ -684,6 +864,103 @@ async function lockCard(
     );
   }
   return card;
+}
+
+/**
+ * P0.15: corrections must stay possible on an inactive card, so this variant
+ * of lockCard only checks ownership.
+ */
+async function lockCardForCorrection(
+  tx: TxClient,
+  creditCardId: string,
+  userId: string
+): Promise<LockedCard> {
+  const cards = await tx.$queryRaw<LockedCard[]>`
+    SELECT id, user_id, currency::text AS currency, is_active
+    FROM credit_cards
+    WHERE id = ${creditCardId}::uuid
+    FOR UPDATE
+  `;
+  const card = cards[0];
+  if (!card || card.user_id !== userId) {
+    throw new AppError("NOT_FOUND", "Tarjeta no encontrada.", 404);
+  }
+  return card;
+}
+
+/** Locks the original expense without requiring it to still be ACTIVE. */
+async function lockExpenseForCorrection(
+  tx: TxClient,
+  expenseId: string,
+  userId: string
+): Promise<LockedExpense> {
+  const rows = await tx.$queryRaw<LockedExpense[]>`
+    SELECT id, user_id, credit_card_id, account_id, type::text AS type,
+           status::text AS status, amount, currency::text AS currency
+    FROM transactions
+    WHERE id = ${expenseId}::uuid
+    FOR UPDATE
+  `;
+  const expense = rows[0];
+  if (!expense || expense.user_id !== userId) {
+    throw new AppError("NOT_FOUND", "Gasto original no encontrado.", 404);
+  }
+  return expense;
+}
+
+async function remainingReimbursedForExpense(
+  tx: TxClient,
+  expenseId: string
+): Promise<string> {
+  const rows = await tx.transaction.findMany({
+    where: {
+      relatedTransactionId: expenseId,
+      type: "REIMBURSEMENT",
+      status: "ACTIVE",
+    },
+  });
+  if (rows.length === 0) {
+    return "0.00";
+  }
+  return sumAmounts(rows.map((row) => row.amount.toFixed(2)));
+}
+
+/**
+ * EXPECTED / PARTIALLY_ACCREDITED / ACCREDITED derived from the remaining
+ * ACTIVE accreditations. An expectation already closed by cancellation
+ * (cancelledRemainingAmount > 0) is never resurrected to EXPECTED.
+ */
+async function recomputeExpectationStatus(
+  tx: TxClient,
+  expectationId: string
+): Promise<CreditCardRefundExpectationView> {
+  const record = await tx.creditCardRefundExpectation.findUniqueOrThrow({
+    where: { id: expectationId },
+  });
+  const accreditedAmount = await sumAccreditedForExpectationTx(
+    tx,
+    expectationId
+  );
+  const accreditedCents = toCents(accreditedAmount);
+  const expectedCents = toCents(record.expectedAmount.toFixed(2));
+  const closedByCancel = toCents(record.cancelledRemainingAmount.toFixed(2)) > 0n;
+
+  let nextStatus: CreditCardRefundExpectationStatus;
+  if (closedByCancel) {
+    nextStatus = accreditedCents === 0n ? "CANCELLED" : "ACCREDITED";
+  } else if (accreditedCents === 0n) {
+    nextStatus = "EXPECTED";
+  } else if (accreditedCents >= expectedCents) {
+    nextStatus = "ACCREDITED";
+  } else {
+    nextStatus = "PARTIALLY_ACCREDITED";
+  }
+
+  const updated = await tx.creditCardRefundExpectation.update({
+    where: { id: expectationId },
+    data: { status: nextStatus },
+  });
+  return toExpectationView(toExpectationRecord(updated), accreditedAmount);
 }
 
 async function lockAccount(
@@ -1088,6 +1365,8 @@ function toAccreditationRecord(
     creditCardId: record.creditCardId,
     destinationType: record.destinationType as CreditCardRefundDestinationType,
     idempotencyKey: record.idempotencyKey,
+    voidedAt: record.voidedAt,
+    voidIdempotencyKey: record.voidIdempotencyKey,
     createdAt: record.createdAt,
   };
 }
@@ -1119,6 +1398,7 @@ function toAccreditationView(
     | "creditCardId"
     | "destinationType"
     | "idempotencyKey"
+    | "voidedAt"
   >,
   tx: PrismaTransaction
 ): CreditCardRefundAccreditationView {
@@ -1137,6 +1417,7 @@ function toAccreditationView(
     description: tx.description,
     status: tx.status as CreditCardRefundAccreditationView["status"],
     idempotencyKey: link.idempotencyKey,
+    voidedAt: link.voidedAt,
   };
 }
 

@@ -603,7 +603,7 @@ test("CurrencyExchangeService rejects PATCH and VOID of a CURRENCY_EXCHANGE leg"
       error instanceof AppError && error.code === "CURRENCY_EXCHANGE_IMMUTABLE"
   );
   await assert.rejects(
-    () => transactionService.void(userId, created.in.id),
+    () => transactionService.void(userId, created.in.id, { idempotencyKey: `void-${randomUUID()}` }),
     (error: unknown) =>
       error instanceof AppError && error.code === "CURRENCY_EXCHANGE_IMMUTABLE"
   );

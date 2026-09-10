@@ -88,9 +88,16 @@ export type TransactionType =
   | "INVESTMENT_PRINCIPAL_RETURN"
   | "INVESTMENT_RETURN"
   | "CURRENCY_EXCHANGE"
-  | "HOUSING_PAYMENT";
+  | "HOUSING_PAYMENT"
+  | "CREDIT_CARD_PAYMENT";
 
-export type TransactionStatus = "ACTIVE" | "VOIDED";
+/**
+ * P0.15 — VOIDED: anulación simple de un movimiento.
+ * REVERSED: pata reversada como parte de una corrección compuesta
+ * (transferencia, pago de tarjeta, cuota reconocida, acreditación de reintegro).
+ * Sólo ACTIVE cuenta para saldos, deuda de tarjeta y gasto.
+ */
+export type TransactionStatus = "ACTIVE" | "VOIDED" | "REVERSED";
 
 export type ReimbursementStatus = "NONE" | "PENDING" | "PARTIAL" | "COMPLETED";
 
@@ -165,7 +172,18 @@ export type TransferView = {
   occurredAt: string;
   outTransactionId: string;
   inTransactionId: string;
+  voidedAt: string | null;
   createdAt: string;
+};
+
+/** P0.15 — cuerpo común de todos los endpoints de anulación. */
+export type VoidRequest = {
+  idempotencyKey: string;
+};
+
+export type VoidTransferResult = TransferView & {
+  out: Transaction;
+  in: Transaction;
 };
 
 export type CreateCurrencyExchangeRequest = {

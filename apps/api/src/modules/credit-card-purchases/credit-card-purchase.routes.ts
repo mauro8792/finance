@@ -12,6 +12,7 @@ export function createCreditCardPurchaseRouter(
   router.get("/", controller.list);
   router.get("/:id", controller.getById);
   router.post("/", controller.create);
+  router.post("/:id/void", controller.void);
   return router;
 }
 

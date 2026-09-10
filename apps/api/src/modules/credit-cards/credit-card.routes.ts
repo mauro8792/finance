@@ -32,6 +32,7 @@ export function createCreditCardRouter(
   router.get("/:id/payments", payments.list);
   router.post("/:id/payments", payments.create);
   router.get("/:id/payments/:paymentId", payments.getById);
+  router.post("/:id/payments/:paymentId/void", payments.void);
   return router;
 }
 

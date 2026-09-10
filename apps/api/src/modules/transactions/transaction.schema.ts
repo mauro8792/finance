@@ -114,6 +114,17 @@ export const TransferIdParamsSchema = z.object({
   id: z.string().uuid("El id debe ser un UUID."),
 });
 
+/** P0.15: every void is an idempotent correction. */
+export const VoidRequestSchema = z
+  .object({
+    idempotencyKey: z
+      .string()
+      .trim()
+      .min(8, { error: "idempotencyKey debe tener al menos 8 caracteres." })
+      .max(128, { error: "idempotencyKey demasiado largo." }),
+  })
+  .strict();
+
 export const UpdateTransactionSchema = z
   .object({
     amount: z.string().min(1, "El importe es obligatorio.").optional(),

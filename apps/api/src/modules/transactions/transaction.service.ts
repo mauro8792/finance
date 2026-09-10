@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { CURRENCIES, type Currency } from "shared";
+import { CURRENCIES, parseMoney, type Currency } from "shared";
 import { AppError } from "../../shared/errors/app-error.js";
 import {
   calendarMonthRangesAcrossYears,
@@ -8,6 +8,11 @@ import {
 import type { AccountRepository } from "../accounts/account.types.js";
 import type { CategoryRepository } from "../categories/category.types.js";
 import type { CreditCardRepository } from "../credit-cards/credit-card.types.js";
+import {
+  assertCorrectionTarget,
+  requireIdempotencyKey,
+} from "../corrections/correction.repository.js";
+import type { CorrectionRepository } from "../corrections/correction.types.js";
 import { buildTransactionsCsv } from "./transaction-csv.js";
 import {
   EXPENSE_CATEGORY_TYPES,
@@ -25,6 +30,8 @@ import {
   type TransactionRepository,
   type TransferCreateResult,
   type UpdateTransactionInput,
+  type VoidTransactionInput,
+  type VoidTransferResult,
 } from "./transaction.types.js";
 import {
   activeReimbursementsOf,
@@ -34,14 +41,13 @@ import {
 } from "./net-expense.js";
 import { computeBalance, toCents } from "./transaction-balance.js";
 
-const AMOUNT_PATTERN = /^(?:0|[1-9]\d{0,15})(?:\.\d{1,2})?$/;
-
 export class TransactionService {
   constructor(
     private readonly transactions: TransactionRepository,
     private readonly accounts: AccountRepository,
     private readonly categories: CategoryRepository,
-    private readonly creditCards: CreditCardRepository | null = null
+    private readonly creditCards: CreditCardRepository | null = null,
+    private readonly corrections: CorrectionRepository | null = null
   ) {}
 
   async createExpense(
@@ -189,7 +195,7 @@ export class TransactionService {
     const current = await this.requireOwnedTransaction(userId, id);
     rejectImmutableLeg(current, "editar");
 
-    if (current.status === "VOIDED") {
+    if (current.status !== "ACTIVE") {
       throw new AppError(
         "TRANSACTION_VOIDED",
         "No se puede editar un movimiento anulado.",
@@ -235,11 +241,46 @@ export class TransactionService {
     });
   }
 
-  async void(userId: string, id: string): Promise<Transaction> {
+  /**
+   * P0.15 plain void: EXPENSE (bank or card), INCOME, ADJUSTMENT.
+   * Compound operations have dedicated endpoints and are rejected here:
+   * transfers, card payments, FX, housing and investments.
+   */
+  async void(
+    userId: string,
+    id: string,
+    input: VoidTransactionInput
+  ): Promise<Transaction> {
+    const idempotencyKey = requireIdempotencyKey(input?.idempotencyKey);
     const current = await this.requireOwnedTransaction(userId, id);
+
+    if (current.type === "CREDIT_CARD_PAYMENT") {
+      throw new AppError(
+        "CREDIT_CARD_PAYMENT_VOID_REQUIRED",
+        "Un pago de tarjeta se anula desde POST /api/credit-cards/:id/payments/:paymentId/void.",
+        400
+      );
+    }
+
     rejectImmutableLeg(current, "anular");
 
-    if (current.status === "VOIDED") {
+    /**
+     * The replay lookup runs before the already-voided check so that repeating
+     * the same key returns the recorded result, while a *different* key on an
+     * already voided movement still fails with TRANSACTION_ALREADY_VOIDED.
+     */
+    if (this.corrections) {
+      const replay = await this.corrections.findByIdempotencyKey(
+        userId,
+        idempotencyKey
+      );
+      if (replay) {
+        assertCorrectionTarget(replay, "TRANSACTION_VOID", id);
+        return current;
+      }
+    }
+
+    if (current.status !== "ACTIVE") {
       throw new AppError(
         "TRANSACTION_ALREADY_VOIDED",
         "El movimiento ya está anulado.",
@@ -266,7 +307,37 @@ export class TransactionService {
       );
     }
 
-    return this.transactions.update(id, { status: "VOIDED" });
+    const result = await this.transactions.voidTransactionAtomic({
+      userId,
+      transactionId: id,
+      idempotencyKey,
+    });
+    return result.transaction;
+  }
+
+  /**
+   * P0.15 atomic transfer void: both TRANSFER legs go to REVERSED together.
+   * No compensating income/expense is created, so spending and budgets are
+   * untouched (TRANSFER is already neutral for both).
+   */
+  async voidTransfer(
+    userId: string,
+    transferId: string,
+    input: VoidTransactionInput
+  ): Promise<VoidTransferResult> {
+    const idempotencyKey = requireIdempotencyKey(input?.idempotencyKey);
+    const transfer = await this.transactions.findTransferById(
+      userId,
+      transferId
+    );
+    if (!transfer) {
+      throw new AppError("NOT_FOUND", "Transferencia no encontrada.", 404);
+    }
+    return this.transactions.voidTransferAtomic({
+      userId,
+      transferId,
+      idempotencyKey,
+    });
   }
 
   async registerReimbursement(
@@ -284,7 +355,7 @@ export class TransactionService {
       );
     }
 
-    if (expense.status === "VOIDED") {
+    if (expense.status !== "ACTIVE") {
       throw new AppError(
         "TRANSACTION_VOIDED",
         "No se puede registrar un reintegro sobre un gasto anulado.",
@@ -411,7 +482,7 @@ export class TransactionService {
       );
     }
 
-    if (expense.status === "VOIDED") {
+    if (expense.status !== "ACTIVE") {
       throw new AppError(
         "TRANSACTION_VOIDED",
         "Un gasto anulado no participa en el gasto neto activo.",
@@ -585,24 +656,11 @@ export class TransactionService {
 }
 
 export function parsePositiveAmount(raw: string): string {
-  const value = raw.trim();
-
-  if (!AMOUNT_PATTERN.test(value)) {
-    throw new AppError(
-      "VALIDATION_ERROR",
-      "El importe debe ser un decimal positivo con hasta 2 decimales.",
-      400
-    );
+  const parsed = parseMoney(raw);
+  if (!parsed.ok) {
+    throw new AppError("VALIDATION_ERROR", parsed.reason, 400);
   }
-
-  const [whole, fraction = ""] = value.split(".");
-  const scaled = BigInt(whole) * 100n + BigInt(fraction.padEnd(2, "0"));
-
-  if (scaled <= 0n) {
-    throw new AppError("VALIDATION_ERROR", "El importe debe ser mayor que 0.", 400);
-  }
-
-  return `${whole}.${fraction.padEnd(2, "0")}`;
+  return parsed.canonical;
 }
 
 function requireIncomeKind(incomeKind: string): IncomeKind {
@@ -741,6 +799,10 @@ function rejectImmutableLeg(transaction: Transaction, action: "editar" | "anular
     );
   }
 
+  /**
+   * P0.15: investment legs stay IMMUTABLE. There is no void path for them;
+   * corrections go through the investment lifecycle (mature / renew / cancel).
+   */
   if (transaction.type === "INVESTMENT_OUTFLOW") {
     throw new AppError(
       "INVESTMENT_OUTFLOW_IMMUTABLE",

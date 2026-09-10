@@ -1,11 +1,9 @@
 import { CURRENCIES, type Currency } from "shared";
 import { z } from "zod";
+import { PositiveMoneyAmountSchema } from "../../shared/money/amount-schema.js";
 import { MAX_CREDIT_CARD_INSTALLMENTS } from "./credit-card-purchase.math.js";
 
-const amountSchema = z.union([
-  z.string().min(1, "El importe es obligatorio."),
-  z.number({ error: "El importe es obligatorio." }),
-]);
+const amountSchema = PositiveMoneyAmountSchema;
 
 export const CreateCreditCardPurchaseSchema = z
   .object({
@@ -45,6 +43,17 @@ export const CreateCreditCardPurchaseSchema = z
 export const CreditCardPurchaseIdParamsSchema = z
   .object({
     id: z.string().uuid("El id debe ser un UUID."),
+  })
+  .strict();
+
+/** P0.15: purchase void, idempotent. */
+export const VoidCreditCardPurchaseSchema = z
+  .object({
+    idempotencyKey: z
+      .string()
+      .trim()
+      .min(8, { error: "idempotencyKey debe tener al menos 8 caracteres." })
+      .max(128, { error: "idempotencyKey demasiado largo." }),
   })
   .strict();
 

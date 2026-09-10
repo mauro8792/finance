@@ -554,12 +554,49 @@ transaction_status_enum:
 
 ACTIVE
 VOIDED
+REVERSED
 ```
 
-Las transacciones `VOIDED`:
+Las transacciones `VOIDED` y `REVERSED`:
 
 - permanecen en DB;
-- no participan en cálculos financieros.
+- no participan en cálculos financieros (saldos, deuda de tarjeta, gasto).
+
+`VOIDED` es la anulación simple de un movimiento; `REVERSED` (P0.15) marca una
+pata anulada como parte de una corrección compuesta: transferencia, pago de
+tarjeta, cuota reconocida de una compra o acreditación de reintegro. Los read
+models filtran por `status === "ACTIVE"`, así que ambos quedan fuera por igual.
+
+## 10.1 CorrectionOperation (P0.15)
+
+```text
+correction_operations:
+
+id                    UUID PK
+user_id               UUID NOT NULL → users(id)
+idempotency_key       VARCHAR(128) NOT NULL
+kind                  correction_kind_enum NOT NULL
+target_id             UUID NOT NULL
+result_status         transaction_status_enum NOT NULL   -- VOIDED | REVERSED
+result_json           JSONB NULL
+created_at            TIMESTAMPTZ NOT NULL DEFAULT now()
+
+UNIQUE (user_id, idempotency_key)
+INDEX  (user_id, kind, target_id)
+
+correction_kind_enum:
+
+TRANSACTION_VOID
+TRANSFER_VOID
+PAYMENT_VOID
+PURCHASE_VOID
+REFUND_ACCREDITATION_VOID
+```
+
+Es a la vez rastro de auditoría y unidad de idempotencia de toda anulación.
+`transfer_links`, `credit_card_payment_links` y
+`credit_card_refund_accreditations` agregan `voided_at` y
+`void_idempotency_key` (nullable, con unique parcial por usuario).
 
 ---
 

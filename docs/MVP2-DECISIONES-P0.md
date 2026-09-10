@@ -153,7 +153,7 @@ Cancel remaining: sin acreditaciones → `CANCELLED`; con acreditaciones → `AC
 **P0.11:** DONE definitivo (Neon + deploy).  
 **P0.12:** DONE definitivo LIVE (promotions/caps; Neon + Render smoke).  
 **P0.12.1:** DONE definitivo LIVE (transfers UX).  
-**P0.13:** DONE definitivo LIVE (recurring charges + UI Tarjetas; Neon + Render + Vercel). **P0.14 NOT STARTED.**
+**P0.13:** DONE definitivo LIVE (recurring charges + UI Tarjetas; Neon + Render + Vercel). **P0.14 DONE definitivo LIVE.** **P0.15 DONE definitivo LIVE.** **P0.16 NOT STARTED.**
 
 ---
 
@@ -193,6 +193,26 @@ Política:
 | Statement cerrado | Restringe modificaciones silenciosas |
 | Pago existente | Reversión explícita que restaure banco y `currentCardDebt` |
 | Reintegro acreditado | Reversión explícita / coordinada |
+
+**Implementado en P0.15 (DONE definitivo LIVE).** Decisiones cerradas:
+
+- se agrega `REVERSED` a `TransactionStatus` para distinguir la anulación simple
+  (`VOIDED`) de la pata reversada dentro de una corrección compuesta; ambos
+  quedan fuera de saldos, deuda y gasto porque todo se deriva de `ACTIVE`;
+- no hay movimientos compensatorios: restaurar banco y `currentCardDebt` es
+  simplemente dejar de contar la fila;
+- `correction_operations` es a la vez auditoría e idempotencia
+  (`UNIQUE (user_id, idempotency_key)`); todos los endpoints de void piden
+  `{ idempotencyKey }` con mínimo 8 caracteres;
+- cuotas ya reconocidas: se eligió la **reversión controlada** por sobre
+  rechazar la anulación, tal como pide la tabla;
+- el snapshot de cierre del resumen nunca se reescribe; sólo se recalcula el
+  estado de pago desde los pagos `ACTIVE`;
+- una expectativa de reintegro cerrada por cancelación no se reabre al anular
+  una acreditación;
+- inversiones: siguen inmutables, sin camino de void en P0.15.
+
+**Migración:** `20260910180000_add_corrections_void` (additive only).
 
 ---
 

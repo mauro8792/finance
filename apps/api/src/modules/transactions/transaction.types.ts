@@ -24,9 +24,19 @@ export const TRANSACTION_TYPES = [
 
 export type TransactionType = (typeof TRANSACTION_TYPES)[number];
 
-export const TRANSACTION_STATUSES = ["ACTIVE", "VOIDED"] as const;
+/**
+ * P0.15: VOIDED = plain single-movement void.
+ * REVERSED = leg voided as part of a compound correction (transfer, card
+ * payment, recognized installment expense, refund accreditation).
+ * Read models must treat both as excluded: only ACTIVE counts.
+ */
+export const TRANSACTION_STATUSES = ["ACTIVE", "VOIDED", "REVERSED"] as const;
 
 export type TransactionStatus = (typeof TRANSACTION_STATUSES)[number];
+
+export function isActiveStatus(status: TransactionStatus): boolean {
+  return status === "ACTIVE";
+}
 
 export const PAYMENT_METHODS = [
   "CASH",
@@ -123,6 +133,8 @@ export type TransferView = {
   occurredAt: Date;
   outTransactionId: string;
   inTransactionId: string;
+  /** P0.15: set once both legs were atomically reversed. */
+  voidedAt: Date | null;
   createdAt: Date;
 };
 
@@ -142,6 +154,39 @@ export type CreateTransferAtomicInput = {
   occurredAt: Date;
   clientSentOccurredAt: boolean;
   idempotencyKey: string;
+};
+
+export type VoidTransactionInput = {
+  idempotencyKey: string;
+};
+
+export type VoidTransactionAtomicInput = {
+  userId: string;
+  transactionId: string;
+  idempotencyKey: string;
+};
+
+export type VoidTransactionResult = {
+  created: boolean;
+  transaction: Transaction;
+  /** REVERSED when the EXPENSE was a recognized card installment, else VOIDED. */
+  resultStatus: Extract<TransactionStatus, "VOIDED" | "REVERSED">;
+  /** Installment returned to PENDING, when the void unwound one. */
+  installmentId: string | null;
+  purchaseId: string | null;
+};
+
+export type VoidTransferAtomicInput = {
+  userId: string;
+  transferId: string;
+  idempotencyKey: string;
+};
+
+export type VoidTransferResult = {
+  created: boolean;
+  transfer: TransferView;
+  out: Transaction;
+  in: Transaction;
 };
 
 export type CreateReimbursementInput = {
@@ -237,4 +282,18 @@ export type TransactionRepository = {
     userId: string,
     transferId: string
   ): Promise<TransferView | null>;
+  /**
+   * P0.15: locks the movement, re-checks it is still ACTIVE, unwinds a
+   * recognized installment when present and records the CorrectionOperation.
+   */
+  voidTransactionAtomic(
+    input: VoidTransactionAtomicInput
+  ): Promise<VoidTransactionResult>;
+  /**
+   * P0.15: reverses BOTH transfer legs or neither. A single leg is never
+   * voidable (TRANSFER_IMMUTABLE).
+   */
+  voidTransferAtomic(
+    input: VoidTransferAtomicInput
+  ): Promise<VoidTransferResult>;
 };

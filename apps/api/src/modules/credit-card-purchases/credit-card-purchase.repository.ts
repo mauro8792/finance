@@ -5,6 +5,14 @@ import type {
 } from "@prisma/client";
 import type { Currency } from "shared";
 import { getPrismaClient } from "../../shared/db/prisma.js";
+import { AppError } from "../../shared/errors/app-error.js";
+import {
+  assertCorrectionTarget,
+  findCorrectionByKey,
+  isUniqueViolation,
+  recordCorrection,
+} from "../corrections/correction.repository.js";
+import type { CorrectionOperation } from "../corrections/correction.types.js";
 import { toCreateData } from "../transactions/transaction.repository.js";
 import type {
   DueInstallmentCandidate,
@@ -18,7 +26,16 @@ import type {
   CreditCardPurchaseRepository,
   CreditCardPurchaseStatus,
   PurchaseWithInstallments,
+  VoidCreditCardPurchaseInput,
+  VoidPurchaseAtomicResult,
 } from "./credit-card-purchase.types.js";
+
+type LockedPurchaseRow = {
+  id: string;
+  user_id: string;
+  credit_card_id: string;
+  status: string;
+};
 
 type LockedDueRow = {
   id: string;
@@ -275,6 +292,173 @@ export class PrismaCreditCardPurchaseRepository
       throw error;
     }
   }
+
+  async voidPurchaseAtomic(
+    input: VoidCreditCardPurchaseInput
+  ): Promise<VoidPurchaseAtomicResult> {
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const replay = await findCorrectionByKey(
+          tx,
+          input.userId,
+          input.idempotencyKey
+        );
+        if (replay) {
+          assertCorrectionTarget(replay, "PURCHASE_VOID", input.purchaseId);
+          return this.replayPurchaseVoid(tx, input, replay);
+        }
+
+        const locked = await tx.$queryRaw<LockedPurchaseRow[]>`
+          SELECT id, user_id, credit_card_id, status::text AS status
+          FROM credit_card_purchases
+          WHERE id = ${input.purchaseId}::uuid
+          FOR UPDATE
+        `;
+        const purchase = locked[0];
+        if (!purchase || purchase.user_id !== input.userId) {
+          throw new AppError("NOT_FOUND", "Compra no encontrada.", 404);
+        }
+        if (purchase.status !== "ACTIVE") {
+          throw new AppError(
+            "PURCHASE_ALREADY_VOIDED",
+            "La compra ya está anulada.",
+            409
+          );
+        }
+
+        const installments = await tx.creditCardInstallment.findMany({
+          where: { purchaseId: purchase.id },
+          orderBy: { installmentNumber: "asc" },
+        });
+        const recognized = installments.filter(
+          (row) => row.recognizedTransactionId != null
+        );
+        const recognizedExpenseIds = recognized
+          .map((row) => row.recognizedTransactionId)
+          .filter((id): id is string => id != null);
+
+        /**
+         * An accredited refund already credited money against a recognized
+         * expense. Reversing the expense underneath it would leave the
+         * reimbursement dangling, so the refund must be voided first.
+         */
+        if (recognizedExpenseIds.length > 0) {
+          const activeReimbursements = await tx.transaction.count({
+            where: {
+              relatedTransactionId: { in: recognizedExpenseIds },
+              type: "REIMBURSEMENT",
+              status: "ACTIVE",
+            },
+          });
+          if (activeReimbursements > 0) {
+            throw new AppError(
+              "PURCHASE_HAS_ACTIVE_REFUNDS",
+              "Anulá primero los reintegros acreditados de la compra.",
+              409
+            );
+          }
+        }
+
+        if (recognizedExpenseIds.length > 0) {
+          await tx.transaction.updateMany({
+            where: { id: { in: recognizedExpenseIds }, status: "ACTIVE" },
+            data: { status: "REVERSED" },
+          });
+        }
+
+        /**
+         * Recognized installments first lose their recognition (back to
+         * PENDING semantics) and, because the purchase itself is voided, every
+         * installment ends CANCELLED so the scheduler never picks them up.
+         */
+        const cancelled = await tx.creditCardInstallment.updateMany({
+          where: { purchaseId: purchase.id, status: { not: "CANCELLED" } },
+          data: {
+            status: "CANCELLED",
+            recognizedTransactionId: null,
+            recognizedAt: null,
+          },
+        });
+
+        await tx.creditCardPurchase.update({
+          where: { id: purchase.id },
+          data: { status: "VOIDED" },
+        });
+
+        const resultStatus =
+          recognizedExpenseIds.length > 0 ? "REVERSED" : "VOIDED";
+        await recordCorrection(tx, {
+          userId: input.userId,
+          idempotencyKey: input.idempotencyKey,
+          kind: "PURCHASE_VOID",
+          targetId: purchase.id,
+          resultStatus,
+          result: {
+            purchaseId: purchase.id,
+            creditCardId: purchase.credit_card_id,
+            reversedTransactionIds: recognizedExpenseIds,
+            cancelledInstallmentsCount: cancelled.count,
+            status: resultStatus,
+          },
+        });
+
+        return {
+          created: true,
+          purchase: await loadPurchaseWithInstallments(tx, purchase.id),
+          reversedTransactionIds: recognizedExpenseIds,
+          cancelledInstallmentsCount: cancelled.count,
+        };
+      });
+    } catch (error) {
+      if (isUniqueViolation(error)) {
+        const replay = await findCorrectionByKey(
+          this.prisma,
+          input.userId,
+          input.idempotencyKey
+        );
+        if (replay) {
+          assertCorrectionTarget(replay, "PURCHASE_VOID", input.purchaseId);
+          return this.replayPurchaseVoid(this.prisma, input, replay);
+        }
+      }
+      throw error;
+    }
+  }
+
+  private async replayPurchaseVoid(
+    db: Prisma.TransactionClient | ReturnType<typeof getPrismaClient>,
+    input: VoidCreditCardPurchaseInput,
+    correction: CorrectionOperation
+  ): Promise<VoidPurchaseAtomicResult> {
+    const recorded = (correction.result ?? {}) as {
+      reversedTransactionIds?: unknown;
+      cancelledInstallmentsCount?: unknown;
+    };
+    return {
+      created: false,
+      purchase: await loadPurchaseWithInstallments(db, input.purchaseId),
+      reversedTransactionIds: Array.isArray(recorded.reversedTransactionIds)
+        ? recorded.reversedTransactionIds.filter(
+            (id): id is string => typeof id === "string"
+          )
+        : [],
+      cancelledInstallmentsCount:
+        typeof recorded.cancelledInstallmentsCount === "number"
+          ? recorded.cancelledInstallmentsCount
+          : 0,
+    };
+  }
+}
+
+async function loadPurchaseWithInstallments(
+  db: Prisma.TransactionClient | ReturnType<typeof getPrismaClient>,
+  purchaseId: string
+): Promise<PurchaseWithInstallments> {
+  const record = await db.creditCardPurchase.findUniqueOrThrow({
+    where: { id: purchaseId },
+    include: { installments: { orderBy: { installmentNumber: "asc" } } },
+  });
+  return toPurchaseWithInstallments(record);
 }
 
 function toPurchaseWithInstallments(

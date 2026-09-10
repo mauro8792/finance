@@ -690,7 +690,7 @@ test("TransactionService rejects PATCH and VOID of HOUSING_PAYMENT", async () =>
       error instanceof AppError && error.code === "HOUSING_PAYMENT_IMMUTABLE"
   );
   await assert.rejects(
-    () => txService.void(userId, paid.transaction.id),
+    () => txService.void(userId, paid.transaction.id, { idempotencyKey: `void-${randomUUID()}` }),
     (error: unknown) =>
       error instanceof AppError && error.code === "HOUSING_PAYMENT_IMMUTABLE"
   );

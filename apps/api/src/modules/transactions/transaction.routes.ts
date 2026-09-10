@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { PrismaAccountRepository } from "../accounts/account.repository.js";
 import { PrismaCategoryRepository } from "../categories/category.repository.js";
+import { PrismaCorrectionRepository } from "../corrections/correction.repository.js";
 import { PrismaCreditCardRepository } from "../credit-cards/credit-card.repository.js";
 import { PrismaUserRepository } from "../users/user.repository.js";
 import { TransactionController } from "./transaction.controller.js";
@@ -25,7 +26,8 @@ export const transactionController = new TransactionController(
     new PrismaTransactionRepository(),
     new PrismaAccountRepository(),
     new PrismaCategoryRepository(),
-    new PrismaCreditCardRepository()
+    new PrismaCreditCardRepository(),
+    new PrismaCorrectionRepository()
   ),
   new PrismaUserRepository()
 );
@@ -37,6 +39,7 @@ export function createTransferRouter(controller: TransactionController): Router 
   router.post("/", controller.createTransfer);
   router.get("/", controller.listTransfers);
   router.get("/:id", controller.getTransfer);
+  router.post("/:id/void", controller.voidTransfer);
   return router;
 }
 

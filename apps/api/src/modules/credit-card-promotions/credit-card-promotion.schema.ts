@@ -1,30 +1,11 @@
 import { z } from "zod";
+import { PositiveMoneyAmountSchema } from "../../shared/money/amount-schema.js";
 import {
   CREDIT_CARD_PROMOTION_BENEFIT_TYPES,
   CREDIT_CARD_PROMOTION_CAP_PERIODS,
 } from "./credit-card-promotion.types.js";
 
-const AmountSchema = z.union([z.string(), z.number()]).transform((value, ctx) => {
-  const raw = String(value).trim();
-  if (!/^\d+(\.\d{1,2})?$/.test(raw)) {
-    ctx.addIssue({
-      code: "custom",
-      message: "Monto inválido: use hasta 2 decimales.",
-    });
-    return z.NEVER;
-  }
-  const normalized = raw.includes(".") ? raw : `${raw}.00`;
-  const [whole, fraction = "00"] = normalized.split(".");
-  const cents = BigInt(whole) * 100n + BigInt(fraction.padEnd(2, "0"));
-  if (cents <= 0n) {
-    ctx.addIssue({
-      code: "custom",
-      message: "El monto debe ser mayor a 0.",
-    });
-    return z.NEVER;
-  }
-  return `${whole}.${fraction.padEnd(2, "0").slice(0, 2)}`;
-});
+const AmountSchema = PositiveMoneyAmountSchema;
 
 const OptionalPositiveAmountSchema = AmountSchema.nullable().optional();
 

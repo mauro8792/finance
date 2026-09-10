@@ -7,3 +7,19 @@ export type {
   ApiErrorResponse,
   HealthResponse,
 } from "./types/api.js";
+export {
+  isCanonicalPositiveAmount,
+  isValidAmount,
+  normalizeAmountInput,
+  normalizeMoneyInput,
+  parseMoney,
+  parseMoneyOrThrow,
+  stripMoneyDecorators,
+  toApiAmount,
+  toCanonicalAmount,
+} from "./money/parse-money.js";
+export type {
+  ParseMoneyFailure,
+  ParseMoneyResult,
+  ParseMoneySuccess,
+} from "./money/parse-money.js";

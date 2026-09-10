@@ -33,6 +33,7 @@ const TYPE_LABELS: Record<Transaction["type"], string> = {
 const STATUS_LABELS: Record<Transaction["status"], string> = {
   ACTIVE: "Activo",
   VOIDED: "Anulado",
+  REVERSED: "Reversado",
 };
 
 const INCOME_KIND_LABELS = {

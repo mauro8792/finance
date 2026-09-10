@@ -10,6 +10,9 @@ const getAccounts = vi.fn();
 const getCategories = vi.fn();
 const updateTransaction = vi.fn();
 const voidTransaction = vi.fn();
+const voidTransfer = vi.fn();
+const createTransaction = vi.fn();
+const createTransfer = vi.fn();
 const exportTransactionsCsv = vi.fn();
 
 vi.mock("../lib/api", () => ({
@@ -17,7 +20,10 @@ vi.mock("../lib/api", () => ({
   getAccounts: () => getAccounts(),
   getCategories: () => getCategories(),
   updateTransaction: (id: string, payload: unknown) => updateTransaction(id, payload),
-  voidTransaction: (id: string) => voidTransaction(id),
+  voidTransaction: (id: string, payload: unknown) => voidTransaction(id, payload),
+  voidTransfer: (id: string, payload: unknown) => voidTransfer(id, payload),
+  createTransaction: (payload: unknown) => createTransaction(payload),
+  createTransfer: (payload: unknown) => createTransfer(payload),
   exportTransactionsCsv: (filters: unknown) => exportTransactionsCsv(filters),
 }));
 
@@ -299,6 +305,61 @@ describe("TransactionsPage", () => {
     expect(screen.getAllByRole("button", { name: "Ver detalle" }).length).toBe(1);
   });
 
+  it("voids the whole transfer from the grouped card", async () => {
+    const user = userEvent.setup();
+    const caja: Account = {
+      id: "acc-caja",
+      name: "Caja ARS",
+      currency: "ARS",
+      type: "CASH",
+      isActive: true,
+    };
+    const legs = (status: Transaction["status"]) => [
+      movement({
+        id: "tx-out",
+        type: "TRANSFER",
+        status,
+        accountId: fondo.id,
+        categoryId: null,
+        amount: "500.00",
+        occurredAt: "2026-08-20T15:00:00.000Z",
+        metadata: { transferId: "tr-1", direction: "OUT" },
+      }),
+      movement({
+        id: "tx-in",
+        type: "TRANSFER",
+        status,
+        accountId: caja.id,
+        categoryId: null,
+        amount: "500.00",
+        occurredAt: "2026-08-20T15:00:00.000Z",
+        metadata: { transferId: "tr-1", direction: "IN" },
+      }),
+    ];
+    getAccounts.mockResolvedValue([fondo, caja]);
+    getTransactions.mockResolvedValue(legs("ACTIVE"));
+    voidTransfer.mockResolvedValue({ transferId: "tr-1" });
+    renderPage();
+
+    expect(await screen.findByText("Fondo indemnización prueba → Caja ARS")).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Anular transferencia" }));
+    expect(
+      screen.getByText(/El movimiento original se conserva por historial\./)
+    ).toBeTruthy();
+
+    getTransactions.mockResolvedValue(legs("REVERSED"));
+    await user.click(screen.getByRole("button", { name: "Confirmar anulación" }));
+
+    await waitFor(() => {
+      expect(voidTransfer).toHaveBeenCalledWith("tr-1", {
+        idempotencyKey: expect.any(String),
+      });
+    });
+    expect((await screen.findAllByText("Reversado")).length).toBeGreaterThan(0);
+    // Nunca se anula una pata sola.
+    expect(voidTransaction).not.toHaveBeenCalled();
+  });
+
   it("voids an allowed movement after confirmation", async () => {
     const user = userEvent.setup();
     getTransactions.mockResolvedValue([august]);
@@ -306,11 +367,16 @@ describe("TransactionsPage", () => {
     const { invalidate } = renderPage();
     expect(await screen.findByText("Gasto agosto")).toBeTruthy();
     await user.click(screen.getByRole("button", { name: "Anular" }));
-    expect(screen.getByText("¿Querés anular este movimiento?")).toBeTruthy();
+    expect(screen.getByText(/¿Querés anular este movimiento\?/)).toBeTruthy();
+    expect(
+      screen.getByText(/El movimiento original se conserva por historial\./)
+    ).toBeTruthy();
     getTransactions.mockResolvedValue([{ ...august, status: "VOIDED" }]);
     await user.click(screen.getByRole("button", { name: "Confirmar anulación" }));
     await waitFor(() => {
-      expect(voidTransaction).toHaveBeenCalledWith("tx-ago");
+      expect(voidTransaction).toHaveBeenCalledWith("tx-ago", {
+        idempotencyKey: expect.any(String),
+      });
     });
     await waitFor(() => {
       expect(invalidate).toHaveBeenCalledWith({ queryKey: ["transactions"] });
