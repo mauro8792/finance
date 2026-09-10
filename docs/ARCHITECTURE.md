@@ -401,6 +401,8 @@ apps/api/
 │   │   ├── credit-card-purchases/ # MVP2 P0.6–P0.8 — Purchase + N Installments; recognizeDue CLI
 │   │   ├── credit-card-statements/ # MVP2 P0.9 — Statement cycle projection/close (F9 ≠ debt)
 │   │   ├── credit-card-payments/   # MVP2 P0.10 — CREDIT_CARD_PAYMENT (bank−, debt−, spending 0)
+│   │   ├── credit-card-refunds/    # MVP2 P0.11 — ExpectedRefund + accreditation F6
+│   │   ├── credit-card-promotions/ # MVP2 P0.12 — promo caps / apply → EXPECTED only
 │   │   │   ├── credit-card-purchase.controller.ts
 │   │   │   ├── credit-card-purchase.service.ts
 │   │   │   ├── credit-card-purchase.repository.ts
@@ -804,6 +806,15 @@ GET    /api/credit-card-refunds/expected
 GET    /api/credit-card-refunds/expected/:id
 POST   /api/credit-card-refunds/expected/:id/cancel
 POST   /api/credit-card-refunds/accredit
+
+POST   /api/credit-card-promotions
+GET    /api/credit-card-promotions
+GET    /api/credit-card-promotions/:id
+PATCH  /api/credit-card-promotions/:id
+POST   /api/credit-card-promotions/:id/activate
+POST   /api/credit-card-promotions/:id/deactivate
+POST   /api/credit-card-promotions/:id/preview
+POST   /api/credit-card-promotions/:id/apply
 
 POST   /api/transfers
 
@@ -2039,6 +2050,14 @@ POST /api/credit-card-refunds/expected   -- sin impacto financiero
 POST /api/credit-card-refunds/accredit   -- crea REIMBURSEMENT (SoT)
   BANK_ACCOUNT → accountId set, creditCardId null → banco+
   CREDIT_CARD  → accountId null, creditCardId set → currentCardDebt↓, banco invariante
+```
+
+P0.12 (promo / tope → EXPECTED):
+
+```text
+POST /api/credit-card-promotions/:id/preview  -- sin writes
+POST /api/credit-card-promotions/:id/apply    -- crea expectativa + application link
+-- neto/banco/deuda invariantes hasta accredit P0.11
 ```
 
 EXPECTED ≠ ACCREDITED; reintegro ≠ INCOME.

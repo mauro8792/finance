@@ -6,16 +6,16 @@ import request from "supertest";
 import { getPrismaClient } from "../../shared/db/prisma.js";
 import { errorHandler } from "../../middlewares/error-handler.js";
 import type { AuthContext } from "../auth/auth.types.js";
-import { CreditCardRefundController } from "./credit-card-refund.controller.js";
-import { PrismaCreditCardRefundRepository } from "./credit-card-refund.repository.js";
-import { createCreditCardRefundRouter } from "./credit-card-refund.routes.js";
-import { CreditCardRefundService } from "./credit-card-refund.service.js";
+import { CreditCardPromotionController } from "./credit-card-promotion.controller.js";
+import { PrismaCreditCardPromotionRepository } from "./credit-card-promotion.repository.js";
+import { createCreditCardPromotionRouter } from "./credit-card-promotion.routes.js";
+import { CreditCardPromotionService } from "./credit-card-promotion.service.js";
 
 async function seed() {
   const prisma = getPrismaClient();
   const user = await prisma.user.create({
     data: {
-      name: "QA Refund HTTP",
+      name: "QA Promo HTTP",
       email: `${randomUUID()}@qa.invalid`,
       passwordHash: "invalid",
     },
@@ -45,18 +45,17 @@ async function seed() {
       categoryId: category.id,
       type: "EXPENSE",
       status: "ACTIVE",
-      amount: "20000.00",
+      amount: "50000.00",
       currency: "ARS",
       occurredAt: new Date("2026-09-10T12:00:00.000Z"),
     },
   });
-  return { prisma, user, expense };
+  return { prisma, user, card, expense };
 }
 
 async function cleanup(userId: string) {
   const prisma = getPrismaClient();
   await prisma.creditCardPromotionApplication.deleteMany({ where: { userId } });
-  await prisma.creditCardRefundAccreditation.deleteMany({ where: { userId } });
   await prisma.creditCardRefundExpectation.deleteMany({ where: { userId } });
   await prisma.creditCardPromotion.deleteMany({ where: { userId } });
   await prisma.transaction.deleteMany({ where: { userId } });
@@ -76,10 +75,10 @@ function buildApp(userId: string) {
   });
   app.use(express.json());
   app.use(
-    "/api/credit-card-refunds",
-    createCreditCardRefundRouter(
-      new CreditCardRefundController(
-        new CreditCardRefundService(new PrismaCreditCardRefundRepository())
+    "/api/credit-card-promotions",
+    createCreditCardPromotionRouter(
+      new CreditCardPromotionController(
+        new CreditCardPromotionService(new PrismaCreditCardPromotionRepository())
       )
     )
   );
@@ -87,26 +86,50 @@ function buildApp(userId: string) {
   return app;
 }
 
-test("P0.11 controller — validation + cancel expected", async () => {
+test("P0.12 controller — CRUD activate preview apply", async () => {
   const ctx = await seed();
   try {
     const app = buildApp(ctx.user.id);
-    const bad = await request(app).post("/api/credit-card-refunds/expected").send({
-      expectedAmount: "1000.00",
-    });
-    assert.equal(bad.status, 400);
-
-    const created = await request(app).post("/api/credit-card-refunds/expected").send({
-      originalExpenseTransactionId: ctx.expense.id,
-      expectedAmount: "5000.00",
+    const created = await request(app).post("/api/credit-card-promotions").send({
+      creditCardId: ctx.card.id,
+      name: "HTTP Promo",
+      currency: "ARS",
+      benefitType: "PERCENTAGE",
+      percentage: "0.200000",
+      capPeriod: "NONE",
+      validFrom: "2026-01-01T00:00:00.000Z",
+      validUntil: "2026-12-31T23:59:59.000Z",
     });
     assert.equal(created.status, 201);
+    const id = created.body.id as string;
 
-    const cancelled = await request(app)
-      .post(`/api/credit-card-refunds/expected/${created.body.id}/cancel`)
+    const deactivated = await request(app)
+      .post(`/api/credit-card-promotions/${id}/deactivate`)
       .send({});
-    assert.equal(cancelled.status, 200);
-    assert.equal(cancelled.body.status, "CANCELLED");
+    assert.equal(deactivated.status, 200);
+    assert.equal(deactivated.body.isActive, false);
+
+    const activated = await request(app)
+      .post(`/api/credit-card-promotions/${id}/activate`)
+      .send({});
+    assert.equal(activated.status, 200);
+    assert.equal(activated.body.isActive, true);
+
+    const preview = await request(app)
+      .post(`/api/credit-card-promotions/${id}/preview`)
+      .send({ originalExpenseTransactionId: ctx.expense.id });
+    assert.equal(preview.status, 200);
+    assert.equal(preview.body.calculation.expectedAmount, "10000.00");
+
+    const applied = await request(app)
+      .post(`/api/credit-card-promotions/${id}/apply`)
+      .send({
+        originalExpenseTransactionId: ctx.expense.id,
+        idempotencyKey: `http-${randomUUID()}`,
+      });
+    assert.equal(applied.status, 201);
+    assert.equal(applied.body.expectation.expectedAmount, "10000.00");
+    assert.equal(applied.body.expectation.status, "EXPECTED");
   } finally {
     await cleanup(ctx.user.id);
   }

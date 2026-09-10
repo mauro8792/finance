@@ -123,8 +123,10 @@ async function seedBase() {
 
 async function cleanup(userId: string) {
   const prisma = getPrismaClient();
+  await prisma.creditCardPromotionApplication.deleteMany({ where: { userId } });
   await prisma.creditCardRefundAccreditation.deleteMany({ where: { userId } });
   await prisma.creditCardRefundExpectation.deleteMany({ where: { userId } });
+  await prisma.creditCardPromotion.deleteMany({ where: { userId } });
   await prisma.creditCardPaymentLink.deleteMany({ where: { userId } });
   await prisma.creditCardInstallment.deleteMany({
     where: { purchase: { userId } },

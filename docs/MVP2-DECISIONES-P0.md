@@ -150,7 +150,8 @@ Dos destinos reales de acreditación:
 Acreditaciones parciales: una expectativa puede recibir múltiples `REIMBURSEMENT` vía `CreditCardRefundAccreditation`.  
 Cancel remaining: sin acreditaciones → `CANCELLED`; con acreditaciones → `ACCREDITED` (conserva txs reales).
 
-**P0.11:** DONE localmente (migración test/local; **Neon no modificado**).
+**P0.11:** DONE definitivo (Neon + deploy).  
+**P0.12:** DONE definitivo (promotions/caps; Neon + deploy). **P0.13 NOT STARTED.**
 
 ---
 
@@ -321,8 +322,11 @@ Constraints de servicio (y DB check si es viable):
 ```text
 credit_card_refund_expectations
   expected_amount, status EXPECTED|PARTIALLY_ACCREDITED|ACCREDITED|CANCELLED
+  cancelled_remaining_amount DEFAULT 0  -- P0.12 cap release on cancel
   XOR purchase_id | original_expense_transaction_id
+  promotion_id NULLABLE + calculation_* snapshot (P0.12)
   -- accreditedAmount derived from accreditation links
+  -- cap consumed = expected_amount - cancelled_remaining_amount
 
 credit_card_refund_accreditations
   transaction_id UNIQUE → REIMBURSEMENT
@@ -330,9 +334,18 @@ credit_card_refund_accreditations
   original_expense_transaction_id NOT NULL
   purchase_id NULLABLE
   credit_card_id, destination_type, idempotency_key
+
+credit_card_promotions (P0.12)
+  benefit_type PERCENTAGE|FIXED_AMOUNT
+  cap_period NONE|PER_PURCHASE|MONTHLY|PROMOTION_PERIOD
+  valid_from/valid_until, CHECKs benefit/cap/min
+
+credit_card_promotion_applications (P0.12)
+  expectation_id UNIQUE, (user_id, idempotency_key) UNIQUE
+  partial UNIQUE (promotion_id, purchase_id) / (promotion_id, original_expense_transaction_id)
 ```
 
-P0.12 promotions / cap windows: pendiente.
+P0.12 promotions / cap windows: DONE definitivo (Neon + deploy).
 
 ### Derivación de métricas (concepto)
 
@@ -365,7 +378,8 @@ totalOutstandingCommitment = currentCardDebt + futureInstallmentCommitment
 | P0.8 Recognize due installments (idempotent) | DONE definitivo (código + API; sin migración; CLI dry-run; sin cron) |
 | P0.9 CreditCardStatement (F9) | DONE definitivo (código + Neon + API) |
 | `CREDIT_CARD_PAYMENT` / P0.10 | DONE definitivo (código + Neon + API) |
-| ExpectedRefund + acreditación F6 / P0.11 | DONE localmente (código + migración test; **Neon pendiente**) |
+| ExpectedRefund + acreditación F6 / P0.11 | DONE definitivo (código + Neon + API) |
+| Promotions / caps P0.12 | DONE definitivo (código + Neon migrate + deploy) |
 
 ### Modelado P0.6–P0.7 (opción B)
 

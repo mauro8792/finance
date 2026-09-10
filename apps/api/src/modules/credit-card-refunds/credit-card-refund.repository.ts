@@ -164,6 +164,7 @@ export class PrismaCreditCardRefundRepository
           purchaseId: source.purchaseId,
           originalExpenseTransactionId: source.originalExpenseTransactionId,
           expectedAmount: input.expectedAmount,
+          cancelledRemainingAmount: "0.00",
           currency: source.currency,
           status: "EXPECTED",
           expectedDate:
@@ -206,12 +207,18 @@ export class PrismaCreditCardRefundRepository
         expectationId
       );
       const accreditedCents = toCents(accreditedAmount);
+      const expectedCents = toCents(locked.expected_amount.toFixed(2));
+      const cancelledRemainingCents =
+        expectedCents > accreditedCents ? expectedCents - accreditedCents : 0n;
       const nextStatus: CreditCardRefundExpectationStatus =
         accreditedCents === 0n ? "CANCELLED" : "ACCREDITED";
 
       const updated = await tx.creditCardRefundExpectation.update({
         where: { id: expectationId },
-        data: { status: nextStatus },
+        data: {
+          status: nextStatus,
+          cancelledRemainingAmount: fromCents(cancelledRemainingCents),
+        },
       });
 
       return {
@@ -1030,6 +1037,16 @@ function assertIdempotentReplay(
   }
 }
 
+function decimalOrNull(
+  value: Prisma.Decimal | null | undefined,
+  scale: 2 | 6
+): string | null {
+  if (value == null) {
+    return null;
+  }
+  return scale === 6 ? value.toFixed(6) : value.toFixed(2);
+}
+
 function toExpectationRecord(
   record: PrismaExpectation
 ): CreditCardRefundExpectationRecord {
@@ -1040,10 +1057,19 @@ function toExpectationRecord(
     purchaseId: record.purchaseId,
     originalExpenseTransactionId: record.originalExpenseTransactionId,
     expectedAmount: record.expectedAmount.toFixed(2),
+    cancelledRemainingAmount: record.cancelledRemainingAmount.toFixed(2),
     currency: record.currency as Currency,
     status: record.status as CreditCardRefundExpectationStatus,
     expectedDate: record.expectedDate,
     description: record.description,
+    promotionId: record.promotionId,
+    calculationEligibleBase: decimalOrNull(record.calculationEligibleBase, 2),
+    calculationRawBenefit: decimalOrNull(record.calculationRawBenefit, 2),
+    calculationCapApplied: decimalOrNull(record.calculationCapApplied, 2),
+    calculationLimitedBy: record.calculationLimitedBy,
+    calculationPercentage: decimalOrNull(record.calculationPercentage, 6),
+    calculationFixedAmount: decimalOrNull(record.calculationFixedAmount, 2),
+    calculationPromotionName: record.calculationPromotionName,
     createdAt: record.createdAt,
     updatedAt: record.updatedAt,
   };

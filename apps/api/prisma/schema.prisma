@@ -142,6 +142,22 @@ enum CreditCardRefundDestinationType {
   @@map("credit_card_refund_destination_type_enum")
 }
 
+enum CreditCardPromotionBenefitType {
+  PERCENTAGE
+  FIXED_AMOUNT
+
+  @@map("credit_card_promotion_benefit_type_enum")
+}
+
+enum CreditCardPromotionCapPeriod {
+  NONE
+  PER_PURCHASE
+  MONTHLY
+  PROMOTION_PERIOD
+
+  @@map("credit_card_promotion_cap_period_enum")
+}
+
 model User {
   id           String        @id @default(uuid()) @db.Uuid
   name         String        @db.VarChar(120)
@@ -163,6 +179,8 @@ model User {
   creditCardPaymentLinks           CreditCardPaymentLink[]
   creditCardRefundExpectations     CreditCardRefundExpectation[]
   creditCardRefundAccreditations   CreditCardRefundAccreditation[]
+  creditCardPromotions             CreditCardPromotion[]
+  creditCardPromotionApplications  CreditCardPromotionApplication[]
   sessions                         Session[]
 
   @@map("users")
@@ -252,6 +270,7 @@ model Transaction {
   creditCardPaymentLink  CreditCardPaymentLink?
   refundExpectationAsOriginalExpense CreditCardRefundExpectation[] @relation("RefundExpectationOriginalExpense")
   refundAccreditationsAsOriginalExpense CreditCardRefundAccreditation[] @relation("RefundAccreditationOriginalExpense")
+  promotionApplicationsAsOriginalExpense CreditCardPromotionApplication[] @relation("PromotionApplicationOriginalExpense")
   refundAccreditation    CreditCardRefundAccreditation?
 
   @@index([userId, occurredAt])
@@ -391,6 +410,7 @@ model CreditCard {
   paymentLinks CreditCardPaymentLink[]
   refundExpectations   CreditCardRefundExpectation[]
   refundAccreditations CreditCardRefundAccreditation[]
+  promotions           CreditCardPromotion[]
 
   @@index([userId])
   @@index([userId, isActive])
@@ -462,8 +482,9 @@ model CreditCardPurchase {
   creditCard         CreditCard               @relation(fields: [creditCardId], references: [id], onDelete: Restrict)
   category           Category                 @relation(fields: [categoryId], references: [id], onDelete: Restrict)
   installments       CreditCardInstallment[]
-  refundExpectations   CreditCardRefundExpectation[]
-  refundAccreditations CreditCardRefundAccreditation[]
+  refundExpectations     CreditCardRefundExpectation[]
+  refundAccreditations   CreditCardRefundAccreditation[]
+  promotionApplications  CreditCardPromotionApplication[]
 
   @@index([userId, purchasedAt])
   @@index([creditCardId, purchasedAt])
@@ -473,6 +494,7 @@ model CreditCardPurchase {
 
 /// P0.11: expected credit-card refund (no financial impact until accreditation).
 /// XOR: exactly one of purchaseId | originalExpenseTransactionId.
+/// P0.12: cancelledRemainingAmount + optional promotion snapshot/link.
 model CreditCardRefundExpectation {
   id                            String                            @id @default(uuid()) @db.Uuid
   userId                        String                            @map("user_id") @db.Uuid
@@ -480,23 +502,88 @@ model CreditCardRefundExpectation {
   purchaseId                    String?                           @map("purchase_id") @db.Uuid
   originalExpenseTransactionId  String?                           @map("original_expense_transaction_id") @db.Uuid
   expectedAmount                Decimal                           @map("expected_amount") @db.Decimal(18, 2)
+  /// Cap release on cancel: max(0, expected - accredited). Default 0 until cancel.
+  cancelledRemainingAmount      Decimal                           @default(0) @map("cancelled_remaining_amount") @db.Decimal(18, 2)
   currency                      Currency
   status                        CreditCardRefundExpectationStatus @default(EXPECTED)
   expectedDate                  DateTime?                         @map("expected_date") @db.Timestamptz
   description                   String?                           @db.VarChar(255)
+  promotionId                   String?                           @map("promotion_id") @db.Uuid
+  calculationEligibleBase       Decimal?                          @map("calculation_eligible_base") @db.Decimal(18, 2)
+  calculationRawBenefit         Decimal?                          @map("calculation_raw_benefit") @db.Decimal(18, 2)
+  calculationCapApplied         Decimal?                          @map("calculation_cap_applied") @db.Decimal(18, 2)
+  calculationLimitedBy          String?                           @map("calculation_limited_by") @db.VarChar(40)
+  calculationPercentage         Decimal?                          @map("calculation_percentage") @db.Decimal(18, 6)
+  calculationFixedAmount        Decimal?                          @map("calculation_fixed_amount") @db.Decimal(18, 2)
+  calculationPromotionName      String?                           @map("calculation_promotion_name") @db.VarChar(120)
   createdAt                     DateTime                          @default(now()) @map("created_at") @db.Timestamptz
   updatedAt                     DateTime                          @updatedAt @map("updated_at") @db.Timestamptz
   user                          User                              @relation(fields: [userId], references: [id], onDelete: Restrict)
   creditCard                    CreditCard                        @relation(fields: [creditCardId], references: [id], onDelete: Restrict)
   purchase                      CreditCardPurchase?               @relation(fields: [purchaseId], references: [id], onDelete: Restrict)
   originalExpenseTransaction    Transaction?                      @relation("RefundExpectationOriginalExpense", fields: [originalExpenseTransactionId], references: [id], onDelete: Restrict)
+  promotion                     CreditCardPromotion?              @relation(fields: [promotionId], references: [id], onDelete: Restrict)
   accreditations                CreditCardRefundAccreditation[]
+  promotionApplication          CreditCardPromotionApplication?
 
   @@index([userId, status])
   @@index([creditCardId, createdAt])
   @@index([purchaseId])
   @@index([originalExpenseTransactionId])
+  @@index([promotionId])
   @@map("credit_card_refund_expectations")
+}
+
+/// P0.12: credit-card promotion / refund benefit definition with optional caps.
+model CreditCardPromotion {
+  id                     String                         @id @default(uuid()) @db.Uuid
+  userId                 String                         @map("user_id") @db.Uuid
+  creditCardId           String                         @map("credit_card_id") @db.Uuid
+  name                   String                         @db.VarChar(120)
+  currency               Currency
+  benefitType            CreditCardPromotionBenefitType @map("benefit_type")
+  percentage             Decimal?                       @db.Decimal(18, 6)
+  fixedAmount            Decimal?                       @map("fixed_amount") @db.Decimal(18, 2)
+  minimumPurchaseAmount  Decimal?                       @map("minimum_purchase_amount") @db.Decimal(18, 2)
+  capAmount              Decimal?                       @map("cap_amount") @db.Decimal(18, 2)
+  capPeriod              CreditCardPromotionCapPeriod   @default(NONE) @map("cap_period")
+  validFrom              DateTime                       @map("valid_from") @db.Timestamptz
+  validUntil             DateTime                       @map("valid_until") @db.Timestamptz
+  isActive               Boolean                        @default(true) @map("is_active")
+  description            String?                        @db.VarChar(255)
+  createdAt              DateTime                       @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt              DateTime                       @updatedAt @map("updated_at") @db.Timestamptz
+  user                   User                           @relation(fields: [userId], references: [id], onDelete: Restrict)
+  creditCard             CreditCard                     @relation(fields: [creditCardId], references: [id], onDelete: Restrict)
+  expectations           CreditCardRefundExpectation[]
+  applications           CreditCardPromotionApplication[]
+
+  @@index([userId, isActive])
+  @@index([creditCardId, validFrom, validUntil])
+  @@map("credit_card_promotions")
+}
+
+/// P0.12: links a promotion apply → expectation (idempotent; one promo per source).
+model CreditCardPromotionApplication {
+  id                           String                      @id @default(uuid()) @db.Uuid
+  userId                       String                      @map("user_id") @db.Uuid
+  promotionId                  String                      @map("promotion_id") @db.Uuid
+  expectationId                String                      @unique @map("expectation_id") @db.Uuid
+  purchaseId                   String?                     @map("purchase_id") @db.Uuid
+  originalExpenseTransactionId String?                     @map("original_expense_transaction_id") @db.Uuid
+  idempotencyKey               String                      @map("idempotency_key") @db.VarChar(128)
+  createdAt                    DateTime                    @default(now()) @map("created_at") @db.Timestamptz
+  user                         User                        @relation(fields: [userId], references: [id], onDelete: Restrict)
+  promotion                    CreditCardPromotion         @relation(fields: [promotionId], references: [id], onDelete: Restrict)
+  expectation                  CreditCardRefundExpectation @relation(fields: [expectationId], references: [id], onDelete: Restrict)
+  purchase                     CreditCardPurchase?         @relation(fields: [purchaseId], references: [id], onDelete: Restrict)
+  originalExpenseTransaction   Transaction?                @relation("PromotionApplicationOriginalExpense", fields: [originalExpenseTransactionId], references: [id], onDelete: Restrict)
+
+  @@unique([userId, idempotencyKey])
+  @@index([promotionId])
+  @@index([purchaseId])
+  @@index([originalExpenseTransactionId])
+  @@map("credit_card_promotion_applications")
 }
 
 /// P0.11: links REIMBURSEMENT Transaction → optional expectation + idempotency.

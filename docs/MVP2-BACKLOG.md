@@ -324,25 +324,29 @@ No auto-acreditar. Estados expectativa: `EXPECTED` | `PARTIALLY_ACCREDITED` | `A
 
 **Deuda:** `currentCardDebt = Σ EXPENSE − Σ PAYMENT − Σ REIMBURSEMENT(card)` (EXPECTED no participa).
 
-**Dependencias:** P0.6; P0.10. **Siguiente gate:** autorización P0.12 (**NOT STARTED**).
+**Dependencias:** P0.6; P0.10. **Siguiente gate:** P0.12 DONE definitivo.
 
 ---
 
 ## P0.12 — Topes de promoción
 
-**Estado: NOT STARTED.**
+**Estado: DONE definitivo** (código + Neon migrate + API deploy/smoke). **P0.13 NOT STARTED.**
 
 **Objetivo:** Tope por promo/ventana; expected acotado (§11).
 
-**Reglas:** solo expectativa; neto confirmado intacto.
+**Reglas:** solo expectativa; neto confirmado intacto. Cap consumed = `expectedAmount - cancelledRemainingAmount`. Cancel libera remanente no acreditado. Promotion ≠ acreditación (P0.11 sigue siendo autoridad ACCREDITED).
 
-**Migraciones:** promotions / cap windows.
+**Migraciones:** `20260910010000_add_credit_card_promotion` (promotions + applications + expectation snapshot/cancelledRemaining; partial uniques; additive). Aplicada en Neon.
 
-**Tests:** tope 25k, dos compras → segundo expected 9k.
+**API:** `/api/credit-card-promotions` — CRUD, activate/deactivate, preview, apply.
+
+**Tests:** tope 25k mensual, dos compras → segundo expected 9k; cancel libera; apply sin impacto financiero; concurrency shared cap.
+
+**Limitaciones conocidas (no bloquean cierre):** sin fees/recurring (P0.13); sin auto-detect por descripción; sin scheduler/lagDays; `expectedDate` en apply aún null; GET promotion sin `capUsed/capReserved/capRemaining` (sí en preview/apply); sin UI grande; sin AI.
 
 **Criterio de aceptación:** §11; sin efecto en confirmado.
 
-**Dependencias:** P0.11.
+**Dependencias:** P0.11. **Siguiente gate:** autorización P0.13 (**NOT STARTED**).
 
 ---
 

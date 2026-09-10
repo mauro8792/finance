@@ -560,7 +560,8 @@ Sin `closingDay`: proyección limitada; no afirmar “próximo resumen” cierto
 
 `CreditCardStatement` no es fuente de deuda: `currentCardDebt` se deriva de eventos (`EXPENSE` reconocidos, `CREDIT_CARD_PAYMENT`, reintegros a tarjeta, cargos explícitos). Cambiar `actualAmount` del statement **no** altera la deuda en silencio (`MVP2-DECISIONES-P0.md` F9).
 
-**P0.11 local:** expectations + accreditations implementados; migración local/test; Neon no modificado. P0.12 (promos/topes) no iniciado.
+**P0.11:** expectations + accreditations implementados (Neon aplicado).  
+**P0.12 DONE definitivo:** promotions + applications + `cancelledRemainingAmount`; migration Neon aplicada. Apply/preview sin impacto en confirmado. Cap consumed = expected − cancelledRemaining.
 
 ## 23.2 Legacy MVP1
 

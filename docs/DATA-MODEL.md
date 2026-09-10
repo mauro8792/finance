@@ -1348,7 +1348,7 @@ El pago del resumen **nunca** debe registrarse otra vez como gasto.
 
 ## 37.2 Modelo MVP2 (objetivo)
 
-Entidades (P0.3–P0.11):
+Entidades (P0.3–P0.12):
 
 ```text
 credit_cards
@@ -1356,13 +1356,15 @@ credit_card_purchases
 credit_card_installments
 credit_card_statements
 credit_card_payment_links
-credit_card_refund_expectations   -- EXPECTED sin impacto financiero
+credit_card_refund_expectations   -- EXPECTED sin impacto financiero; cancelled_remaining_amount (P0.12)
 credit_card_refund_accreditations -- link REIMBURSEMENT + idempotency
-promotions                        -- P0.12 (pendiente)
+credit_card_promotions            -- P0.12 benefit + caps
+credit_card_promotion_applications -- P0.12 apply link + idempotency
 ```
 
 Expectativa XOR: `purchase_id` **o** `original_expense_transaction_id` (CHECK).  
-Acreditación: `REIMBURSEMENT` es SoT; EXPECTED ≠ ACCREDITED; reintegro ≠ `INCOME`.
+Acreditación: `REIMBURSEMENT` es SoT; EXPECTED ≠ ACCREDITED; reintegro ≠ `INCOME`.  
+Promo apply: solo crea expectativa; cap consumed = `expected − cancelled_remaining`.
 
 Compra / cuota reconocida:
 
