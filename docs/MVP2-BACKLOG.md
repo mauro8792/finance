@@ -487,19 +487,47 @@ prellenada) en gastos/ingresos simples. Sin botones de borrado.
 
 ---
 
-# P1 — Uso diario
+# P1 — Uso diario / Full Visual Refresh
+
+## P1 — FULL VISUAL REFRESH
+
+**Estado: DONE definitivo LIVE** (Vercel web 2026-09-10; sin Neon/Render — solo UI). **P0.16 NOT STARTED.**
+
+**Objetivo:** Producto financiero moderno, mobile-first, lenguaje visual coherente
+basado en Tarjetas P0.13 (teal/slate/cream).
+
+**Entregado:**
+
+- tokens CSS (`globals.css` `:root` `--pf-*`);
+- primitivas: `FinancialCard`, `Metric`, `StatusBadge`, `SectionHeader`,
+  `PageHeader`, `ActionCard`, `SummaryCard`, `BottomSheet`, `Skeleton`, `Money`;
+- Privacy mode (ojo) con persistencia `pf.privacy.hideAmounts`;
+- cuenta predeterminada (`pf.quickAdd.accountId`) para QuickAdd;
+- Home dashboard (Disponible, métricas por moneda, acciones rápidas, previews);
+- Accounts / Transactions (filtros mobile en BottomSheet) / Investments /
+  Housing / Transfers / Cards polish / Registrar;
+- bottom nav mobile: Inicio · Registrar · Movimientos · Cuentas · Más;
+- desktop: SiteHeader limpio ≥1024;
+- empty / loading / error de producto;
+- montos vía helper único + `<Money>` (respeta privacy).
+
+**No tocó:** reglas financieras, Neon, cauciones, deploys.
+
+**Tests web:** suite completa verde (346+).
+
+---
 
 | ID | Ítem | Notas |
 |----|------|--------|
-| P1.1 | Tarjeta principal + matching IA/voz | §3.3; siempre confirmación |
-| P1.2 | Cuenta predeterminada | |
-| P1.3 | Parser IA: tarjeta/cuotas/promo | |
-| P1.4 | UI conciliación reintegros | §12 |
-| P1.5 | Privacidad de saldos | |
-| P1.6 | Sección Tarjetas | proyección F7 vs completa |
-| P1.7 | Home: disponible vs currentCardDebt vs commitment | no una sola “deuda” |
-| P1.8 | Movimientos mobile + nav | |
-| P1.9 | Recordatorio config incompleta (snooze) | F7 |
+| P1.1 | Tarjeta principal + matching IA/voz | §3.3; siempre confirmación — pendiente |
+| P1.2 | Cuenta predeterminada | **DONE LOCAL** (UI preference) |
+| P1.3 | Parser IA: tarjeta/cuotas/promo | pendiente |
+| P1.4 | UI conciliación reintegros | §12 — pendiente |
+| P1.5 | Privacidad de saldos | **DONE LOCAL** |
+| P1.6 | Sección Tarjetas | P0.13 LIVE + polish P1 LOCAL |
+| P1.7 | Home: disponible vs currentCardDebt vs commitment | **DONE LOCAL** (métricas separadas) |
+| P1.8 | Movimientos mobile + nav | **DONE LOCAL** |
+| P1.9 | Recordatorio config incompleta (snooze) | F7 — pendiente |
 
 ---
 

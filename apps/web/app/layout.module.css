@@ -34,3 +34,10 @@
     max-width: 72rem;
   }
 }
+
+/* Deja espacio para MobileBottomNav, que es fija por debajo de 1024px. */
+@media (max-width: 1023px) {
+  .main {
+    padding-bottom: calc(var(--pf-bottom-nav-height) + env(safe-area-inset-bottom, 0px));
+  }
+}

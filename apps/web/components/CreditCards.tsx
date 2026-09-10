@@ -18,13 +18,12 @@ import {
   feeStatusLabel,
   feeStatusTone,
   formatCalendarDate,
-  formatExpectedAmount,
   nextClosingDate,
   nextDueDate,
   occurrenceKeyFor,
   recurringChargeKindLabel,
 } from "../lib/credit-cards";
-import { currentYearMonth, formatMoney } from "../lib/format-money";
+import { currentYearMonth } from "../lib/format-money";
 import { isValidAmount, toApiAmount } from "../lib/quick-add";
 import type {
   CreditCard,
@@ -34,9 +33,12 @@ import type {
   Currency,
   RecurringChargeOutlookItem,
 } from "../lib/types";
+import { PrivacyToggle } from "./PrivacyToggle";
 import { EmptyState, ErrorState } from "./QueryStatus";
 import { FinancialCard } from "./ui/FinancialCard";
 import { Metric } from "./ui/Metric";
+import { Money } from "./ui/Money";
+import { PageHeader } from "./ui/PageHeader";
 import { SectionHeader } from "./ui/SectionHeader";
 import { StatusBadge } from "./ui/StatusBadge";
 import styles from "./CreditCards.module.css";
@@ -121,16 +123,13 @@ export function CreditCardsPage() {
   }
 
   return (
-    <section className={styles.page} aria-labelledby="cards-title">
-      <header className={styles.intro}>
-        <p className={styles.kicker}>Tarjetas</p>
-        <h1 id="cards-title" className={styles.title}>
-          Tarjetas
-        </h1>
-        <p className={styles.lead}>
-          Seguí la deuda real, los cierres y los cargos recurrentes de cada tarjeta.
-        </p>
-      </header>
+    <section className={styles.page} aria-label="Tarjetas">
+      <PageHeader
+        kicker="Tarjetas"
+        title="Tarjetas"
+        description="Seguí la deuda real, los cierres y los cargos recurrentes de cada tarjeta."
+        actions={<PrivacyToggle />}
+      />
 
       {panel === "create-card" ? (
         <CreateCardForm
@@ -276,9 +275,11 @@ function CardHero({
         <div>
           <p className={styles.heroStatLabel}>Deuda actual</p>
           <p className={styles.heroStatValue}>
-            {commitments
-              ? formatMoney(commitments.currentCardDebt, card.currency)
-              : "—"}
+            {commitments ? (
+              <Money amount={commitments.currentCardDebt} currency={card.currency} />
+            ) : (
+              "—"
+            )}
           </p>
         </div>
         <div>
@@ -339,19 +340,23 @@ function CardDetail({
         <Metric
           label="Deuda actual"
           value={
-            commitments
-              ? formatMoney(commitments.currentCardDebt, card.currency)
-              : "—"
+            commitments ? (
+              <Money amount={commitments.currentCardDebt} currency={card.currency} />
+            ) : (
+              "—"
+            )
           }
         />
         <Metric
           label="Recurrentes estimados pendientes"
           value={
-            outlook
-              ? formatMoney(outlook.expectedSumFixed, card.currency)
-              : outlookLoading
-                ? "…"
-                : "—"
+            outlook ? (
+              <Money amount={outlook.expectedSumFixed} currency={card.currency} />
+            ) : outlookLoading ? (
+              "…"
+            ) : (
+              "—"
+            )
           }
           hint={pendingHint}
         />
@@ -410,11 +415,6 @@ function RecurringItem({
   onConfirm: () => void;
 }) {
   const { template } = item;
-  const statusLabel = item.hasOccurrence
-    ? `Registrado este mes ${formatMoney(item.occurrence!.amount, template.currency)}`
-    : template.expectedAmount
-      ? "Estimado mensual · Todavía no registrado"
-      : "Variable · Todavía no registrado";
 
   return (
     <li className={styles.recurringItem}>
@@ -422,8 +422,13 @@ function RecurringItem({
         <div>
           <p className={styles.recurringTitle}>{template.description}</p>
           <p className={styles.recurringMeta}>
-            {categoryName} · {formatExpectedAmount(template.expectedAmount, template.currency)} ·
-            Mensual
+            {categoryName} ·{" "}
+            {template.expectedAmount ? (
+              <Money amount={template.expectedAmount} currency={template.currency} />
+            ) : (
+              "Variable"
+            )}{" "}
+            · Mensual
           </p>
         </div>
         <StatusBadge
@@ -431,7 +436,18 @@ function RecurringItem({
           tone={template.isActive ? "active" : "inactive"}
         />
       </div>
-      <p className={styles.recurringStatus}>{statusLabel}</p>
+      <p className={styles.recurringStatus}>
+        {item.hasOccurrence ? (
+          <>
+            Registrado este mes{" "}
+            <Money amount={item.occurrence!.amount} currency={template.currency} />
+          </>
+        ) : template.expectedAmount ? (
+          "Estimado mensual · Todavía no registrado"
+        ) : (
+          "Variable · Todavía no registrado"
+        )}
+      </p>
       {template.isActive && !item.hasOccurrence ? (
         <button type="button" className={styles.secondaryCta} onClick={onConfirm}>
           Registrar este mes
@@ -507,7 +523,13 @@ function ConfirmChargeSheet({
           <Metric label="Descripción" value={template.description} compact />
           <Metric
             label="Estimado"
-            value={formatExpectedAmount(template.expectedAmount, template.currency)}
+            value={
+              template.expectedAmount ? (
+                <Money amount={template.expectedAmount} currency={template.currency} />
+              ) : (
+                "Variable"
+              )
+            }
             compact
           />
           <Metric label="Período" value={occurrenceKey} compact />

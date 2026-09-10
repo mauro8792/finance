@@ -4,8 +4,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { AI_QUERY_INVALIDATIONS } from "../lib/ai-quick-input";
 import { createTransaction, createTransfer, getAccounts, getCategories } from "../lib/api";
+import { getDefaultAccountId, setDefaultAccountId } from "../lib/default-account";
 import {
-  LAST_ACCOUNT_KEY,
   LAST_PAYMENT_KEY,
   PAYMENT_METHOD_LABELS,
   filterActiveAccounts,
@@ -108,8 +108,7 @@ export function QuickAddForm({ initialValues, onSaved }: QuickAddFormProps = {})
       if (aiMode) {
         return "";
       }
-      const stored =
-        typeof window !== "undefined" ? localStorage.getItem(LAST_ACCOUNT_KEY) : null;
+      const stored = getDefaultAccountId();
       const preferred = accounts.find((account) => account.id === stored) ?? accounts[0];
       return preferred.id;
     });
@@ -131,14 +130,14 @@ export function QuickAddForm({ initialValues, onSaved }: QuickAddFormProps = {})
     );
   }, [categories]);
 
+  // En transferencias el destino nunca se preselecciona: elegirlo mal es caro,
+  // así que se pide siempre de forma explícita.
   useEffect(() => {
     if (kind !== "TRANSFER") {
       return;
     }
     setDestinationAccountId((current) =>
-      transferDestinations.some((account) => account.id === current)
-        ? current
-        : (transferDestinations[0]?.id ?? "")
+      transferDestinations.some((account) => account.id === current) ? current : ""
     );
   }, [kind, transferDestinations]);
 
@@ -146,7 +145,7 @@ export function QuickAddForm({ initialValues, onSaved }: QuickAddFormProps = {})
     mutationFn: createTransaction,
     onSuccess: async (created) => {
       if (accountId) {
-        localStorage.setItem(LAST_ACCOUNT_KEY, accountId);
+        setDefaultAccountId(accountId);
       }
       if (kind === "EXPENSE") {
         localStorage.setItem(LAST_PAYMENT_KEY, paymentMethod);
@@ -163,12 +162,11 @@ export function QuickAddForm({ initialValues, onSaved }: QuickAddFormProps = {})
     },
   });
 
+  // Una transferencia no dice desde qué cuenta registrás habitualmente, así que
+  // no toca la cuenta predeterminada.
   const transferMutation = useMutation({
     mutationFn: createTransfer,
     onSuccess: async () => {
-      if (accountId) {
-        localStorage.setItem(LAST_ACCOUNT_KEY, accountId);
-      }
       await invalidateAfterSave(queryClient);
       setAmount("");
       setDescription("");
@@ -275,10 +273,11 @@ export function QuickAddForm({ initialValues, onSaved }: QuickAddFormProps = {})
 
   return (
     <form className={styles.form} onSubmit={onSubmit} noValidate aria-label={aiMode ? "Revisar movimiento interpretado" : "Registrar movimiento"}>
-      <fieldset className={styles.kind}>
+      <fieldset className={aiMode ? styles.kind : `${styles.kind} ${styles.kindThree}`}>
         <legend className={styles.srOnly}>Tipo de movimiento</legend>
         <button
           type="button"
+          aria-pressed={kind === "EXPENSE"}
           className={kind === "EXPENSE" ? styles.kindActive : styles.kindButton}
           onClick={() => setKind("EXPENSE")}
         >
@@ -286,6 +285,7 @@ export function QuickAddForm({ initialValues, onSaved }: QuickAddFormProps = {})
         </button>
         <button
           type="button"
+          aria-pressed={kind === "INCOME"}
           className={kind === "INCOME" ? styles.kindActive : styles.kindButton}
           onClick={() => setKind("INCOME")}
         >
@@ -294,6 +294,7 @@ export function QuickAddForm({ initialValues, onSaved }: QuickAddFormProps = {})
         {!aiMode ? (
           <button
             type="button"
+            aria-pressed={kind === "TRANSFER"}
             className={kind === "TRANSFER" ? styles.kindActive : styles.kindButton}
             onClick={() => setKind("TRANSFER")}
           >
@@ -364,11 +365,14 @@ export function QuickAddForm({ initialValues, onSaved }: QuickAddFormProps = {})
                 No hay otra cuenta activa en {selectedAccount?.currency ?? "—"}
               </option>
             ) : (
-              transferDestinations.map((account) => (
-                <option key={account.id} value={account.id}>
-                  {account.name} — {account.currency}
-                </option>
-              ))
+              <>
+                <option value="">Elegí la cuenta destino</option>
+                {transferDestinations.map((account) => (
+                  <option key={account.id} value={account.id}>
+                    {account.name} — {account.currency}
+                  </option>
+                ))}
+              </>
             )}
           </select>
         </label>

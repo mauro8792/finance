@@ -1,3 +1,4 @@
+import { amountToCents, formatPaidAt } from "./format-money";
 import type { Account, Currency, HousingObligation } from "./types";
 
 const PAYMENT_ERRORS: Record<string, string> = {
@@ -61,6 +62,66 @@ export function parseRequiredInteger(
     return "invalid";
   }
   return parsed;
+}
+
+/**
+ * Ancho visual de la barra de cobertura: cuotas cubiertas sobre cuotas
+ * pendientes, tope 100%. El label muestra el valor exacto (ej. 7,73 cuotas);
+ * la barra sólo se recorta visualmente.
+ */
+export function coverageBarWidth(
+  coveredInstallments: string | null,
+  remainingInstallments: number
+): string {
+  if (coveredInstallments === null) {
+    return "0%";
+  }
+
+  const covered = amountToCents(coveredInstallments);
+  const zero = BigInt(0);
+  if (covered <= zero) {
+    return "0%";
+  }
+  if (remainingInstallments <= 0) {
+    return "100%";
+  }
+
+  const remaining = BigInt(remainingInstallments) * BigInt(100);
+  if (covered >= remaining) {
+    return "100%";
+  }
+
+  const hundredths = (covered * BigInt(10_000)) / remaining;
+  const whole = hundredths / BigInt(100);
+  const fraction = (hundredths % BigInt(100)).toString().padStart(2, "0");
+  return fraction === "00" ? `${whole}%` : `${whole}.${fraction}%`;
+}
+
+/** Próxima fecha de vencimiento a partir del día del mes configurado. */
+export function nextDueDateLabel(dueDay: number | null, from: Date = new Date()): string | null {
+  if (dueDay === null) {
+    return null;
+  }
+
+  const year = from.getFullYear();
+  const monthIndex = from.getMonth();
+  if (from.getDate() <= clampDayOfMonth(year, monthIndex, dueDay)) {
+    return formatDueDate(year, monthIndex, dueDay);
+  }
+
+  const nextMonthIndex = monthIndex === 11 ? 0 : monthIndex + 1;
+  const nextYear = monthIndex === 11 ? year + 1 : year;
+  return formatDueDate(nextYear, nextMonthIndex, dueDay);
+}
+
+function formatDueDate(year: number, monthIndex: number, dueDay: number): string {
+  const day = clampDayOfMonth(year, monthIndex, dueDay);
+  return formatPaidAt(new Date(year, monthIndex, day, 12, 0, 0, 0).toISOString());
+}
+
+function clampDayOfMonth(year: number, monthIndex: number, day: number): number {
+  const lastDay = new Date(year, monthIndex + 1, 0).getDate();
+  return Math.min(Math.max(day, 1), lastDay);
 }
 
 export function housingFormError(error: unknown): string {

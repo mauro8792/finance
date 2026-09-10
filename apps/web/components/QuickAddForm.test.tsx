@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { DEFAULT_ACCOUNT_KEY } from "../lib/default-account";
 import { QuickAddForm } from "./QuickAddForm";
 
 const getAccounts = vi.fn();
@@ -33,6 +34,8 @@ function renderForm() {
 
 describe("QuickAddForm", () => {
   beforeEach(() => {
+    localStorage.clear();
+    vi.clearAllMocks();
     getAccounts.mockResolvedValue([
       { id: "acc-1", name: "Santander", currency: "ARS", isActive: true },
       { id: "acc-2", name: "Reserva", currency: "USD", isActive: false },
@@ -58,6 +61,59 @@ describe("QuickAddForm", () => {
       out: { type: "TRANSFER", amount: "100.00", currency: "ARS" },
       in: { type: "TRANSFER", amount: "100.00", currency: "ARS" },
     });
+  });
+
+  it("preselects the stored default account", async () => {
+    localStorage.setItem(DEFAULT_ACCOUNT_KEY, "acc-3");
+    renderForm();
+    await screen.findByRole("button", { name: "Guardar" });
+    expect((screen.getByLabelText("Cuenta") as HTMLSelectElement).value).toBe("acc-3");
+  });
+
+  it("falls back to the first active account when there is no default", async () => {
+    renderForm();
+    await screen.findByRole("button", { name: "Guardar" });
+    expect((screen.getByLabelText("Cuenta") as HTMLSelectElement).value).toBe("acc-1");
+  });
+
+  it("stores the default account after saving an expense", async () => {
+    const user = userEvent.setup();
+    renderForm();
+    await screen.findByRole("button", { name: "Guardar" });
+    await user.selectOptions(screen.getByLabelText("Cuenta"), "acc-3");
+    await user.type(screen.getByPlaceholderText("0,00"), "75");
+    await user.selectOptions(screen.getByLabelText("Categoría"), "cat-exp");
+    await user.click(screen.getByRole("button", { name: "Guardar" }));
+    await waitFor(() => {
+      expect(localStorage.getItem(DEFAULT_ACCOUNT_KEY)).toBe("acc-3");
+    });
+  });
+
+  it("does not touch the default account after saving a transfer", async () => {
+    const user = userEvent.setup();
+    localStorage.setItem(DEFAULT_ACCOUNT_KEY, "acc-3");
+    renderForm();
+    await screen.findByRole("button", { name: "Guardar" });
+    await user.click(screen.getByRole("button", { name: "Transferencia" }));
+    await user.type(screen.getByPlaceholderText("0,00"), "100");
+    await user.selectOptions(screen.getByLabelText("Hacia"), "acc-1");
+    await user.click(screen.getByRole("button", { name: "Guardar" }));
+    await waitFor(() => expect(createTransfer).toHaveBeenCalled());
+    expect(localStorage.getItem(DEFAULT_ACCOUNT_KEY)).toBe("acc-3");
+  });
+
+  it("leaves the transfer destination empty until it is chosen", async () => {
+    const user = userEvent.setup();
+    renderForm();
+    await screen.findByRole("button", { name: "Guardar" });
+    await user.click(screen.getByRole("button", { name: "Transferencia" }));
+    const destination = screen.getByLabelText("Hacia") as HTMLSelectElement;
+    expect(destination.value).toBe("");
+    expect(screen.getByRole("option", { name: "Elegí la cuenta destino" })).toBeTruthy();
+    await user.type(screen.getByPlaceholderText("0,00"), "100");
+    expect(
+      (screen.getByRole("button", { name: "Guardar" }) as HTMLButtonElement).disabled
+    ).toBe(true);
   });
 
   it("shows the Transferencia tab and hides category when selected", async () => {

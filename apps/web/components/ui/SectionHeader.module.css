@@ -2,7 +2,7 @@
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 0.75rem;
+  gap: var(--pf-space-3);
   min-width: 0;
 }
 
@@ -21,7 +21,7 @@
 
 .description {
   margin: 0;
-  color: #78716c;
+  color: var(--pf-text-subtle);
   font-size: 0.88rem;
   line-height: 1.35;
 }

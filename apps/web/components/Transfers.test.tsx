@@ -86,10 +86,34 @@ describe("TransfersPage", () => {
     }));
   });
 
-  it("renders the mover dinero heading", () => {
+  it("renders the mover dinero heading with the privacy toggle", () => {
     getAccounts.mockReturnValue(new Promise(() => undefined));
     renderPage();
     expect(screen.getByRole("heading", { name: "Mover dinero" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Ocultar montos" })).toBeTruthy();
+  });
+
+  it("separates transfer and currency exchange with a pressed mode selector", async () => {
+    const user = userEvent.setup();
+    getAccounts.mockResolvedValue([fondo, caja, reserva]);
+    renderPage();
+    const transfer = await screen.findByRole("button", { name: "Transferencia" });
+    const exchange = screen.getByRole("button", { name: "Cambio de moneda" });
+    expect(transfer.getAttribute("aria-pressed")).toBe("true");
+    expect(exchange.getAttribute("aria-pressed")).toBe("false");
+    expect(screen.getByText(/Misma moneda/)).toBeTruthy();
+    await user.click(exchange);
+    expect(screen.getByRole("button", { name: "Cambio de moneda" }).getAttribute("aria-pressed")).toBe(
+      "true"
+    );
+    expect(screen.getByText(/Distinta moneda/)).toBeTruthy();
+  });
+
+  it("labels the money flow as Desde and Hacia", async () => {
+    getAccounts.mockResolvedValue([fondo, caja]);
+    renderPage();
+    expect(await screen.findByText("Desde")).toBeTruthy();
+    expect(screen.getByText("Hacia")).toBeTruthy();
   });
 
   it("shows loading without the empty copy", () => {
@@ -151,7 +175,8 @@ describe("TransfersPage", () => {
       in: { type: "TRANSFER", amount: "1000.00", currency: "ARS" },
     });
     const { invalidate } = renderPage();
-    expect(await screen.findByText("Disponible: $ 34.000.000,00")).toBeTruthy();
+    expect(await screen.findByText(/Disponible/)).toBeTruthy();
+    expect(screen.getByText("$ 34.000.000,00")).toBeTruthy();
     await user.selectOptions(screen.getByLabelText("Cuenta destino"), "acc-caja");
     await user.type(screen.getByLabelText("Importe"), "1000");
     await user.click(screen.getByRole("button", { name: "Transferir" }));

@@ -2,8 +2,10 @@ import assert from "node:assert/strict";
 import { describe, it } from "vitest";
 import {
   accountsForHousingCurrency,
+  coverageBarWidth,
   firstActiveHousing,
   housingPaymentError,
+  nextDueDateLabel,
   parseOptionalInteger,
   parseRequiredInteger,
   paymentAccountsForHousing,
@@ -62,6 +64,25 @@ describe("housing helpers", () => {
     assert.equal(parseRequiredInteger("12", 0), 12);
     assert.equal(parseRequiredInteger("", 0), "invalid");
     assert.equal(parseRequiredInteger("-1", 0), "invalid");
+  });
+
+  it("caps the coverage bar at 100% without rounding the covered value", () => {
+    assert.equal(coverageBarWidth(null, 12), "0%");
+    assert.equal(coverageBarWidth("0.00", 12), "0%");
+    assert.equal(coverageBarWidth("-1.00", 12), "0%");
+    assert.equal(coverageBarWidth("7.73", 12), "64.41%");
+    assert.equal(coverageBarWidth("6.00", 12), "50%");
+    assert.equal(coverageBarWidth("40.00", 12), "100%");
+    assert.equal(coverageBarWidth("3.00", 0), "100%");
+  });
+
+  it("resolves the next due date from the configured day of month", () => {
+    assert.equal(nextDueDateLabel(null), null);
+    assert.equal(nextDueDateLabel(10, new Date(2026, 8, 3, 12)), "10 sep 2026");
+    assert.equal(nextDueDateLabel(10, new Date(2026, 8, 10, 12)), "10 sep 2026");
+    assert.equal(nextDueDateLabel(10, new Date(2026, 8, 11, 12)), "10 oct 2026");
+    assert.equal(nextDueDateLabel(31, new Date(2026, 1, 15, 12)), "28 feb 2026");
+    assert.equal(nextDueDateLabel(5, new Date(2026, 11, 20, 12)), "5 ene 2027");
   });
 
   it("maps payment backend codes to readable copy", () => {

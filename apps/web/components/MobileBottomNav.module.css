@@ -1,0 +1,100 @@
+.nav {
+  position: fixed;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 50;
+  display: flex;
+  align-items: stretch;
+  justify-content: space-around;
+  gap: 0.15rem;
+  padding: 0.35rem 0.35rem max(0.35rem, env(safe-area-inset-bottom, 0px));
+  border-top: 1px solid var(--pf-border-strong);
+  background: var(--pf-surface);
+  box-shadow: 0 -4px 16px rgb(28 25 23 / 8%);
+}
+
+.item {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.15rem;
+  min-width: 0;
+  min-height: var(--pf-touch-target);
+  padding: 0.3rem 0.15rem;
+  border: 0;
+  border-radius: var(--pf-radius-md);
+  background: transparent;
+  color: var(--pf-text-subtle);
+  font: inherit;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.item:hover {
+  background: var(--pf-primary-soft);
+}
+
+.active {
+  color: var(--pf-primary);
+  background: var(--pf-primary-soft);
+}
+
+.icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.label {
+  font-size: 0.7rem;
+  font-weight: 650;
+  line-height: 1.1;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sheetLinks {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pf-space-1);
+}
+
+.sheetLink,
+.sheetLogout {
+  display: flex;
+  align-items: center;
+  min-height: var(--pf-touch-target);
+  padding: 0 var(--pf-space-3);
+  border: 0;
+  border-radius: var(--pf-radius-sm);
+  background: transparent;
+  color: var(--pf-text-strong);
+  font: inherit;
+  font-weight: 650;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.sheetLink:hover,
+.sheetLogout:hover {
+  background: var(--pf-primary-soft);
+}
+
+.sheetLogout {
+  margin-top: var(--pf-space-2);
+  border-top: 1px solid var(--pf-border);
+  border-radius: 0 0 var(--pf-radius-sm) var(--pf-radius-sm);
+  color: var(--pf-danger);
+}
+
+@media (min-width: 1024px) {
+  .nav {
+    display: none;
+  }
+}

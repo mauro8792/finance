@@ -13,7 +13,6 @@ import {
   getAccountBalance,
   getAccounts,
 } from "../lib/api";
-import { formatMoney } from "../lib/format-money";
 import {
   filterActiveAccounts,
   isValidAmount,
@@ -30,8 +29,12 @@ import {
   toApiExchangeRate,
   type MoveKind,
 } from "../lib/transfers";
-import type { Account } from "../lib/types";
+import type { Account, Currency } from "../lib/types";
+import { PrivacyToggle } from "./PrivacyToggle";
 import { EmptyState, ErrorState } from "./QueryStatus";
+import { Money } from "./ui/Money";
+import { PageHeader } from "./ui/PageHeader";
+import { Skeleton } from "./ui/Skeleton";
 import styles from "./Transfers.module.css";
 
 export function TransfersPage() {
@@ -42,21 +45,19 @@ export function TransfersPage() {
   });
 
   return (
-    <section className={styles.page} aria-labelledby="transfers-title">
-      <header className={styles.intro}>
-        <p className={styles.kicker}>Mover dinero</p>
-        <h1 id="transfers-title" className={styles.title}>
-          Mover dinero
-        </h1>
-        <p className={styles.lead}>
-          Transferí entre tus cuentas o registrá un cambio de moneda.
-        </p>
-      </header>
+    <section className={styles.page} aria-label="Mover dinero">
+      <PageHeader
+        kicker="Mover dinero"
+        title="Mover dinero"
+        description="Transferí entre tus cuentas o registrá un cambio de moneda."
+        actions={<PrivacyToggle />}
+      />
 
       <div className={styles.modes} role="group" aria-label="Tipo de operación">
         <button
           type="button"
           className={kind === "TRANSFER" ? styles.modeActive : styles.mode}
+          aria-pressed={kind === "TRANSFER"}
           onClick={() => setKind("TRANSFER")}
         >
           Transferencia
@@ -64,14 +65,21 @@ export function TransfersPage() {
         <button
           type="button"
           className={kind === "CURRENCY_EXCHANGE" ? styles.modeActive : styles.mode}
+          aria-pressed={kind === "CURRENCY_EXCHANGE"}
           onClick={() => setKind("CURRENCY_EXCHANGE")}
         >
           Cambio de moneda
         </button>
       </div>
 
+      <p className={styles.modeHint}>
+        {kind === "TRANSFER"
+          ? "Misma moneda: el dinero cambia de cuenta y el total no se mueve."
+          : "Distinta moneda: entregás en una moneda y recibís en la otra a la cotización que cargues."}
+      </p>
+
       {query.isPending ? (
-        <div className={styles.skeletonBlock} aria-busy="true" aria-label="Cargando cuentas" />
+        <Skeleton count={1} height="14rem" label="Cargando cuentas" />
       ) : null}
 
       {query.isError ? (
@@ -99,6 +107,12 @@ export function TransfersPage() {
   );
 }
 
+type TransferSuccess = {
+  amount: string;
+  currency: Currency;
+  destination: string;
+};
+
 function TransferForm({ accounts }: { accounts: Account[] }) {
   const active = filterActiveAccounts(accounts);
   const [sourceId, setSourceId] = useState(active[0]?.id ?? "");
@@ -107,7 +121,7 @@ function TransferForm({ accounts }: { accounts: Account[] }) {
   const [amount, setAmount] = useState("");
   const [description, setDescription] = useState("");
   const [occurredAt, setOccurredAt] = useState(() => toLocalDateTimeInput(new Date()));
-  const [success, setSuccess] = useState<string | null>(null);
+  const [success, setSuccess] = useState<TransferSuccess | null>(null);
   const queryClient = useQueryClient();
   const source = accounts.find((item) => item.id === sourceId) ?? null;
 
@@ -136,9 +150,12 @@ function TransferForm({ accounts }: { accounts: Account[] }) {
     },
     onSuccess: async (result) => {
       await invalidateAfterMove(queryClient);
-      setSuccess(
-        `Transferencia registrada: ${formatMoney(result.out.amount, result.out.currency)}.`
-      );
+      const destination = accounts.find((item) => item.id === destinationId);
+      setSuccess({
+        amount: result.out.amount,
+        currency: result.out.currency,
+        destination: destination?.name ?? "la cuenta destino",
+      });
     },
   });
 
@@ -159,61 +176,83 @@ function TransferForm({ accounts }: { accounts: Account[] }) {
 
   return (
     <form className={styles.form} onSubmit={onSubmit}>
-      <label className={styles.field}>
-        Cuenta origen
-        <select
-          aria-label="Cuenta origen"
-          value={sourceId}
-          onChange={(event) => onSourceChange(event.target.value)}
-        >
-          {active.map((account) => (
-            <option key={account.id} value={account.id}>
-              {account.name} · {account.currency}
-            </option>
-          ))}
-        </select>
-      </label>
-      {source && balance.data ? (
-        <p className={styles.balance}>
-          Disponible: {formatMoney(balance.data.balance, source.currency)}
-        </p>
-      ) : null}
-      <label className={styles.field}>
-        Cuenta destino
-        <select
-          aria-label="Cuenta destino"
-          value={destinationId}
-          onChange={(event) => setDestinationId(event.target.value)}
-        >
-          {destinations.length === 0 ? (
-            <option value="">No hay otra cuenta activa en {source?.currency}</option>
-          ) : (
-            destinations.map((account) => (
-              <option key={account.id} value={account.id}>
-                {account.name} · {account.currency}
-              </option>
-            ))
-          )}
-        </select>
-      </label>
-      <label className={styles.field}>
-        Importe
-        <input
-          aria-label="Importe"
-          value={amount}
-          onChange={(event) => setAmount(event.target.value)}
-          inputMode="decimal"
-        />
-      </label>
-      <label className={styles.field}>
-        Fecha
-        <input
-          aria-label="Fecha"
-          type="datetime-local"
-          value={occurredAt}
-          onChange={(event) => setOccurredAt(event.target.value)}
-        />
-      </label>
+      <div className={styles.flow}>
+        <div className={styles.flowStep}>
+          <p className={styles.flowCaption}>Desde</p>
+          <label className={styles.field}>
+            Cuenta origen
+            <select
+              aria-label="Cuenta origen"
+              value={sourceId}
+              onChange={(event) => onSourceChange(event.target.value)}
+            >
+              {active.map((account) => (
+                <option key={account.id} value={account.id}>
+                  {account.name} · {account.currency}
+                </option>
+              ))}
+            </select>
+          </label>
+          {source && balance.data ? (
+            <p className={styles.balance}>
+              Disponible:{" "}
+              <Money
+                amount={balance.data.balance}
+                currency={source.currency}
+                className={styles.balanceValue}
+              />
+            </p>
+          ) : null}
+        </div>
+
+        <span className={styles.flowArrow} aria-hidden="true">
+          ↓
+        </span>
+
+        <div className={styles.flowStep}>
+          <p className={styles.flowCaption}>Hacia</p>
+          <label className={styles.field}>
+            Cuenta destino
+            <select
+              aria-label="Cuenta destino"
+              value={destinationId}
+              onChange={(event) => setDestinationId(event.target.value)}
+            >
+              {destinations.length === 0 ? (
+                <option value="">No hay otra cuenta activa en {source?.currency}</option>
+              ) : (
+                destinations.map((account) => (
+                  <option key={account.id} value={account.id}>
+                    {account.name} · {account.currency}
+                  </option>
+                ))
+              )}
+            </select>
+          </label>
+        </div>
+      </div>
+
+      <div className={styles.row}>
+        <label className={styles.field}>
+          Importe
+          <input
+            aria-label="Importe"
+            value={amount}
+            onChange={(event) => setAmount(event.target.value)}
+            inputMode="decimal"
+          />
+        </label>
+        <label className={styles.field}>
+          Fecha
+          <input
+            aria-label="Fecha"
+            type="datetime-local"
+            value={occurredAt}
+            onChange={(event) => setOccurredAt(event.target.value)}
+          />
+        </label>
+      </div>
+
       <label className={styles.field}>
         Descripción (opcional)
         <input
@@ -226,7 +265,12 @@ function TransferForm({ accounts }: { accounts: Account[] }) {
       {save.isError ? <p className={styles.formError}>{moveFormError(save.error)}</p> : null}
       {success ? (
         <div className={styles.success}>
-          <p>{success}</p>
+          <p className={styles.successTitle}>Transferencia registrada</p>
+          <p className={styles.successDetail}>
+            Moviste{" "}
+            <Money amount={success.amount} currency={success.currency} /> a{" "}
+            {success.destination}.
+          </p>
         </div>
       ) : null}
       <button
@@ -240,6 +284,13 @@ function TransferForm({ accounts }: { accounts: Account[] }) {
   );
 }
 
+type ExchangeSuccess = {
+  fromAmount: string;
+  fromCurrency: Currency;
+  toAmount: string;
+  toCurrency: Currency;
+};
+
 function ExchangeForm({ accounts }: { accounts: Account[] }) {
   const active = filterActiveAccounts(accounts);
   const [sourceId, setSourceId] = useState(active[0]?.id ?? "");
@@ -248,7 +299,7 @@ function ExchangeForm({ accounts }: { accounts: Account[] }) {
   const [fromAmount, setFromAmount] = useState("");
   const [rate, setRate] = useState("");
   const [occurredAt, setOccurredAt] = useState(() => toLocalDateTimeInput(new Date()));
-  const [success, setSuccess] = useState<string | null>(null);
+  const [success, setSuccess] = useState<ExchangeSuccess | null>(null);
   const queryClient = useQueryClient();
   const source = accounts.find((item) => item.id === sourceId) ?? null;
   const destination = accounts.find((item) => item.id === destinationId) ?? null;
@@ -289,9 +340,12 @@ function ExchangeForm({ accounts }: { accounts: Account[] }) {
     },
     onSuccess: async (result) => {
       await invalidateAfterMove(queryClient);
-      setSuccess(
-        `Cambio registrado: entregaste ${formatMoney(result.exchange.fromAmount, result.exchange.fromCurrency)} y recibiste ${formatMoney(result.exchange.toAmount, result.exchange.toCurrency)}.`
-      );
+      setSuccess({
+        fromAmount: result.exchange.fromAmount,
+        fromCurrency: result.exchange.fromCurrency,
+        toAmount: result.exchange.toAmount,
+        toCurrency: result.exchange.toCurrency,
+      });
     },
   });
 
@@ -312,72 +366,102 @@ function ExchangeForm({ accounts }: { accounts: Account[] }) {
 
   return (
     <form className={styles.form} onSubmit={onSubmit}>
-      <label className={styles.field}>
-        Cuenta origen
-        <select
-          aria-label="Cuenta origen"
-          value={sourceId}
-          onChange={(event) => onSourceChange(event.target.value)}
-        >
-          {active.map((account) => (
-            <option key={account.id} value={account.id}>
-              {account.name} · {account.currency}
-            </option>
-          ))}
-        </select>
-      </label>
-      {source && balance.data ? (
-        <p className={styles.balance}>
-          Disponible: {formatMoney(balance.data.balance, source.currency)}
-        </p>
-      ) : null}
-      <label className={styles.field}>
-        Cuenta destino
-        <select
-          aria-label="Cuenta destino"
-          value={destinationId}
-          onChange={(event) => setDestinationId(event.target.value)}
-        >
-          {destinations.length === 0 ? (
-            <option value="">No hay una cuenta activa de otra moneda</option>
-          ) : (
-            destinations.map((account) => (
-              <option key={account.id} value={account.id}>
-                {account.name} · {account.currency}
-              </option>
-            ))
-          )}
-        </select>
-      </label>
-      <label className={styles.field}>
-        Importe origen
-        <input
-          aria-label="Importe origen"
-          value={fromAmount}
-          onChange={(event) => setFromAmount(event.target.value)}
-          inputMode="decimal"
-        />
-      </label>
-      <label className={styles.field}>
-        Cotización ARS por USD
-        <input
-          aria-label="Cotización ARS por USD"
-          value={rate}
-          onChange={(event) => setRate(event.target.value)}
-          inputMode="decimal"
-        />
-      </label>
+      <div className={styles.flow}>
+        <div className={styles.flowStep}>
+          <p className={styles.flowCaption}>Desde</p>
+          <label className={styles.field}>
+            Cuenta origen
+            <select
+              aria-label="Cuenta origen"
+              value={sourceId}
+              onChange={(event) => onSourceChange(event.target.value)}
+            >
+              {active.map((account) => (
+                <option key={account.id} value={account.id}>
+                  {account.name} · {account.currency}
+                </option>
+              ))}
+            </select>
+          </label>
+          {source && balance.data ? (
+            <p className={styles.balance}>
+              Disponible:{" "}
+              <Money
+                amount={balance.data.balance}
+                currency={source.currency}
+                className={styles.balanceValue}
+              />
+            </p>
+          ) : null}
+        </div>
+
+        <span className={styles.flowArrow} aria-hidden="true">
+          ↓
+        </span>
+
+        <div className={styles.flowStep}>
+          <p className={styles.flowCaption}>Hacia</p>
+          <label className={styles.field}>
+            Cuenta destino
+            <select
+              aria-label="Cuenta destino"
+              value={destinationId}
+              onChange={(event) => setDestinationId(event.target.value)}
+            >
+              {destinations.length === 0 ? (
+                <option value="">No hay una cuenta activa de otra moneda</option>
+              ) : (
+                destinations.map((account) => (
+                  <option key={account.id} value={account.id}>
+                    {account.name} · {account.currency}
+                  </option>
+                ))
+              )}
+            </select>
+          </label>
+        </div>
+      </div>
+
+      <div className={styles.row}>
+        <label className={styles.field}>
+          Importe origen
+          <input
+            aria-label="Importe origen"
+            value={fromAmount}
+            onChange={(event) => setFromAmount(event.target.value)}
+            inputMode="decimal"
+          />
+        </label>
+        <label className={styles.field}>
+          Cotización ARS por USD
+          <input
+            aria-label="Cotización ARS por USD"
+            value={rate}
+            onChange={(event) => setRate(event.target.value)}
+            inputMode="decimal"
+          />
+        </label>
+      </div>
       <p className={styles.hint}>ARS necesarios por cada USD 1.</p>
+      <label className={styles.field}>
+        Fecha
+        <input
+          aria-label="Fecha"
+          type="datetime-local"
+          value={occurredAt}
+          onChange={(event) => setOccurredAt(event.target.value)}
+        />
+      </label>
       {source && destination && preview ? (
         <div className={styles.preview}>
           <p className={styles.previewTitle}>Vista previa</p>
           <div className={styles.previewRow}>
             <p className={styles.previewLabel}>Entregás</p>
-            <p>{formatMoney(toApiAmount(fromAmount), source.currency)}</p>
+            <Money amount={toApiAmount(fromAmount)} currency={source.currency} />
           </div>
           <div className={styles.previewRow}>
             <p className={styles.previewLabel}>Recibís</p>
-            <p>{formatMoney(preview, destination.currency)}</p>
+            <Money amount={preview} currency={destination.currency} />
           </div>
           <p className={styles.hint}>
             Cotización ARS {rate || "—"} por USD 1. El backend confirma el importe final.
@@ -387,7 +471,11 @@ function ExchangeForm({ accounts }: { accounts: Account[] }) {
       {save.isError ? <p className={styles.formError}>{moveFormError(save.error)}</p> : null}
       {success ? (
         <div className={styles.success}>
-          <p>{success}</p>
+          <p className={styles.successTitle}>Cambio registrado</p>
+          <p className={styles.successDetail}>
+            Entregaste <Money amount={success.fromAmount} currency={success.fromCurrency} /> y
+            recibiste <Money amount={success.toAmount} currency={success.toCurrency} />.
+          </p>
         </div>
       ) : null}
       <button

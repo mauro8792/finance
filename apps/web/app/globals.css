@@ -1,3 +1,68 @@
+:root {
+  /* Superficies y texto */
+  --pf-bg: #f4f1ea;
+  --pf-surface: #fffcf7;
+  --pf-surface-muted: #f5f2eb;
+  --pf-surface-raised: #fff;
+  --pf-border: #e7e5e4;
+  --pf-border-strong: #d6d3d1;
+  --pf-text: #1c1917;
+  --pf-text-muted: #57534e;
+  --pf-text-subtle: #78716c;
+  --pf-text-strong: #44403c;
+
+  /* Marca */
+  --pf-primary: #0f766e;
+  --pf-primary-strong: #0d6660;
+  --pf-primary-soft: #ecfdf5;
+  --pf-primary-ring: #99f6e4;
+  --pf-on-primary: #fff;
+  --pf-slate: #1e293b;
+  --pf-teal-deep: #134e4a;
+
+  /* Estados */
+  --pf-positive: #10b981;
+  --pf-positive-text: #047857;
+  --pf-warning: #f59e0b;
+  --pf-warning-text: #b45309;
+  --pf-danger: #b91c1c;
+
+  /* Gradiente hero (slate -> teal) */
+  --pf-hero-gradient:
+    radial-gradient(circle at 85% 15%, rgb(255 255 255 / 14%), transparent 42%),
+    linear-gradient(135deg, #1e293b 0%, #134e4a 55%, #0f766e 100%);
+  --pf-hero-text: #fff;
+  --pf-hero-text-muted: rgb(255 255 255 / 78%);
+
+  /* Radios */
+  --pf-radius-sm: 0.55rem;
+  --pf-radius-md: 0.75rem;
+  --pf-radius-lg: 0.85rem;
+  --pf-radius-xl: 1.25rem;
+  --pf-radius-pill: 999px;
+
+  /* Espaciados */
+  --pf-space-1: 0.25rem;
+  --pf-space-2: 0.5rem;
+  --pf-space-3: 0.75rem;
+  --pf-space-4: 1rem;
+  --pf-space-5: 1.5rem;
+  --pf-space-6: 2rem;
+
+  /* Sombras */
+  --pf-shadow-sm: 0 1px 2px rgb(28 25 23 / 6%);
+  --pf-shadow-md: 0 6px 18px rgb(28 25 23 / 10%);
+  --pf-shadow-hero:
+    0 10px 24px rgb(15 118 110 / 22%),
+    inset 0 1px 0 rgb(255 255 255 / 12%);
+  --pf-shadow-sheet: 0 -8px 32px rgb(28 25 23 / 18%);
+  --pf-overlay: rgb(28 25 23 / 45%);
+
+  /* Layout */
+  --pf-touch-target: 2.75rem;
+  --pf-bottom-nav-height: 4.5rem;
+}
+
 *,
 *::before,
 *::after {
@@ -26,8 +91,8 @@ body {
     sans-serif;
   font-size: 1rem;
   line-height: 1.5;
-  color: #1c1917;
-  background: #f4f1ea;
+  color: var(--pf-text);
+  background: var(--pf-bg);
 }
 
 a {
@@ -36,7 +101,7 @@ a {
 
 a:focus-visible,
 button:focus-visible {
-  outline: 2px solid #0f766e;
+  outline: 2px solid var(--pf-primary);
   outline-offset: 3px;
 }
 

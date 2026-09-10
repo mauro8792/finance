@@ -1,0 +1,46 @@
+.card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--pf-space-1);
+  width: 100%;
+  min-width: 0;
+  min-height: 5.25rem;
+  padding: var(--pf-space-3) var(--pf-space-3);
+  border: 1px solid var(--pf-border);
+  border-radius: var(--pf-radius-lg);
+  background: var(--pf-surface);
+  box-shadow: var(--pf-shadow-sm);
+  color: var(--pf-text);
+  font: inherit;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.card:hover {
+  border-color: var(--pf-primary-ring);
+  background: var(--pf-primary-soft);
+}
+
+.icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: var(--pf-radius-sm);
+  background: var(--pf-primary-soft);
+  color: var(--pf-primary);
+}
+
+.label {
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.hint {
+  color: var(--pf-text-subtle);
+  font-size: 0.82rem;
+  line-height: 1.3;
+}

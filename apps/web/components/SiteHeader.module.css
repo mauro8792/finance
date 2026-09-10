@@ -3,7 +3,7 @@
   flex-wrap: nowrap;
   align-items: center;
   justify-content: space-between;
-  gap: 0.75rem;
+  gap: var(--pf-space-3);
   width: 100%;
   min-width: 0;
   max-width: 100%;
@@ -11,8 +11,8 @@
   padding-right: max(1rem, env(safe-area-inset-right, 0px));
   padding-bottom: 1rem;
   padding-left: max(1rem, env(safe-area-inset-left, 0px));
-  border-bottom: 1px solid #d6d3d1;
-  background: #fffcf7;
+  border-bottom: 1px solid var(--pf-border-strong);
+  background: var(--pf-surface);
 }
 
 .brand {
@@ -38,7 +38,13 @@
   flex: 0 0 auto;
   align-items: center;
   justify-content: flex-end;
-  gap: 0.25rem;
+  gap: var(--pf-space-1);
+}
+
+/* La navegación completa vive en el header sólo en desktop; en mobile la cubre
+   MobileBottomNav. */
+.desktopNav {
+  display: none;
 }
 
 .homeLink {
@@ -46,9 +52,9 @@
   flex: 0 0 auto;
   align-items: center;
   justify-content: center;
-  min-height: 2.75rem;
-  padding: 0 0.75rem;
-  color: #44403c;
+  min-height: var(--pf-touch-target);
+  padding: 0 0.55rem;
+  color: var(--pf-text-strong);
   font-weight: 650;
   text-decoration: none;
   white-space: nowrap;
@@ -64,11 +70,11 @@
   flex: 0 0 auto;
   align-items: center;
   justify-content: center;
-  min-height: 2.75rem;
+  min-height: var(--pf-touch-target);
   padding: 0 0.9rem;
-  border-radius: 0.75rem;
-  background: #0f766e;
-  color: #fff;
+  border-radius: var(--pf-radius-md);
+  background: var(--pf-primary);
+  color: var(--pf-on-primary);
   font-weight: 650;
   text-decoration: none;
   white-space: nowrap;
@@ -79,21 +85,16 @@
   flex: 0 0 auto;
   align-items: center;
   justify-content: center;
-  min-height: 2.75rem;
+  min-height: var(--pf-touch-target);
   padding: 0 0.7rem;
   border: 0;
-  border-radius: 0.75rem;
+  border-radius: var(--pf-radius-md);
   background: transparent;
-  color: #44403c;
+  color: var(--pf-text-strong);
   font: inherit;
   font-weight: 650;
   cursor: pointer;
   white-space: nowrap;
-}
-
-.showFrom1024,
-.showFrom1280 {
-  display: none;
 }
 
 .more {
@@ -106,9 +107,9 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 2.75rem;
+  min-height: var(--pf-touch-target);
   padding: 0 0.75rem;
-  color: #44403c;
+  color: var(--pf-text-strong);
   font-weight: 650;
   cursor: pointer;
   list-style: none;
@@ -133,53 +134,46 @@
   min-width: 10.5rem;
   max-width: min(18rem, calc(100vw - 1.5rem));
   padding: 0.35rem;
-  border: 1px solid #d6d3d1;
-  border-radius: 0.75rem;
-  background: #fffcf7;
+  border: 1px solid var(--pf-border-strong);
+  border-radius: var(--pf-radius-md);
+  background: var(--pf-surface);
+  box-shadow: var(--pf-shadow-md);
 }
 
 .moreLink {
   display: flex;
   align-items: center;
-  min-height: 2.75rem;
+  min-height: var(--pf-touch-target);
   padding: 0 0.7rem;
-  border-radius: 0.55rem;
-  color: #44403c;
+  border-radius: var(--pf-radius-sm);
+  color: var(--pf-text-strong);
   font-weight: 650;
   text-decoration: none;
 }
 
 .moreLink:hover {
-  background: #ecfdf5;
+  background: var(--pf-primary-soft);
 }
 
 .more:not([open]) .moreMenu {
   display: none;
 }
 
-@media (max-width: 767px) {
+@media (max-width: 1023px) {
   .header {
     padding-top: max(0.5rem, env(safe-area-inset-top, 0px));
     padding-right: max(0.85rem, env(safe-area-inset-right, 0px));
     padding-bottom: 0.5rem;
     padding-left: max(0.85rem, env(safe-area-inset-left, 0px));
-    gap: 0.5rem;
+    gap: var(--pf-space-2);
   }
 
   .brand {
     font-size: 0.95rem;
-    max-width: 42%;
   }
 
   .nav {
     gap: 0.1rem;
-  }
-
-  .homeLink,
-  .navLink,
-  .moreSummary {
-    padding: 0 0.55rem;
-    font-size: 0.9rem;
   }
 }
 
@@ -189,25 +183,10 @@
     padding-left: max(2rem, env(safe-area-inset-left, 0px));
   }
 
-  .homeLink {
-    padding: 0 0.55rem;
-  }
-
-  .showFrom1024 {
-    display: inline-flex;
-  }
-
-  .hideFrom1024 {
-    display: none;
-  }
-}
-
-@media (min-width: 1280px) {
-  .showFrom1280 {
-    display: inline-flex;
-  }
-
-  .hideFrom1280 {
-    display: none;
+  .desktopNav {
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: var(--pf-space-1);
   }
 }

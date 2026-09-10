@@ -11,15 +11,13 @@ import {
   registerHousingPayment,
   updateHousing,
 } from "../lib/api";
-import {
-  formatCoveredInstallments,
-  formatMoney,
-  formatPaidAt,
-} from "../lib/format-money";
+import { formatCoveredInstallments, formatPaidAt } from "../lib/format-money";
 import {
   accountsForHousingCurrency,
+  coverageBarWidth,
   housingFormError,
   housingPaymentError,
+  nextDueDateLabel,
   parseOptionalInteger,
   parseRequiredInteger,
   paymentAccountsForHousing,
@@ -38,7 +36,13 @@ import type {
   HousingObligation,
   HousingPayment,
 } from "../lib/types";
-import { EmptyState, ErrorState, LoadingState } from "./QueryStatus";
+import { PrivacyToggle } from "./PrivacyToggle";
+import { EmptyState, ErrorState } from "./QueryStatus";
+import { FinancialCard } from "./ui/FinancialCard";
+import { Money } from "./ui/Money";
+import { PageHeader } from "./ui/PageHeader";
+import { Skeleton } from "./ui/Skeleton";
+import { StatusBadge } from "./ui/StatusBadge";
 import styles from "./Housing.module.css";
 
 type Panel =
@@ -57,23 +61,21 @@ export function HousingPage() {
   });
 
   return (
-    <section className={styles.page} aria-labelledby="housing-title">
-      <header className={styles.intro}>
-        <p className={styles.kicker}>Vivienda</p>
-        <h1 id="housing-title" className={styles.title}>
-          Obligación de vivienda
-        </h1>
-        <p className={styles.lead}>
-          Cuota, reserva, cobertura e historial de pagos.
-        </p>
-        <button
-          type="button"
-          className={styles.primaryCta}
-          onClick={() => setPanel({ mode: "create" })}
-        >
-          Configurar vivienda
-        </button>
-      </header>
+    <section className={styles.page} aria-label="Vivienda">
+      <PageHeader
+        kicker="Vivienda"
+        title="Obligación de vivienda"
+        description="Cuota, reserva, cobertura e historial de pagos."
+        actions={<PrivacyToggle />}
+      />
+
+      <button
+        type="button"
+        className={styles.primaryCta}
+        onClick={() => setPanel({ mode: "create" })}
+      >
+        Configurar vivienda
+      </button>
 
       {panel ? (
         <HousingForm
@@ -83,7 +85,9 @@ export function HousingPage() {
         />
       ) : null}
 
-      {query.isPending ? <HousingSkeleton /> : null}
+      {query.isPending ? (
+        <Skeleton count={2} height="14rem" label="Cargando vivienda" />
+      ) : null}
 
       {query.isError ? (
         <ErrorState
@@ -104,7 +108,7 @@ export function HousingPage() {
       {query.data && query.data.length > 0 ? (
         <ul className={styles.grid}>
           {query.data.map((obligation) => (
-            <li key={obligation.id}>
+            <li key={obligation.id} className={styles.gridItem}>
               <HousingCard
                 obligation={obligation}
                 accounts={accountsQuery.data ?? []}
@@ -129,40 +133,46 @@ function HousingCard({
 }) {
   const [paying, setPaying] = useState(false);
   const reserve = accounts.find((account) => account.id === obligation.reserveAccountId);
+  const nextDue = nextDueDateLabel(obligation.dueDay);
 
   return (
-    <article className={styles.card}>
+    <FinancialCard className={styles.card}>
       <header className={styles.cardHeader}>
-        <div>
+        <div className={styles.cardHeading}>
           <h2 className={styles.cardTitle}>{obligation.name}</h2>
-          <p className={styles.currency}>{obligation.currency}</p>
+          <p className={styles.tags}>
+            <span className={styles.currencyTag}>{obligation.currency}</span>
+          </p>
         </div>
-        <span className={obligation.isActive ? styles.badge : styles.badgeInactive}>
-          {obligation.isActive ? "Activa" : "Inactiva"}
-        </span>
+        <StatusBadge
+          label={obligation.isActive ? "Activa" : "Inactiva"}
+          tone={obligation.isActive ? "active" : "inactive"}
+        />
       </header>
 
+      <div className={styles.installmentBlock}>
+        <p className={styles.installmentLabel}>Cuota mensual</p>
+        <Money
+          amount={obligation.installmentAmount}
+          currency={obligation.currency}
+          className={styles.installment}
+        />
+      </div>
+
       <div className={styles.cardLayout}>
+        <HousingCoverageCard obligationId={obligation.id} />
+
         <dl className={styles.meta}>
           <div>
-            <dt>Cuota</dt>
-            <dd>{formatMoney(obligation.installmentAmount, obligation.currency)}</dd>
-          </div>
-          <div>
-            <dt>Pendientes</dt>
+            <dt>Cuotas pendientes</dt>
             <dd>{obligation.remainingInstallments}</dd>
           </div>
           <div>
-            <dt>Vencimiento</dt>
+            <dt>Próximo vencimiento</dt>
             <dd>
-              {obligation.dueDay === null
-                ? "Sin día configurado"
-                : `Día ${obligation.dueDay}`}
+              {nextDue ?? "Sin día configurado"}
+              {obligation.dueDay === null ? null : <small>Día {obligation.dueDay}</small>}
             </dd>
-          </div>
-          <div>
-            <dt>Estado</dt>
-            <dd>{obligation.isActive ? "Activa" : "Inactiva"}</dd>
           </div>
           <div>
             <dt>Cuenta reserva</dt>
@@ -173,8 +183,6 @@ function HousingCard({
             </dd>
           </div>
         </dl>
-
-        <HousingCoverageCard obligationId={obligation.id} />
       </div>
 
       <div className={styles.actions}>
@@ -201,7 +209,7 @@ function HousingCard({
       ) : null}
 
       <HousingPaymentHistory obligationId={obligation.id} />
-    </article>
+    </FinancialCard>
   );
 }
 
@@ -214,8 +222,8 @@ function HousingCoverageCard({ obligationId }: { obligationId: string }) {
   if (query.isPending) {
     return (
       <section className={styles.coverage}>
-        <h3 className={styles.sectionTitle}>Cobertura</h3>
-        <LoadingState label="Cargando cobertura" />
+        <h3 className={styles.sectionTitle}>Cobertura de la reserva</h3>
+        <Skeleton height="3.5rem" label="Cargando cobertura" />
       </section>
     );
   }
@@ -223,12 +231,13 @@ function HousingCoverageCard({ obligationId }: { obligationId: string }) {
   if (query.isError) {
     return (
       <section className={styles.coverage}>
-        <h3 className={styles.sectionTitle}>Cobertura</h3>
+        <h3 className={styles.sectionTitle}>Cobertura de la reserva</h3>
         <ErrorState
           message="No pudimos cargar la cobertura. Probá de nuevo."
           onRetry={() => {
             void query.refetch();
           }}
+          compact
         />
       </section>
     );
@@ -249,32 +258,46 @@ function CoverageBody({ coverage }: { coverage: HousingCoverage }) {
 
   return (
     <section className={styles.coverage}>
-      <h3 className={styles.sectionTitle}>Cobertura</h3>
+      <h3 className={styles.sectionTitle}>Cobertura de la reserva</h3>
       {reserveMissing ? (
-        <p>Sin cuenta de reserva configurada</p>
+        <p className={styles.coverageHint}>Sin cuenta de reserva configurada</p>
       ) : (
-        <dl className={styles.meta}>
-          <div>
-            <dt>Reserva actual</dt>
-            <dd>
-              {coverage.reserveBalance === null
-                ? "—"
-                : formatMoney(coverage.reserveBalance, coverage.currency)}
-            </dd>
+        <>
+          <p className={styles.coverageValue}>
+            {coverage.coveredInstallments === null
+              ? "—"
+              : `${formatCoveredInstallments(coverage.coveredInstallments)} cuotas`}
+          </p>
+          <div className={styles.barTrack} aria-hidden="true">
+            <span
+              className={styles.barFill}
+              style={{
+                width: coverageBarWidth(
+                  coverage.coveredInstallments,
+                  coverage.remainingInstallments
+                ),
+              }}
+            />
           </div>
-          <div>
-            <dt>Cobertura</dt>
-            <dd>
-              {coverage.coveredInstallments === null
-                ? "—"
-                : `${formatCoveredInstallments(coverage.coveredInstallments)} cuotas`}
-            </dd>
-          </div>
-          <div>
-            <dt>Pendientes</dt>
-            <dd>{coverage.remainingInstallments}</dd>
-          </div>
-        </dl>
+          {coverage.coveredInstallments === null ? null : (
+            <p className={styles.coverageHint}>
+              Cubre {formatCoveredInstallments(coverage.coveredInstallments)} de{" "}
+              {coverage.remainingInstallments} cuotas pendientes
+            </p>
+          )}
+          <dl className={styles.coverageMeta}>
+            <div>
+              <dt>Reserva actual</dt>
+              <dd>
+                {coverage.reserveBalance === null ? (
+                  "—"
+                ) : (
+                  <Money amount={coverage.reserveBalance} currency={coverage.currency} />
+                )}
+              </dd>
+            </div>
+          </dl>
+        </>
       )}
     </section>
   );
@@ -290,7 +313,7 @@ function HousingPaymentHistory({ obligationId }: { obligationId: string }) {
     return (
       <section className={styles.history}>
         <h3 className={styles.sectionTitle}>Historial de pagos</h3>
-        <LoadingState label="Cargando pagos" />
+        <Skeleton count={2} height="2.5rem" label="Cargando pagos" />
       </section>
     );
   }
@@ -304,6 +327,7 @@ function HousingPaymentHistory({ obligationId }: { obligationId: string }) {
           onRetry={() => {
             void query.refetch();
           }}
+          compact
         />
       </section>
     );
@@ -332,10 +356,16 @@ function HousingPaymentHistory({ obligationId }: { obligationId: string }) {
 function PaymentRow({ payment }: { payment: HousingPayment }) {
   return (
     <>
-      <time dateTime={payment.paidAt}>{formatPaidAt(payment.paidAt)}</time>
-      <span>{formatMoney(payment.amount, payment.currency)}</span>
+      <time className={styles.paymentDate} dateTime={payment.paidAt}>
+        {formatPaidAt(payment.paidAt)}
+      </time>
+      <Money
+        amount={payment.amount}
+        currency={payment.currency}
+        className={styles.paymentAmount}
+      />
       {payment.installmentNumber !== null ? (
-        <span>Cuota {payment.installmentNumber}</span>
+        <span className={styles.paymentInstallment}>Cuota {payment.installmentNumber}</span>
       ) : null}
     </>
   );
@@ -659,13 +689,5 @@ function HousingPaymentForm({
         </button>
       </div>
     </form>
-  );
-}
-
-function HousingSkeleton() {
-  return (
-    <div className={styles.skeletonBlock} aria-busy="true">
-      <span className={styles.srOnly}>Cargando vivienda</span>
-    </div>
   );
 }

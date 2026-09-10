@@ -98,6 +98,12 @@ const coverageZero: HousingCoverage = {
   coveredInstallments: "0.00",
 };
 
+const coverageFraction: HousingCoverage = {
+  ...coverageNormal,
+  reserveBalance: "3865.00",
+  coveredInstallments: "7.73",
+};
+
 const paidAt = new Date(2026, 7, 15, 12, 0, 0).toISOString();
 
 const payment: HousingPayment = {
@@ -144,7 +150,7 @@ describe("HousingPage", () => {
   it("shows a loading state", () => {
     getHousing.mockReturnValue(new Promise(() => undefined));
     renderHousing();
-    expect(screen.getByText("Cargando vivienda")).toBeTruthy();
+    expect(screen.getByLabelText("Cargando vivienda")).toBeTruthy();
     expect(screen.queryByText("Aún no configuraste tu vivienda.")).toBeNull();
     expect(screen.queryByRole("alert")).toBeNull();
   });
@@ -228,6 +234,29 @@ describe("HousingPage", () => {
     renderHousing();
     expect(await screen.findByText("USD 2.000,00")).toBeTruthy();
     expect(screen.getByText("4,00 cuotas")).toBeTruthy();
+    expect(screen.getByText("Cubre 4,00 de 12 cuotas pendientes")).toBeTruthy();
+  });
+
+  it("keeps the exact covered installments and caps only the bar width", async () => {
+    getHousing.mockResolvedValue([apto]);
+    mockCoverageAndPayments({
+      "h-1": { coverage: coverageFraction, payments: [] },
+    });
+    renderHousing();
+    expect(await screen.findByText("7,73 cuotas")).toBeTruthy();
+    expect(screen.getByText("Cubre 7,73 de 12 cuotas pendientes")).toBeTruthy();
+    expect(screen.queryByText("8 cuotas")).toBeNull();
+  });
+
+  it("exposes the privacy toggle and the monthly installment", async () => {
+    getHousing.mockResolvedValue([apto]);
+    mockCoverageAndPayments({
+      "h-1": { coverage: coverageNormal, payments: [] },
+    });
+    renderHousing();
+    expect(await screen.findByText("Cuota mensual")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Ocultar montos" })).toBeTruthy();
+    expect(screen.getByText("Próximo vencimiento")).toBeTruthy();
   });
 
   it("shows coverage null without inventing 0 cuotas", async () => {

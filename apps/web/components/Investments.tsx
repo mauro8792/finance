@@ -10,7 +10,7 @@ import {
   renewInvestment,
   updateActiveInvestment,
 } from "../lib/api";
-import { amountToCents, formatMoney } from "../lib/format-money";
+import { amountToCents } from "../lib/format-money";
 import {
   accountsForInvestmentCurrency,
   addAmounts,
@@ -32,8 +32,15 @@ import {
   normalizeAmountInput,
   toApiAmount,
 } from "../lib/quick-add";
-import type { Account, Currency, Investment } from "../lib/types";
+import type { Account, Currency, Investment, InvestmentStatus } from "../lib/types";
+import { PrivacyToggle } from "./PrivacyToggle";
 import { EmptyState, ErrorState } from "./QueryStatus";
+import { FinancialCard } from "./ui/FinancialCard";
+import { Money } from "./ui/Money";
+import { PageHeader } from "./ui/PageHeader";
+import { SectionHeader } from "./ui/SectionHeader";
+import { Skeleton } from "./ui/Skeleton";
+import { StatusBadge } from "./ui/StatusBadge";
 import styles from "./Investments.module.css";
 
 type Panel =
@@ -55,21 +62,21 @@ export function InvestmentsPage() {
   const grouped = groupInvestments(query.data ?? []);
 
   return (
-    <section className={styles.page} aria-labelledby="investments-title">
-      <header className={styles.intro}>
-        <p className={styles.kicker}>Inversiones</p>
-        <h1 id="investments-title" className={styles.title}>
-          Cauciones
-        </h1>
-        <p className={styles.lead}>Activas, vencimientos y finalizadas.</p>
-        <button
-          type="button"
-          className={styles.primaryCta}
-          onClick={() => setPanel({ mode: "create" })}
-        >
-          Nueva caución
-        </button>
-      </header>
+    <section className={styles.page} aria-label="Inversiones">
+      <PageHeader
+        kicker="Inversiones"
+        title="Cauciones"
+        description="Tu capital colocado, cuándo vence y cuánto rinde."
+        actions={<PrivacyToggle />}
+      />
+
+      <button
+        type="button"
+        className={styles.primaryCta}
+        onClick={() => setPanel({ mode: "create" })}
+      >
+        Nueva caución
+      </button>
 
       {panel?.mode === "create" ? (
         <CreateInvestmentForm
@@ -86,7 +93,9 @@ export function InvestmentsPage() {
         />
       ) : null}
 
-      {query.isPending ? <InvestmentsSkeleton /> : null}
+      {query.isPending ? (
+        <Skeleton count={3} height="12rem" label="Cargando inversiones" />
+      ) : null}
 
       {query.isError ? (
         <ErrorState
@@ -99,24 +108,38 @@ export function InvestmentsPage() {
 
       {query.data && query.data.length === 0 && panel?.mode !== "create" ? (
         <EmptyState
-          message="Aún no registraste inversiones."
+          message="No hay inversiones. Creá una caución para seguir su vencimiento y su rendimiento."
           action={{ label: "Crear inversión", onClick: () => setPanel({ mode: "create" }) }}
         />
       ) : null}
 
       {query.data && query.data.length > 0 ? (
         <>
+          {grouped.active.length > 0 ? (
+            <PortfolioSummary active={grouped.active} />
+          ) : null}
+
           {grouped.upcoming.length > 0 ? (
-            <section className={styles.section} aria-labelledby="upcoming-title">
-              <h2 id="upcoming-title" className={styles.sectionTitle}>
-                Próximos vencimientos
-              </h2>
+            <section className={styles.section}>
+              <SectionHeader
+                title="Próximos vencimientos"
+                description="Ordenados por fecha de vencimiento."
+              />
               <ul className={styles.upcoming}>
                 {grouped.upcoming.map((item) => (
-                  <li key={item.id}>
-                    <span>{INVESTMENT_TYPE_LABELS[item.type]}</span>
-                    <strong>{formatMoney(item.principal, item.currency)}</strong>
-                    <time dateTime={item.maturityDate ?? undefined}>
+                  <li key={item.id} className={styles.upcomingItem}>
+                    <span className={styles.upcomingType}>
+                      {INVESTMENT_TYPE_LABELS[item.type]}
+                    </span>
+                    <Money
+                      amount={item.principal}
+                      currency={item.currency}
+                      className={styles.upcomingAmount}
+                    />
+                    <time
+                      className={styles.upcomingDate}
+                      dateTime={item.maturityDate ?? undefined}
+                    >
                       {item.maturityDate ? formatArtDate(item.maturityDate) : "—"}
                     </time>
                   </li>
@@ -126,13 +149,11 @@ export function InvestmentsPage() {
           ) : null}
 
           {grouped.active.length > 0 ? (
-            <section className={styles.section} aria-labelledby="active-title">
-              <h2 id="active-title" className={styles.sectionTitle}>
-                Activas
-              </h2>
+            <section className={styles.section}>
+              <SectionHeader title="Activas" />
               <ul className={styles.grid}>
                 {grouped.active.map((item) => (
-                  <li key={item.id}>
+                  <li key={item.id} className={styles.gridItem}>
                     <InvestmentCard
                       investment={item}
                       accounts={accountsQuery.data ?? []}
@@ -149,13 +170,11 @@ export function InvestmentsPage() {
           ) : null}
 
           {grouped.finished.length > 0 ? (
-            <section className={styles.section} aria-labelledby="finished-title">
-              <h2 id="finished-title" className={styles.sectionTitle}>
-                Finalizadas
-              </h2>
+            <section className={styles.section}>
+              <SectionHeader title="Finalizadas" />
               <ul className={styles.grid}>
                 {grouped.finished.map((item) => (
-                  <li key={item.id}>
+                  <li key={item.id} className={styles.gridItem}>
                     <InvestmentCard
                       investment={item}
                       accounts={accountsQuery.data ?? []}
@@ -171,13 +190,11 @@ export function InvestmentsPage() {
           ) : null}
 
           {grouped.drafts.length > 0 ? (
-            <section className={styles.section} aria-labelledby="drafts-title">
-              <h2 id="drafts-title" className={styles.sectionTitle}>
-                Borradores
-              </h2>
+            <section className={styles.section}>
+              <SectionHeader title="Borradores" />
               <ul className={styles.grid}>
                 {grouped.drafts.map((item) => (
-                  <li key={item.id}>
+                  <li key={item.id} className={styles.gridItem}>
                     <InvestmentCard
                       investment={item}
                       accounts={accountsQuery.data ?? []}
@@ -194,6 +211,44 @@ export function InvestmentsPage() {
         </>
       ) : null}
     </section>
+  );
+}
+
+function PortfolioSummary({ active }: { active: Investment[] }) {
+  const totals = useMemo(() => {
+    const byCurrency = new Map<Currency, string>();
+    for (const item of active) {
+      byCurrency.set(
+        item.currency,
+        addAmounts(byCurrency.get(item.currency) ?? "0.00", item.principal)
+      );
+    }
+    return [...byCurrency.entries()];
+  }, [active]);
+
+  const nextMaturity = active
+    .map((item) => item.maturityDate)
+    .filter((date): date is string => Boolean(date))
+    .sort((left, right) => left.localeCompare(right))[0];
+
+  return (
+    <FinancialCard variant="hero" className={styles.summary}>
+      <p className={styles.summaryLabel}>Capital colocado</p>
+      <div className={styles.summaryAmounts}>
+        {totals.map(([currency, total]) => (
+          <Money
+            key={currency}
+            amount={total}
+            currency={currency}
+            className={styles.summaryValue}
+          />
+        ))}
+      </div>
+      <p className={styles.summaryHint}>
+        {active.length === 1 ? "1 caución activa" : `${active.length} cauciones activas`}
+        {nextMaturity ? ` · Próximo vencimiento ${formatArtDate(nextMaturity)}` : ""}
+      </p>
+    </FinancialCard>
   );
 }
 
@@ -216,27 +271,62 @@ function InvestmentCard({
 }) {
   const account = accounts.find((item) => item.id === investment.accountId);
   const isActive = investment.status === "ACTIVE";
+  const isMatured = investment.status === "MATURED";
   const showMature = panel?.mode === "mature" && panel.investment.id === investment.id;
   const showRenew = panel?.mode === "renew" && panel.investment.id === investment.id;
 
   return (
-    <article className={styles.card}>
+    <FinancialCard className={styles.card}>
       <header className={styles.cardHeader}>
-        <div>
+        <div className={styles.cardHeading}>
           <h3 className={styles.cardTitle}>{INVESTMENT_TYPE_LABELS[investment.type]}</h3>
-          <p className={styles.currency}>{investment.currency}</p>
+          <p className={styles.tags}>
+            <span className={styles.currencyTag}>{investment.currency}</span>
+          </p>
         </div>
-        <span className={statusClass(investment.status)}>
-          {INVESTMENT_STATUS_LABELS[investment.status]}
-        </span>
+        <StatusBadge
+          label={INVESTMENT_STATUS_LABELS[investment.status]}
+          tone={statusTone(investment.status)}
+        />
       </header>
+
+      <div className={styles.capitalBlock}>
+        <p className={styles.capitalLabel}>Capital</p>
+        <Money
+          amount={investment.principal}
+          currency={investment.currency}
+          className={styles.capital}
+        />
+      </div>
+
+      {isActive ? (
+        <div className={styles.highlight}>
+          <p className={styles.highlightLabel}>Vence</p>
+          <p className={styles.highlightValue}>
+            {investment.maturityDate ? (
+              <time dateTime={investment.maturityDate}>
+                {formatArtDate(investment.maturityDate)}
+              </time>
+            ) : (
+              "Sin fecha de vencimiento"
+            )}
+          </p>
+        </div>
+      ) : null}
+
+      {isMatured && investment.actualReturn ? (
+        <div className={styles.highlight}>
+          <p className={styles.highlightLabel}>Interés real cobrado</p>
+          <Money
+            amount={investment.actualReturn}
+            currency={investment.currency}
+            className={styles.highlightValue}
+          />
+        </div>
+      ) : null}
 
       <div className={styles.cardLayout}>
         <dl className={styles.meta}>
-          <div>
-            <dt>Capital</dt>
-            <dd>{formatMoney(investment.principal, investment.currency)}</dd>
-          </div>
           <div>
             <dt>TNA</dt>
             <dd>{investment.annualRate ? formatAnnualRatePercent(investment.annualRate) : "—"}</dd>
@@ -247,34 +337,40 @@ function InvestmentCard({
               <time dateTime={investment.startDate}>{formatArtDate(investment.startDate)}</time>
             </dd>
           </div>
-          <div>
-            <dt>Vencimiento</dt>
-            <dd>
-              {investment.maturityDate ? (
-                <time dateTime={investment.maturityDate}>
-                  {formatArtDate(investment.maturityDate)}
-                </time>
-              ) : (
-                "—"
-              )}
-            </dd>
-          </div>
-          <div>
-            <dt>Rendimiento esperado</dt>
-            <dd>
-              {investment.expectedReturn
-                ? formatMoney(investment.expectedReturn, investment.currency)
-                : "—"}
-            </dd>
-          </div>
-          <div>
-            <dt>Interés real</dt>
-            <dd>
-              {investment.actualReturn
-                ? formatMoney(investment.actualReturn, investment.currency)
-                : "—"}
-            </dd>
-          </div>
+          {!isActive ? (
+            <div>
+              <dt>Vencimiento</dt>
+              <dd>
+                {investment.maturityDate ? (
+                  <time dateTime={investment.maturityDate}>
+                    {formatArtDate(investment.maturityDate)}
+                  </time>
+                ) : (
+                  "—"
+                )}
+              </dd>
+            </div>
+          ) : null}
+          {investment.expectedReturn ? (
+            <div>
+              <dt>Rendimiento esperado</dt>
+              <dd>
+                <Money
+                  amount={investment.expectedReturn}
+                  currency={investment.currency}
+                />
+                <small>Estimación, todavía no cobrada</small>
+              </dd>
+            </div>
+          ) : null}
+          {!isMatured && investment.actualReturn ? (
+            <div>
+              <dt>Interés real</dt>
+              <dd>
+                <Money amount={investment.actualReturn} currency={investment.currency} />
+              </dd>
+            </div>
+          ) : null}
           <div>
             <dt>Cuenta origen</dt>
             <dd>{account?.name ?? "Cuenta no disponible"}</dd>
@@ -319,7 +415,7 @@ function InvestmentCard({
           onClose={onClosePanel}
         />
       ) : null}
-    </article>
+    </FinancialCard>
   );
 }
 
@@ -474,8 +570,13 @@ function CreateInvestmentForm({
       {preview ? (
         <div className={styles.preview}>
           <p>Días: {preview.days}</p>
-          <p>Interés estimado: {formatMoney(preview.estimated, currency)}</p>
-          <p>Monto estimado final: {formatMoney(preview.finalAmount, currency)}</p>
+          <p>
+            Interés estimado: <Money amount={preview.estimated} currency={currency} />
+          </p>
+          <p>
+            Monto estimado final:{" "}
+            <Money amount={preview.finalAmount} currency={currency} />
+          </p>
           <p className={styles.formHint}>Estimado visual. El valor guardado lo calcula el servidor.</p>
         </div>
       ) : null}
@@ -636,8 +737,14 @@ function EditInvestmentForm({
       {preview ? (
         <div className={styles.preview}>
           <p>Días: {preview.days}</p>
-          <p>Interés estimado: {formatMoney(preview.estimated, investment.currency)}</p>
-          <p>Monto estimado final: {formatMoney(preview.finalAmount, investment.currency)}</p>
+          <p>
+            Interés estimado:{" "}
+            <Money amount={preview.estimated} currency={investment.currency} />
+          </p>
+          <p>
+            Monto estimado final:{" "}
+            <Money amount={preview.finalAmount} currency={investment.currency} />
+          </p>
           <p className={styles.formHint}>Estimado visual. El valor guardado lo calcula el servidor.</p>
         </div>
       ) : null}
@@ -723,11 +830,12 @@ function MatureInvestmentForm({
         {investment.maturityDate ? formatArtDate(investment.maturityDate) : "la fecha de vencimiento"}.
       </p>
       <p className={styles.readonly}>
-        Capital retornado: {formatMoney(investment.principal, investment.currency)}
+        Capital retornado:{" "}
+        <Money amount={investment.principal} currency={investment.currency} />
       </p>
       {investment.expectedReturn ? (
         <p className={styles.formHint}>
-          Esperado: {formatMoney(investment.expectedReturn, investment.currency)}
+          Esperado: <Money amount={investment.expectedReturn} currency={investment.currency} />
         </p>
       ) : null}
       <label className={styles.field}>
@@ -870,11 +978,12 @@ function RenewInvestmentForm({
     <form className={styles.form} onSubmit={onSubmit}>
       <h3 className={styles.formTitle}>Renovar caución</h3>
       <p className={styles.readonly}>
-        Principal actual: {formatMoney(investment.principal, investment.currency)}
+        Principal actual:{" "}
+        <Money amount={investment.principal} currency={investment.currency} />
       </p>
       {investment.expectedReturn ? (
         <p className={styles.formHint}>
-          Esperado: {formatMoney(investment.expectedReturn, investment.currency)}
+          Esperado: <Money amount={investment.expectedReturn} currency={investment.currency} />
         </p>
       ) : null}
       {investment.annualRate ? (
@@ -969,26 +1078,15 @@ function RenewInvestmentForm({
   );
 }
 
-function InvestmentsSkeleton() {
-  return (
-    <div className={styles.skeletonBlock} aria-busy="true">
-      <span className={styles.srOnly}>Cargando inversiones</span>
-    </div>
-  );
-}
-
-function statusClass(status: Investment["status"]): string {
+function statusTone(status: InvestmentStatus): "active" | "primary" | "neutral" | "muted" {
   if (status === "ACTIVE") {
-    return styles.badgeActive;
+    return "active";
   }
   if (status === "RENEWED") {
-    return styles.badgeRenewed;
+    return "primary";
   }
   if (status === "MATURED") {
-    return styles.badgeMatured;
+    return "neutral";
   }
-  if (status === "CANCELLED") {
-    return styles.badgeCancelled;
-  }
-  return styles.badgeDraft;
+  return "muted";
 }

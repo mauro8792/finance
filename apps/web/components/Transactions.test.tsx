@@ -116,6 +116,11 @@ const voided = movement({
   description: "Anulado de prueba",
 });
 
+/** El signo y el importe viven en nodos distintos porque el monto usa <Money>. */
+function amountRowText(formattedMoney: string): string {
+  return screen.getByText(formattedMoney).closest("p")?.textContent ?? "";
+}
+
 function renderPage(client = new QueryClient({ defaultOptions: { queries: { retry: false } } })) {
   const invalidate = vi.spyOn(client, "invalidateQueries");
   const view = render(
@@ -156,11 +161,20 @@ describe("TransactionsPage", () => {
   it("shows the empty state with a link to registrar", async () => {
     getTransactions.mockResolvedValue([]);
     renderPage();
-    expect(await screen.findByText("Aún no registraste movimientos.")).toBeTruthy();
+    expect(await screen.findByText("No hay movimientos todavía.")).toBeTruthy();
     expect(screen.queryByRole("alert")).toBeNull();
     expect(screen.getByRole("link", { name: "Registrar movimiento" }).getAttribute("href")).toBe(
       "/registrar"
     );
+  });
+
+  it("switches the empty copy when filters are active", async () => {
+    const user = userEvent.setup();
+    getTransactions.mockResolvedValue([]);
+    renderPage();
+    await screen.findByText("No hay movimientos todavía.");
+    await user.selectOptions(screen.getByLabelText("Mes"), "6");
+    expect(await screen.findByText("No hay movimientos con estos filtros.")).toBeTruthy();
   });
 
   it("recovers from a list error without raw codes", async () => {
@@ -181,15 +195,27 @@ describe("TransactionsPage", () => {
     expect(screen.getByText("10/06/2026")).toBeTruthy();
     expect(screen.getByText("Ingreso · Capital")).toBeTruthy();
     expect(screen.getAllByText("Capital").length).toBeGreaterThan(0);
-    expect(screen.getByText("+ $ 40.000.000,00")).toBeTruthy();
-    expect(screen.getByText("- $ 2.000.000,00")).toBeTruthy();
+    expect(amountRowText("$ 40.000.000,00")).toBe("+ $ 40.000.000,00");
+    expect(amountRowText("$ 2.000.000,00")).toBe("- $ 2.000.000,00");
     expect(screen.getAllByText("Fondo indemnización prueba").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Otros").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Activo").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Anulado").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Gasto").length).toBeGreaterThan(0);
     await userEvent.setup().click(screen.getAllByRole("button", { name: "Ver detalle" })[0]);
     expect(screen.getAllByText("ARS").length).toBeGreaterThan(0);
+  });
+
+  it("shows a muted status badge only on voided movements", async () => {
+    getTransactions.mockResolvedValue([august, voided]);
+    renderPage();
+    expect(await screen.findByText("Gasto agosto")).toBeTruthy();
+    // El badge de estado sólo aparece en el histórico anulado; los activos no
+    // gastan jerarquía visual en repetir "Activo".
+    const badges = screen
+      .getAllByText(/^(Anulado|Reversado|Activo)$/)
+      .filter((node) => node.tagName !== "OPTION");
+    expect(badges.length).toBe(1);
+    expect(badges[0].textContent).toBe("Anulado");
   });
 
   it("filters by June without year and keeps a distinct query key", async () => {
@@ -390,7 +416,38 @@ describe("TransactionsPage", () => {
     expect(await screen.findByText("Gasto agosto")).toBeTruthy();
     expect(screen.getByText("Anulado de prueba")).toBeTruthy();
     expect(screen.getAllByText("Anulado").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Activo").length).toBeGreaterThan(0);
+  });
+
+  it("opens the filters sheet, counts active filters and clears them", async () => {
+    const user = userEvent.setup();
+    getTransactions.mockResolvedValue([august]);
+    renderPage();
+    await screen.findByText("Gasto agosto");
+
+    const trigger = screen.getByRole("button", { name: /^Filtros/ });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.queryByLabelText(/filtros activos/)).toBeNull();
+
+    await user.click(trigger);
+    const sheet = screen.getByRole("dialog");
+    expect(sheet.textContent).toContain("Filtros");
+    expect(screen.getByLabelText("Mes")).toBeTruthy();
+
+    await user.selectOptions(screen.getByLabelText("Mes"), "6");
+    await user.selectOptions(screen.getByLabelText("Estado"), "ACTIVE");
+    await waitFor(() => {
+      expect(getTransactions).toHaveBeenCalledWith({ month: 6, status: "ACTIVE" });
+    });
+    expect(screen.getByLabelText("2 filtros activos").textContent).toBe("2");
+
+    await user.click(screen.getByRole("button", { name: "Limpiar filtros" }));
+    await waitFor(() => {
+      expect(screen.queryByLabelText(/filtros activos/)).toBeNull();
+    });
+
+    await user.click(screen.getByRole("button", { name: "Ver resultados" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.getByLabelText("Mes")).toBeTruthy();
   });
 
   it("shows Exportar CSV even with an empty list", async () => {

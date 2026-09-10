@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useMemo, useState, type FormEvent } from "react";
+import { useMemo, useState, type FormEvent, type ReactNode } from "react";
 import {
   exportTransactionsCsv,
   getAccounts,
@@ -11,7 +11,7 @@ import {
   voidTransaction,
   voidTransfer,
 } from "../lib/api";
-import { formatMoney, formatMonthLabel } from "../lib/format-money";
+import { formatMonthLabel } from "../lib/format-money";
 import {
   isValidAmount,
   localDateTimeToIso,
@@ -46,11 +46,16 @@ import type {
   PaymentMethod,
   Transaction,
   TransactionListFilters,
-  TransactionStatus,
   TransactionType,
 } from "../lib/types";
+import { PrivacyToggle } from "./PrivacyToggle";
 import { QuickAddForm } from "./QuickAddForm";
 import { EmptyState, ErrorState } from "./QueryStatus";
+import { BottomSheet } from "./ui/BottomSheet";
+import { Money } from "./ui/Money";
+import { PageHeader } from "./ui/PageHeader";
+import { Skeleton } from "./ui/Skeleton";
+import { StatusBadge } from "./ui/StatusBadge";
 import styles from "./Transactions.module.css";
 
 const MONTHS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12] as const;
@@ -63,6 +68,7 @@ export function TransactionsPage() {
   const [accountId, setAccountId] = useState("");
   const [categoryId, setCategoryId] = useState("");
   const [status, setStatus] = useState("");
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
   const filters = useMemo<TransactionListFilters>(
     () =>
@@ -76,6 +82,10 @@ export function TransactionsPage() {
       }),
     [year, month, type, accountId, categoryId, status]
   );
+
+  const activeFilterCount = [year, month, type, accountId, categoryId, status].filter(
+    (value) => value !== ""
+  ).length;
 
   const queryClient = useQueryClient();
   const query = useQuery({
@@ -116,110 +126,133 @@ export function TransactionsPage() {
     ]);
   }
 
-  return (
-    <section className={styles.page} aria-labelledby="transactions-title">
-      <header className={styles.intro}>
-        <p className={styles.kicker}>Movimientos</p>
-        <h1 id="transactions-title" className={styles.title}>
-          Movimientos
-        </h1>
-        <p className={styles.lead}>
-          Consultá el historial. Para cargar uno nuevo usá Registrar.
-        </p>
-      </header>
+  function clearFilters() {
+    setYear("");
+    setMonth("");
+    setType("");
+    setAccountId("");
+    setCategoryId("");
+    setStatus("");
+  }
 
-      <div className={styles.filters}>
-        <label className={styles.field}>
-          Año
-          <select
-            aria-label="Año"
-            value={year}
-            onChange={(event) => setYear(event.target.value)}
-          >
-            <option value="">Todos</option>
-            {filterYearOptions().map((option) => (
-              <option key={option} value={option}>
-                {option}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className={styles.field}>
-          Mes
-          <select
-            aria-label="Mes"
-            value={month}
-            onChange={(event) => setMonth(event.target.value)}
-          >
-            <option value="">Todos</option>
-            {MONTHS.map((option) => (
-              <option key={option} value={option}>
-                {formatMonthLabel(2026, option).replace(" 2026", "")}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className={styles.field}>
-          Tipo
-          <select
-            aria-label="Tipo"
-            value={type}
-            onChange={(event) => setType(event.target.value)}
-          >
-            <option value="">Todos</option>
-            {TRANSACTION_TYPES.map((option) => (
-              <option key={option} value={option}>
-                {transactionTypeLabel(option)}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className={styles.field}>
-          Cuenta
-          <select
-            aria-label="Cuenta"
-            value={accountId}
-            onChange={(event) => setAccountId(event.target.value)}
-          >
-            <option value="">Todas</option>
-            {(accounts.data ?? []).map((account) => (
-              <option key={account.id} value={account.id}>
-                {account.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className={styles.field}>
-          Categoría
-          <select
-            aria-label="Categoría"
-            value={categoryId}
-            onChange={(event) => setCategoryId(event.target.value)}
-          >
-            <option value="">Todas</option>
-            {(categories.data ?? []).map((category) => (
-              <option key={category.id} value={category.id}>
-                {category.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className={styles.field}>
-          Estado
-          <select
-            aria-label="Estado"
-            value={status}
-            onChange={(event) => setStatus(event.target.value)}
-          >
-            <option value="">Todos</option>
-            <option value="ACTIVE">Activo</option>
-            <option value="VOIDED">Anulado</option>
-            <option value="REVERSED">Reversado</option>
-          </select>
-        </label>
-      </div>
+  // Los campos se montan una sola vez: inline en desktop, dentro del sheet en
+  // mobile. Así no se duplican los controles ni sus etiquetas.
+  const filterFields = (
+    <div className={styles.filterFields}>
+      <label className={styles.field}>
+        Año
+        <select
+          aria-label="Año"
+          value={year}
+          onChange={(event) => setYear(event.target.value)}
+        >
+          <option value="">Todos</option>
+          {filterYearOptions().map((option) => (
+            <option key={option} value={option}>
+              {option}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className={styles.field}>
+        Mes
+        <select
+          aria-label="Mes"
+          value={month}
+          onChange={(event) => setMonth(event.target.value)}
+        >
+          <option value="">Todos</option>
+          {MONTHS.map((option) => (
+            <option key={option} value={option}>
+              {formatMonthLabel(2026, option).replace(" 2026", "")}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className={styles.field}>
+        Tipo
+        <select
+          aria-label="Tipo"
+          value={type}
+          onChange={(event) => setType(event.target.value)}
+        >
+          <option value="">Todos</option>
+          {TRANSACTION_TYPES.map((option) => (
+            <option key={option} value={option}>
+              {transactionTypeLabel(option)}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className={styles.field}>
+        Cuenta
+        <select
+          aria-label="Cuenta"
+          value={accountId}
+          onChange={(event) => setAccountId(event.target.value)}
+        >
+          <option value="">Todas</option>
+          {(accounts.data ?? []).map((account) => (
+            <option key={account.id} value={account.id}>
+              {account.name}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className={styles.field}>
+        Categoría
+        <select
+          aria-label="Categoría"
+          value={categoryId}
+          onChange={(event) => setCategoryId(event.target.value)}
+        >
+          <option value="">Todas</option>
+          {(categories.data ?? []).map((category) => (
+            <option key={category.id} value={category.id}>
+              {category.name}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className={styles.field}>
+        Estado
+        <select
+          aria-label="Estado"
+          value={status}
+          onChange={(event) => setStatus(event.target.value)}
+        >
+          <option value="">Todos</option>
+          <option value="ACTIVE">Activo</option>
+          <option value="VOIDED">Anulado</option>
+          <option value="REVERSED">Reversado</option>
+        </select>
+      </label>
+    </div>
+  );
+
+  return (
+    <section className={styles.page} aria-label="Movimientos">
+      <PageHeader
+        kicker="Historial"
+        title="Movimientos"
+        description="Consultá lo que registraste. Para cargar uno nuevo usá Registrar."
+        actions={<PrivacyToggle />}
+      />
 
       <div className={styles.toolbar}>
+        <button
+          type="button"
+          className={styles.filtersTrigger}
+          onClick={() => setFiltersOpen(true)}
+          aria-expanded={filtersOpen}
+        >
+          Filtros
+          {activeFilterCount > 0 ? (
+            <span className={styles.filtersCount} aria-label={`${activeFilterCount} filtros activos`}>
+              {activeFilterCount}
+            </span>
+          ) : null}
+        </button>
         <button
           type="button"
           className={styles.exportButton}
@@ -230,13 +263,35 @@ export function TransactionsPage() {
         </button>
       </div>
 
+      {filtersOpen ? (
+        <BottomSheet title="Filtros" onClose={() => setFiltersOpen(false)}>
+          {filterFields}
+          <div className={styles.sheetActions}>
+            <button type="button" className={styles.secondary} onClick={clearFilters}>
+              Limpiar filtros
+            </button>
+            <button
+              type="button"
+              className={styles.primaryCta}
+              onClick={() => setFiltersOpen(false)}
+            >
+              Ver resultados
+            </button>
+          </div>
+        </BottomSheet>
+      ) : (
+        <div className={styles.filters}>{filterFields}</div>
+      )}
+
       {exportCsv.isError && !exportCsv.isPending ? (
         <div className={styles.error} role="alert">
           <p>No pudimos exportar los movimientos. Probá de nuevo.</p>
         </div>
       ) : null}
 
-      {query.isPending ? <TransactionsSkeleton /> : null}
+      {query.isPending ? (
+        <Skeleton count={3} height="7rem" label="Cargando movimientos" />
+      ) : null}
 
       {query.isError ? (
         <ErrorState
@@ -249,7 +304,11 @@ export function TransactionsPage() {
 
       {query.data && query.data.length === 0 ? (
         <EmptyState
-          message="Aún no registraste movimientos."
+          message={
+            activeFilterCount > 0
+              ? "No hay movimientos con estos filtros."
+              : "No hay movimientos todavía."
+          }
           action={{ href: "/registrar", label: "Registrar movimiento" }}
         />
       ) : null}
@@ -285,18 +344,66 @@ export function TransactionsPage() {
   );
 }
 
-function TransactionsSkeleton() {
+function movementItemKey(item: MovementListItem): string {
+  return item.kind === "transfer" ? item.transferId : item.transaction.id;
+}
+
+const TYPE_ICON_PATHS: Partial<Record<TransactionType, string>> = {
+  EXPENSE: "M12 20 5 13h4V4h6v9h4l-7 7Z",
+  INCOME: "m12 4 7 7h-4v9H9v-9H5l7-7Z",
+  TRANSFER: "M7 7h10l-3-3 1.4-1.4L20.8 8l-5.4 5.4L14 12l3-3H7V7Zm10 10H7l3 3-1.4 1.4L3.2 16l5.4-5.4L10 12l-3 3h10v2Z",
+};
+
+function MovementIcon({ type }: { type: TransactionType }) {
+  const path = TYPE_ICON_PATHS[type];
+  if (!path) {
+    return null;
+  }
   return (
-    <div className={styles.skeleton} aria-busy="true" aria-label="Cargando movimientos">
-      <div className={styles.skeletonBlock} />
-      <div className={styles.skeletonBlock} />
-      <div className={styles.skeletonBlock} />
-    </div>
+    <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false">
+      <path fill="currentColor" d={path} />
+    </svg>
   );
 }
 
-function movementItemKey(item: MovementListItem): string {
-  return item.kind === "transfer" ? item.transferId : item.transaction.id;
+function MovementRow({
+  type,
+  typeLabel,
+  title,
+  context,
+  date,
+  amount,
+  muted,
+  children,
+}: {
+  type: TransactionType;
+  typeLabel: string;
+  title: string;
+  context?: ReactNode;
+  date: string;
+  amount: ReactNode;
+  muted?: boolean;
+  children?: ReactNode;
+}) {
+  return (
+    <article className={muted ? `${styles.card} ${styles.cardMuted}` : styles.card}>
+      <div className={styles.cardTop}>
+        <div className={styles.cardMain}>
+          <p className={styles.type}>
+            <span className={styles.typeIcon}>
+              <MovementIcon type={type} />
+            </span>
+            {typeLabel}
+          </p>
+          <p className={styles.title}>{title}</p>
+          {context ? <p className={styles.metaLine}>{context}</p> : null}
+          <p className={styles.date}>{formatTransactionDate(date)}</p>
+        </div>
+        <div className={styles.cardAmount}>{amount}</div>
+      </div>
+      {children}
+    </article>
+  );
 }
 
 function TransferCard({
@@ -312,9 +419,10 @@ function TransferCard({
   const [confirmVoid, setConfirmVoid] = useState(false);
   const sourceName = accountNames[item.out.accountId] ?? "Cuenta origen";
   const destinationName = accountNames[item.in.accountId] ?? "Cuenta destino";
-  const money = formatMoney(item.out.amount, item.out.currency);
   const description = item.out.description ?? item.in.description;
   const allowVoid = canVoidTransfer(item.out, item.in);
+  const isActive = item.out.status === "ACTIVE";
+  const money = <Money amount={item.out.amount} currency={item.out.currency} />;
 
   // P0.15: las patas son inmutables por separado; se anulan las dos juntas.
   const voidMut = useMutation({
@@ -327,23 +435,22 @@ function TransferCard({
   });
 
   return (
-    <article className={styles.card}>
-      <div className={styles.cardTop}>
-        <div>
-          <p className={styles.date}>{formatTransactionDate(item.out.occurredAt)}</p>
-          <p className={styles.type}>Transferencia</p>
+    <MovementRow
+      type="TRANSFER"
+      typeLabel="Transferencia"
+      title={`${sourceName} → ${destinationName}`}
+      context={description}
+      date={item.out.occurredAt}
+      muted={!isActive}
+      amount={
+        <span className={styles.amount}>{money}</span>
+      }
+    >
+      {!isActive ? (
+        <div className={styles.statusRow}>
+          <StatusBadge label={transactionStatusLabel(item.out.status)} tone="muted" />
         </div>
-        <p className={styles.amount}>{money}</p>
-      </div>
-      <p className={styles.metaLine}>
-        {sourceName} → {destinationName}
-      </p>
-      {description ? <p className={styles.metaLine}>{description}</p> : null}
-      <span
-        className={item.out.status === "ACTIVE" ? styles.badge : styles.badgeVoided}
-      >
-        {transactionStatusLabel(item.out.status)}
-      </span>
+      ) : null}
 
       {expanded ? (
         <div className={styles.details}>
@@ -405,7 +512,7 @@ function TransferCard({
           </div>
         </div>
       ) : null}
-    </article>
+    </MovementRow>
   );
 }
 
@@ -428,8 +535,6 @@ function TransactionCard({
   const [confirmCorrect, setConfirmCorrect] = useState(false);
   const [correcting, setCorrecting] = useState(false);
   const sign = transactionAmountSign(transaction);
-  const money = formatMoney(transaction.amount, transaction.currency);
-  const signedAmount = sign ? `${sign} ${money}` : money;
   const kind = incomeKindLabel(transaction.metadata?.incomeKind);
   const reimbursement = reimbursementLabel(transaction.reimbursementStatus);
   const method = paymentMethodLabel(transaction.paymentMethod);
@@ -437,6 +542,17 @@ function TransactionCard({
   const allowEdit = canEditTransaction(transaction);
   const allowVoid = canVoidTransaction(transaction);
   const allowCorrect = canCorrectTransaction(transaction);
+  const isActive = transaction.status === "ACTIVE";
+  const title = transaction.description ?? categoryName ?? "Sin categoría";
+  const context = [
+    transaction.description ? categoryName : null,
+    accountName,
+    method,
+    transaction.isFixed ? "Gasto fijo" : null,
+    reimbursement,
+  ]
+    .filter(Boolean)
+    .join(" · ");
 
   const voidMut = useMutation({
     mutationFn: () =>
@@ -459,43 +575,35 @@ function TransactionCard({
   });
 
   return (
-    <article className={styles.card}>
-      <div className={styles.cardTop}>
-        <div>
-          <p className={styles.date}>{formatTransactionDate(transaction.occurredAt)}</p>
-          <p className={styles.type}>
-            {transactionTypeLabel(transaction.type)}
-            {kind ? ` · ${kind}` : ""}
-          </p>
-        </div>
+    <MovementRow
+      type={transaction.type}
+      typeLabel={`${transactionTypeLabel(transaction.type)}${kind ? ` · ${kind}` : ""}`}
+      title={title}
+      context={context || null}
+      date={transaction.occurredAt}
+      muted={!isActive}
+      amount={
         <p
           className={`${styles.amount} ${
-            sign === "-"
-              ? styles.amountNegative
-              : sign === "+"
-                ? styles.amountPositive
-                : ""
+            !isActive
+              ? styles.amountMuted
+              : sign === "-"
+                ? styles.amountNegative
+                : sign === "+"
+                  ? styles.amountPositive
+                  : ""
           }`}
         >
-          {signedAmount}
+          {sign ? `${sign} ` : ""}
+          <Money amount={transaction.amount} currency={transaction.currency} />
         </p>
-      </div>
-      <p className={styles.metaLine}>{accountName}</p>
-      <p className={styles.metaLine}>
-        {categoryName ?? transaction.description ?? "Sin categoría"}
-      </p>
-      {transaction.description && categoryName ? (
-        <p className={styles.metaLine}>{transaction.description}</p>
+      }
+    >
+      {!isActive ? (
+        <div className={styles.statusRow}>
+          <StatusBadge label={transactionStatusLabel(transaction.status)} tone="muted" />
+        </div>
       ) : null}
-      {kind && transaction.type === "INCOME" ? (
-        <p className={styles.metaLine}>{kind}</p>
-      ) : null}
-      <span className={transaction.status === "ACTIVE" ? styles.badge : styles.badgeVoided}>
-        {transactionStatusLabel(transaction.status)}
-      </span>
-      {method ? <p className={styles.metaLine}>{method}</p> : null}
-      {transaction.isFixed ? <p className={styles.metaLine}>Gasto fijo</p> : null}
-      {reimbursement ? <p className={styles.metaLine}>{reimbursement}</p> : null}
 
       {expanded ? (
         <div className={styles.details}>
@@ -622,7 +730,7 @@ function TransactionCard({
           </div>
         </div>
       ) : null}
-    </article>
+    </MovementRow>
   );
 }
 

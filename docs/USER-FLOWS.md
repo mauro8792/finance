@@ -77,26 +77,30 @@ Los flujos deben respetar:
 ```text
 App
 ↓
-Dashboard
+Dashboard (Home)
 ├── Registrar
 ├── Cuentas
 ├── Movimientos
+├── Tarjetas
+├── Transferencias / Mover dinero
 ├── Presupuestos
 ├── Vivienda
 ├── Inversiones
 ├── Simulaciones
 ├── AI Assistant
-└── Configuración
+└── (privacidad de montos — toggle local)
 ```
 
-En mobile:
+En mobile (P1 bottom nav):
 
 ```text
-Dashboard
-Registrar
-Movimientos
-Más
+Inicio · Registrar · Movimientos · Cuentas · Más
+Más → Inversiones, Vivienda, Tarjetas, Transferencias,
+      Presupuestos, Simulaciones, Asistente, Salir
 ```
+
+Privacy mode (ojo): oculta montos en Home, Cuentas, Vivienda, Inversiones, Tarjetas
+(y cualquier pantalla que use `<Money>`). Persistencia local `pf.privacy.hideAmounts`.
 
 En desktop:
 

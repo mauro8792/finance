@@ -4,9 +4,9 @@
   gap: 0.2rem;
   min-width: 0;
   padding: 0.85rem 0.95rem;
-  border-radius: 0.85rem;
-  background: #fffcf7;
-  border: 1px solid #e7e5e4;
+  border-radius: var(--pf-radius-lg);
+  background: var(--pf-surface);
+  border: 1px solid var(--pf-border);
 }
 
 .compact {
@@ -15,7 +15,7 @@
 
 .label {
   margin: 0;
-  color: #78716c;
+  color: var(--pf-text-subtle);
   font-size: 0.78rem;
   font-weight: 650;
   letter-spacing: 0.03em;
@@ -24,7 +24,7 @@
 
 .value {
   margin: 0;
-  color: #1c1917;
+  color: var(--pf-text);
   font-size: 1.15rem;
   font-weight: 700;
   line-height: 1.2;
@@ -33,7 +33,7 @@
 
 .hint {
   margin: 0;
-  color: #78716c;
+  color: var(--pf-text-subtle);
   font-size: 0.82rem;
   line-height: 1.35;
 }

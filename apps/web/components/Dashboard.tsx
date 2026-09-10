@@ -1,22 +1,54 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, type UseQueryResult } from "@tanstack/react-query";
 import Link from "next/link";
-import { getFinancialSummary, getHousing, getHousingCoverage, isUnauthorizedError } from "../lib/api";
 import {
+  getAccountBalance,
+  getAccounts,
+  getCreditCardCommitments,
+  getCreditCards,
+  getFinancialSummary,
+  getHousing,
+  getHousingCoverage,
+  getInvestments,
+  getTransactions,
+  isUnauthorizedError,
+} from "../lib/api";
+import { accountTypeLabel } from "../lib/accounts";
+import {
+  amountToCents,
   barSharePercent,
   currentYearMonth,
-  formatArsAmount,
   formatCoveredInstallments,
-  formatMoney,
   formatMonthLabel,
   formatRunway,
   isPositiveAmount,
   maxAmount,
 } from "../lib/format-money";
 import { firstActiveHousing } from "../lib/housing";
-import type { FinancialSummary, HousingCoverage, HousingObligation } from "../lib/types";
-import { ErrorState } from "./QueryStatus";
+import { addAmounts, formatArtDate } from "../lib/investments";
+import { formatTransactionDate } from "../lib/transactions";
+import type {
+  Account,
+  CreditCard,
+  CreditCardCommitments,
+  Currency,
+  FinancialSummary,
+  HousingCoverage,
+  HousingObligation,
+  Investment,
+  Transaction,
+} from "../lib/types";
+import { PrivacyToggle } from "./PrivacyToggle";
+import { EmptyState, ErrorState } from "./QueryStatus";
+import { ActionCard } from "./ui/ActionCard";
+import { FinancialCard } from "./ui/FinancialCard";
+import { Metric } from "./ui/Metric";
+import { Money } from "./ui/Money";
+import { PageHeader } from "./ui/PageHeader";
+import { SectionHeader } from "./ui/SectionHeader";
+import { Skeleton } from "./ui/Skeleton";
+import { StatusBadge } from "./ui/StatusBadge";
 import styles from "./Dashboard.module.css";
 
 type DashboardProps = {
@@ -24,122 +56,288 @@ type DashboardProps = {
   month?: number;
 };
 
+type CurrencyTotal = { currency: Currency; amount: string };
+
+type HousingData = {
+  list: UseQueryResult<HousingObligation[]>;
+  coverage: UseQueryResult<HousingCoverage>;
+  selected: HousingObligation | null;
+  isPending: boolean;
+  isError: boolean;
+  retry: () => void;
+};
+
+type CardsData = {
+  cards: CreditCard[];
+  commitments: Record<string, CreditCardCommitments>;
+  debtByCurrency: CurrencyTotal[];
+  query: UseQueryResult<CreditCard[]>;
+};
+
+const ACCOUNTS_PREVIEW_LIMIT = 3;
+const EXPENSES_PREVIEW_LIMIT = 5;
+const INVESTMENTS_PREVIEW_LIMIT = 2;
+const CARDS_PREVIEW_LIMIT = 3;
+
+const QUICK_ACTIONS = [
+  {
+    label: "Registrar gasto",
+    hint: "Cargá lo que gastaste",
+    href: "/registrar",
+    icon: "M13 4v11.2l4.6-4.6L19 12l-7 7-7-7 1.4-1.4L11 15.2V4h2Z",
+  },
+  {
+    label: "Registrar ingreso",
+    hint: "Sumá plata a una cuenta",
+    href: "/registrar",
+    icon: "M11 20V8.8l-4.6 4.6L5 12l7-7 7 7-1.4 1.4L13 8.8V20h-2Z",
+  },
+  {
+    label: "Transferir",
+    hint: "Mové plata entre cuentas",
+    href: "/transfers",
+    icon: "M7 7h9V4l5 4-5 4V9H7V7Zm10 10H8v3l-5-4 5-4v3h9v2Z",
+  },
+  {
+    label: "Ver movimientos",
+    hint: "Todo tu historial",
+    href: "/transactions",
+    icon: "M4 6h16v2H4V6Zm0 5h16v2H4v-2Zm0 5h16v2H4v-2Z",
+  },
+] as const;
+
 export function Dashboard({ year, month }: DashboardProps) {
   const current = currentYearMonth();
   const selectedYear = year ?? current.year;
   const selectedMonth = month ?? current.month;
-  const query = useQuery({
+
+  const summary = useQuery({
     queryKey: ["financial-summary", selectedYear, selectedMonth],
     queryFn: () => getFinancialSummary(selectedYear, selectedMonth),
   });
+  const housing = useHousingData();
+  const investments = useQuery({
+    queryKey: ["investments"],
+    queryFn: getInvestments,
+  });
+  const cards = useCreditCardsData();
 
   return (
-    <section className={styles.page} aria-labelledby="dashboard-title">
-      <header className={styles.intro}>
-        <p className={styles.kicker}>Dashboard</p>
-        <h1 id="dashboard-title" className={styles.title}>
-          {formatMonthLabel(selectedYear, selectedMonth)}
-        </h1>
-        <p className={styles.lead}>Cómo estás este mes, en números claros.</p>
-      </header>
+    <section className={styles.page} aria-label="Resumen financiero">
+      <PageHeader
+        kicker="Inicio"
+        title={formatMonthLabel(selectedYear, selectedMonth)}
+        description="Tu foto financiera del mes, en un vistazo."
+        actions={<PrivacyToggle />}
+      />
 
-      {query.isPending ? <DashboardSkeleton /> : null}
+      <SummarySection
+        query={summary}
+        housing={housing}
+        investments={investments}
+        cards={cards}
+      />
 
-      {query.isError && !isUnauthorizedError(query.error) ? (
-        <ErrorState
-          message="No pudimos cargar tu resumen. Probá de nuevo."
-          onRetry={() => {
-            void query.refetch();
-          }}
-        />
-      ) : null}
+      <QuickActions />
 
-      {query.data ? <DashboardBody summary={query.data} /> : null}
+      <AccountsPreview />
 
-      <Link href="/registrar" className={styles.cta}>
-        Registrar movimiento
-      </Link>
+      <RecentExpenses />
+
+      <InvestmentsPreview query={investments} />
+
+      <HousingPreview housing={housing} />
+
+      <CardsPreview cards={cards} />
     </section>
   );
 }
 
-function DashboardBody({ summary }: { summary: FinancialSummary }) {
-  const runway = formatRunway(summary.runwayMonths);
-  const showSurplus = isPositiveAmount(summary.monthlySurplus);
+function SummarySection({
+  query,
+  housing,
+  investments,
+  cards,
+}: {
+  query: UseQueryResult<FinancialSummary>;
+  housing: HousingData;
+  investments: UseQueryResult<Investment[]>;
+  cards: CardsData;
+}) {
+  if (query.isPending) {
+    return <Skeleton count={2} height="8rem" label="Cargando resumen financiero" />;
+  }
+
+  if (query.isError) {
+    if (isUnauthorizedError(query.error)) {
+      return null;
+    }
+    return (
+      <ErrorState
+        message="No pudimos cargar tu resumen. Probá de nuevo."
+        onRetry={() => {
+          void query.refetch();
+        }}
+      />
+    );
+  }
+
+  return (
+    <div className={styles.summary}>
+      <Hero summary={query.data} />
+      <SecondaryMetrics
+        summary={query.data}
+        housing={housing}
+        investments={investments}
+        cards={cards}
+      />
+      <MonthAnalysis summary={query.data} />
+    </div>
+  );
+}
+
+function Hero({ summary }: { summary: FinancialSummary }) {
+  return (
+    <FinancialCard variant="hero">
+      <p className={styles.heroLabel}>Disponible</p>
+      <Money
+        amount={summary.totalAvailableARS}
+        currency="ARS"
+        className={styles.heroValue}
+      />
+      <p className={styles.heroHint}>Fondo ARS líquido para el día a día.</p>
+      <p className={styles.runway}>
+        <span className={styles.runwayLabel}>Runway</span>
+        <span className={styles.runwayValue}>{formatRunway(summary.runwayMonths)}</span>
+      </p>
+    </FinancialCard>
+  );
+}
+
+function SecondaryMetrics({
+  summary,
+  housing,
+  investments,
+  cards,
+}: {
+  summary: FinancialSummary;
+  housing: HousingData;
+  investments: UseQueryResult<Investment[]>;
+  cards: CardsData;
+}) {
+  const investedByCurrency = activeInvestmentTotals(investments.data ?? []);
+  const reserve = housingReserve(housing);
+  const hasForeignAmount =
+    reserve?.currency === "USD" ||
+    investedByCurrency.some((total) => total.currency === "USD") ||
+    cards.debtByCurrency.some((total) => total.currency === "USD");
+  const isEmpty =
+    !housing.isPending &&
+    !reserve &&
+    investedByCurrency.length === 0 &&
+    cards.debtByCurrency.length === 0;
+
+  if (isEmpty) {
+    return null;
+  }
+
+  return (
+    <div className={styles.metrics}>
+      {hasForeignAmount ? (
+        <Metric
+          label="Disponible ARS"
+          value={<Money amount={summary.totalAvailableARS} currency="ARS" />}
+          hint="Sólo pesos: no se suma con los montos en USD."
+        />
+      ) : null}
+
+      {housing.isPending ? (
+        <Skeleton count={1} height="4.5rem" label="Cargando vivienda" />
+      ) : null}
+
+      {reserve ? (
+        <Metric
+          label="Reserva vivienda"
+          value={<Money amount={reserve.balance} currency={reserve.currency} />}
+          hint={reserve.covered ? `${reserve.covered} cuotas cubiertas` : undefined}
+        />
+      ) : null}
+
+      {investedByCurrency.map((total) => (
+        <Metric
+          key={`investment-${total.currency}`}
+          label={total.currency === "ARS" ? "Inversiones" : "Inversiones USD"}
+          value={<Money amount={total.amount} currency={total.currency} />}
+          hint="Capital en inversiones activas."
+        />
+      ))}
+
+      {cards.debtByCurrency.map((total) => (
+        <Metric
+          key={`card-debt-${total.currency}`}
+          label={total.currency === "ARS" ? "Deuda tarjetas" : "Deuda tarjetas USD"}
+          value={<Money amount={total.amount} currency={total.currency} />}
+          hint="Consumos sin pagar."
+        />
+      ))}
+    </div>
+  );
+}
+
+function MonthAnalysis({ summary }: { summary: FinancialSummary }) {
+  const average = summary.averageMonthlyFundConsumption;
   const monthScale = maxAmount(
     summary.monthlyGrossExpenses,
     summary.monthlyNetExpenses,
     summary.monthlyOperatingIncome,
     summary.monthlyFundConsumption
   );
-  const average = summary.averageMonthlyFundConsumption;
   const averageScale =
-    average === null
-      ? null
-      : maxAmount(summary.monthlyFundConsumption, average);
+    average === null ? null : maxAmount(summary.monthlyFundConsumption, average);
 
   return (
-    <div className={styles.stack}>
-      <article className={styles.hero}>
-        <h2 className={styles.heroLabel}>Disponible para vivir</h2>
-        <p className={styles.heroValue}>{formatArsAmount(summary.totalAvailableARS)}</p>
-        <p className={styles.heroHint}>Fondo ARS líquido para el día a día.</p>
-        <p className={styles.runway}>
-          <span className={styles.runwayLabel}>Runway</span>
-          <span className={styles.runwayValue}>{runway}</span>
-        </p>
-      </article>
+    <section className={styles.section} aria-label="Análisis del mes">
+      <SectionHeader
+        title="Análisis del mes"
+        description="Cómo se movió tu plata en el mes seleccionado."
+      />
 
       <div className={styles.metrics}>
-        <article className={styles.card}>
-          <h2 className={styles.cardLabel}>Gasto neto</h2>
-          <p className={styles.cardValue}>
-            {formatArsAmount(summary.monthlyNetExpenses)}
-          </p>
-        </article>
-        <article className={styles.card}>
-          <h2 className={styles.cardLabel}>Consumo del fondo</h2>
-          <p className={styles.cardValue}>
-            {formatArsAmount(summary.monthlyFundConsumption)}
-          </p>
-        </article>
-      </div>
-
-      <div className={styles.secondary}>
-        <p>
-          <span>Ingreso operativo</span>
-          <strong>{formatArsAmount(summary.monthlyOperatingIncome)}</strong>
-        </p>
-        {showSurplus ? (
-          <p>
-            <span>Superávit del mes</span>
-            <strong>{formatArsAmount(summary.monthlySurplus)}</strong>
-          </p>
+        <Metric
+          label="Gasto neto"
+          value={<Money amount={summary.monthlyNetExpenses} currency="ARS" />}
+        />
+        <Metric
+          label="Consumo del fondo"
+          value={<Money amount={summary.monthlyFundConsumption} currency="ARS" />}
+        />
+        <Metric
+          label="Ingreso operativo"
+          value={<Money amount={summary.monthlyOperatingIncome} currency="ARS" />}
+        />
+        {isPositiveAmount(summary.monthlySurplus) ? (
+          <Metric
+            label="Superávit del mes"
+            value={<Money amount={summary.monthlySurplus} currency="ARS" />}
+          />
         ) : null}
-        <HousingSummary />
+        <Metric
+          label="Gasto bruto"
+          value={<Money amount={summary.monthlyGrossExpenses} currency="ARS" />}
+        />
+        <Metric
+          label="Promedio de consumo"
+          value={
+            average === null ? (
+              "Sin datos suficientes"
+            ) : (
+              <Money amount={average} currency="ARS" />
+            )
+          }
+        />
       </div>
 
-      <section className={styles.analysis} aria-labelledby="analysis-title">
-        <h2 id="analysis-title" className={styles.analysisTitle}>
-          Análisis del mes
-        </h2>
-        <div className={styles.analysisMetrics}>
-          <article className={styles.card}>
-            <h3 className={styles.cardLabel}>Gasto bruto</h3>
-            <p className={styles.cardValue}>
-              {formatArsAmount(summary.monthlyGrossExpenses)}
-            </p>
-          </article>
-          <article className={styles.card}>
-            <h3 className={styles.cardLabel}>Promedio de consumo</h3>
-            <p className={styles.cardValue}>
-              {average === null
-                ? "Sin datos suficientes"
-                : formatArsAmount(average)}
-            </p>
-          </article>
-        </div>
-
+      <div className={styles.charts}>
         <figure className={styles.chart}>
           <figcaption className={styles.chartTitle}>Comparación del mes</figcaption>
           <MetricBar
@@ -166,9 +364,7 @@ function DashboardBody({ summary }: { summary: FinancialSummary }) {
 
         {average !== null && averageScale !== null ? (
           <figure className={styles.chart}>
-            <figcaption className={styles.chartTitle}>
-              Consumo vs promedio
-            </figcaption>
+            <figcaption className={styles.chartTitle}>Consumo vs promedio</figcaption>
             <MetricBar
               label="Este mes"
               amount={summary.monthlyFundConsumption}
@@ -177,110 +373,8 @@ function DashboardBody({ summary }: { summary: FinancialSummary }) {
             <MetricBar label="Promedio" amount={average} max={averageScale} />
           </figure>
         ) : null}
-      </section>
-    </div>
-  );
-}
-
-function HousingSummary() {
-  const list = useQuery({
-    queryKey: ["housing"],
-    queryFn: getHousing,
-  });
-  const selected = list.data ? firstActiveHousing(list.data) : null;
-  const coverage = useQuery({
-    queryKey: ["housing", selected?.id, "coverage"],
-    queryFn: () => getHousingCoverage(selected!.id),
-    enabled: Boolean(selected),
-  });
-
-  if (list.isPending || (selected && coverage.isPending)) {
-    return (
-      <div className={styles.housing} aria-busy="true">
-        <span>Vivienda</span>
-        <strong className={styles.housingSkeleton} aria-label="Cargando vivienda">
-          {"\u00a0"}
-        </strong>
       </div>
-    );
-  }
-
-  if (list.isError || (selected && coverage.isError)) {
-    return (
-      <ErrorState
-        compact
-        message="No pudimos cargar tu vivienda. Probá de nuevo."
-        onRetry={() => {
-          if (list.isError) {
-            void list.refetch();
-            return;
-          }
-          void coverage.refetch();
-        }}
-      />
-    );
-  }
-
-  if (!selected) {
-    return (
-      <div className={styles.housing}>
-        <span>Vivienda USD</span>
-        <strong>Sin configurar</strong>
-      </div>
-    );
-  }
-
-  if (!coverage.data) {
-    return (
-      <ErrorState
-        compact
-        message="No pudimos cargar tu vivienda. Probá de nuevo."
-        onRetry={() => {
-          void coverage.refetch();
-        }}
-      />
-    );
-  }
-
-  return <HousingCoverageLines obligation={selected} coverage={coverage.data} />;
-}
-
-function HousingCoverageLines({
-  obligation,
-  coverage,
-}: {
-  obligation: HousingObligation;
-  coverage: HousingCoverage;
-}) {
-  const noReserve =
-    coverage.reserveAccountId === null && coverage.coveredInstallments === null;
-
-  if (noReserve) {
-    return (
-      <div className={styles.housing}>
-        <span>Vivienda {obligation.currency}</span>
-        <strong>Sin reserva configurada</strong>
-      </div>
-    );
-  }
-
-  const covered =
-    coverage.coveredInstallments === null
-      ? null
-      : `${formatCoveredInstallments(coverage.coveredInstallments)} cuotas cubiertas`;
-  const reserved =
-    coverage.reserveBalance === null
-      ? null
-      : `${formatMoney(coverage.reserveBalance, coverage.currency)} reservados`;
-
-  return (
-    <div className={styles.housing}>
-      <span>Vivienda {obligation.currency}</span>
-      <div className={styles.housingValues}>
-        {covered ? <strong>{covered}</strong> : null}
-        {reserved ? <p className={styles.housingReserve}>{reserved}</p> : null}
-      </div>
-    </div>
+    </section>
   );
 }
 
@@ -297,27 +391,538 @@ function MetricBar({
     <div className={styles.barRow}>
       <div className={styles.barMeta}>
         <span>{label}</span>
-        <strong>{formatArsAmount(amount)}</strong>
+        <Money amount={amount} currency="ARS" className={styles.barAmount} />
       </div>
       <div className={styles.barTrack} aria-hidden="true">
-        <span
-          className={styles.barFill}
-          style={{ width: barSharePercent(amount, max) }}
-        />
+        <span className={styles.barFill} style={{ width: barSharePercent(amount, max) }} />
       </div>
     </div>
   );
 }
 
-function DashboardSkeleton() {
+function QuickActions() {
   return (
-    <div className={styles.stack} aria-busy="true" aria-live="polite">
-      <p className={styles.srOnly}>Cargando resumen financiero</p>
-      <div className={`${styles.hero} ${styles.skeletonBlock}`} />
-      <div className={styles.metrics}>
-        <div className={`${styles.card} ${styles.skeletonBlock}`} />
-        <div className={`${styles.card} ${styles.skeletonBlock}`} />
+    <section className={styles.section} aria-label="Acciones rápidas">
+      <SectionHeader title="Acciones rápidas" />
+      <div className={styles.actions}>
+        {QUICK_ACTIONS.map((action) => (
+          <ActionCard
+            key={action.label}
+            label={action.label}
+            hint={action.hint}
+            href={action.href}
+            icon={<ActionIcon path={action.icon} />}
+          />
+        ))}
       </div>
-    </div>
+    </section>
   );
+}
+
+function ActionIcon({ path }: { path: string }) {
+  return (
+    <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false">
+      <path fill="currentColor" d={path} />
+    </svg>
+  );
+}
+
+function AccountsPreview() {
+  const query = useQuery({
+    queryKey: ["accounts"],
+    queryFn: getAccounts,
+  });
+  const accounts = activeAccounts(query.data ?? []);
+  const balances = useQuery({
+    queryKey: ["account-balances", "dashboard", accounts.map((account) => account.id)],
+    enabled: query.isSuccess && accounts.length > 0,
+    queryFn: async () => {
+      const entries = await Promise.all(
+        accounts.map(async (account) => {
+          const result = await getAccountBalance(account.id);
+          return [account.id, result.balance] as const;
+        })
+      );
+      return Object.fromEntries(entries) as Record<string, string>;
+    },
+  });
+
+  return (
+    <section className={styles.section} aria-label="Cuentas">
+      <SectionHeader
+        title="Cuentas"
+        action={
+          <Link
+            href="/accounts"
+            className={styles.sectionLink}
+            aria-label="Ver todas las cuentas"
+          >
+            Ver todas
+          </Link>
+        }
+      />
+
+      {query.isPending ? <Skeleton count={2} height="4rem" label="Cargando cuentas" /> : null}
+
+      {query.isError ? (
+        <ErrorState
+          compact
+          message="No pudimos cargar tus cuentas. Probá de nuevo."
+          onRetry={() => {
+            void query.refetch();
+          }}
+        />
+      ) : null}
+
+      {query.isSuccess && accounts.length === 0 ? (
+        <EmptyState
+          message="Todavía no tenés cuentas activas."
+          action={{ label: "Crear cuenta", href: "/accounts" }}
+        />
+      ) : null}
+
+      {accounts.length > 0 ? (
+        <ul className={styles.cardList}>
+          {accounts.map((account) => (
+            <li key={account.id}>
+              <FinancialCard>
+                <div className={styles.row}>
+                  <div className={styles.rowText}>
+                    <p className={styles.rowTitle}>{account.name}</p>
+                    <p className={styles.rowMeta}>
+                      {accountTypeLabel(account.type)} · {account.currency}
+                    </p>
+                  </div>
+                  <AccountBalance
+                    currency={account.currency}
+                    balance={balances.data?.[account.id] ?? null}
+                    isPending={balances.isPending}
+                  />
+                </div>
+              </FinancialCard>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </section>
+  );
+}
+
+function AccountBalance({
+  currency,
+  balance,
+  isPending,
+}: {
+  currency: Currency;
+  balance: string | null;
+  isPending: boolean;
+}) {
+  if (balance !== null) {
+    return <Money amount={balance} currency={currency} className={styles.rowAmount} />;
+  }
+
+  if (isPending) {
+    return (
+      <Skeleton
+        count={1}
+        height="1.1rem"
+        label="Cargando saldo"
+        className={styles.rowSkeleton}
+      />
+    );
+  }
+
+  return <span className={styles.rowMeta}>Saldo no disponible</span>;
+}
+
+function RecentExpenses() {
+  const query = useQuery({
+    queryKey: ["transactions", {}],
+    queryFn: () => getTransactions(),
+  });
+  const expenses = recentExpenses(query.data ?? []);
+
+  return (
+    <section className={styles.section} aria-label="Gastos recientes">
+      <SectionHeader
+        title="Gastos recientes"
+        action={
+          <Link
+            href="/transactions"
+            className={styles.sectionLink}
+            aria-label="Ver todos los gastos"
+          >
+            Ver todos
+          </Link>
+        }
+      />
+
+      {query.isPending ? (
+        <Skeleton count={3} height="2.5rem" label="Cargando gastos recientes" />
+      ) : null}
+
+      {query.isError ? (
+        <ErrorState
+          compact
+          message="No pudimos cargar tus gastos. Probá de nuevo."
+          onRetry={() => {
+            void query.refetch();
+          }}
+        />
+      ) : null}
+
+      {query.isSuccess && expenses.length === 0 ? (
+        <EmptyState
+          message="Todavía no registraste gastos."
+          action={{ label: "Cargar un gasto", href: "/registrar" }}
+        />
+      ) : null}
+
+      {expenses.length > 0 ? (
+        <FinancialCard>
+          <ul className={styles.rowList}>
+            {expenses.map((expense) => (
+              <li key={expense.id} className={styles.row}>
+                <div className={styles.rowText}>
+                  <p className={styles.rowTitle}>{expense.description ?? "Gasto"}</p>
+                  <p className={styles.rowMeta}>
+                    {formatTransactionDate(expense.occurredAt)}
+                  </p>
+                </div>
+                <Money
+                  amount={expense.amount}
+                  currency={expense.currency}
+                  className={styles.rowAmount}
+                />
+              </li>
+            ))}
+          </ul>
+        </FinancialCard>
+      ) : null}
+    </section>
+  );
+}
+
+function InvestmentsPreview({ query }: { query: UseQueryResult<Investment[]> }) {
+  const active = (query.data ?? [])
+    .filter((investment) => investment.status === "ACTIVE")
+    .slice(0, INVESTMENTS_PREVIEW_LIMIT);
+
+  return (
+    <section className={styles.section} aria-label="Inversiones">
+      <SectionHeader
+        title="Inversiones"
+        action={
+          <Link
+            href="/investments"
+            className={styles.sectionLink}
+            aria-label="Ver todas las inversiones"
+          >
+            Ver todas
+          </Link>
+        }
+      />
+
+      {query.isPending ? (
+        <Skeleton count={1} height="4rem" label="Cargando inversiones" />
+      ) : null}
+
+      {query.isError ? (
+        <ErrorState
+          compact
+          message="No pudimos cargar tus inversiones. Probá de nuevo."
+          onRetry={() => {
+            void query.refetch();
+          }}
+        />
+      ) : null}
+
+      {query.isSuccess && active.length === 0 ? (
+        <EmptyState
+          message="No tenés inversiones activas."
+          action={{ label: "Ver inversiones", href: "/investments" }}
+        />
+      ) : null}
+
+      {active.length > 0 ? (
+        <ul className={styles.cardList}>
+          {active.map((investment) => (
+            <li key={investment.id}>
+              <FinancialCard>
+                <div className={styles.row}>
+                  <div className={styles.rowText}>
+                    <StatusBadge label="Activa" tone="active" />
+                    <p className={styles.rowMeta}>
+                      {investment.maturityDate
+                        ? `Vence el ${formatArtDate(investment.maturityDate)}`
+                        : "Sin vencimiento"}
+                    </p>
+                  </div>
+                  <Money
+                    amount={investment.principal}
+                    currency={investment.currency}
+                    className={styles.rowAmount}
+                  />
+                </div>
+              </FinancialCard>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </section>
+  );
+}
+
+function HousingPreview({ housing }: { housing: HousingData }) {
+  const reserve = housingReserve(housing);
+
+  return (
+    <section className={styles.section} aria-label="Vivienda">
+      <SectionHeader
+        title="Vivienda"
+        action={
+          <Link href="/housing" className={styles.sectionLink}>
+            Ver detalle
+          </Link>
+        }
+      />
+
+      {housing.isPending ? (
+        <Skeleton count={1} height="4rem" label="Cargando cobertura de vivienda" />
+      ) : null}
+
+      {housing.isError ? (
+        <ErrorState
+          compact
+          message="No pudimos cargar tu vivienda. Probá de nuevo."
+          onRetry={housing.retry}
+        />
+      ) : null}
+
+      {!housing.isPending && !housing.isError && !housing.selected ? (
+        <EmptyState
+          message="Todavía no configuraste tu vivienda."
+          action={{ label: "Configurar vivienda", href: "/housing" }}
+        />
+      ) : null}
+
+      {housing.selected && housing.coverage.data && !reserve ? (
+        <EmptyState
+          message="Tu vivienda no tiene una cuenta de reserva configurada."
+          action={{ label: "Configurar reserva", href: "/housing" }}
+        />
+      ) : null}
+
+      {housing.selected && housing.coverage.data && reserve ? (
+        <div className={styles.metrics}>
+          <Metric
+            label="Cuotas cubiertas"
+            value={reserve.covered ?? "Sin datos suficientes"}
+            hint={`${housing.coverage.data.remainingInstallments} cuotas pendientes`}
+          />
+          <Metric
+            label="Cuota mensual"
+            value={
+              <Money
+                amount={housing.coverage.data.installmentAmount}
+                currency={housing.coverage.data.currency}
+              />
+            }
+            hint={housing.selected.name}
+          />
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function CardsPreview({ cards }: { cards: CardsData }) {
+  const query = cards.query;
+  const preview = cards.cards.slice(0, CARDS_PREVIEW_LIMIT);
+
+  return (
+    <section className={styles.section} aria-label="Tarjetas">
+      <SectionHeader
+        title="Tarjetas"
+        action={
+          <Link
+            href="/cards"
+            className={styles.sectionLink}
+            aria-label="Ver todas las tarjetas"
+          >
+            Ver todas
+          </Link>
+        }
+      />
+
+      {query.isPending ? (
+        <Skeleton count={1} height="4rem" label="Cargando tarjetas" />
+      ) : null}
+
+      {query.isError ? (
+        <ErrorState
+          compact
+          message="No pudimos cargar tus tarjetas. Probá de nuevo."
+          onRetry={() => {
+            void query.refetch();
+          }}
+        />
+      ) : null}
+
+      {query.isSuccess && preview.length === 0 ? (
+        <EmptyState
+          message="No tenés tarjetas cargadas."
+          action={{ label: "Agregar tarjeta", href: "/cards" }}
+        />
+      ) : null}
+
+      {preview.length > 0 ? (
+        <ul className={styles.cardList}>
+          {preview.map((card) => {
+            const commitments = cards.commitments[card.id] ?? null;
+            return (
+              <li key={card.id}>
+                <FinancialCard>
+                  <div className={styles.row}>
+                    <div className={styles.rowText}>
+                      <p className={styles.rowTitle}>{card.name}</p>
+                      <p className={styles.rowMeta}>
+                        {card.issuer} · {card.currency}
+                      </p>
+                    </div>
+                    {commitments ? (
+                      <Metric
+                        compact
+                        label="Deuda actual"
+                        value={
+                          <Money
+                            amount={commitments.currentCardDebt}
+                            currency={card.currency}
+                          />
+                        }
+                      />
+                    ) : (
+                      <span className={styles.rowMeta}>Sin datos de deuda</span>
+                    )}
+                  </div>
+                </FinancialCard>
+              </li>
+            );
+          })}
+        </ul>
+      ) : null}
+    </section>
+  );
+}
+
+function useHousingData(): HousingData {
+  const list = useQuery({
+    queryKey: ["housing"],
+    queryFn: getHousing,
+  });
+  const selected = list.data ? firstActiveHousing(list.data) : null;
+  const coverage = useQuery({
+    queryKey: ["housing", selected?.id, "coverage"],
+    queryFn: () => getHousingCoverage(selected!.id),
+    enabled: Boolean(selected),
+  });
+
+  return {
+    list,
+    coverage,
+    selected,
+    isPending: list.isPending || (Boolean(selected) && coverage.isPending),
+    isError: list.isError || (Boolean(selected) && coverage.isError),
+    retry: () => {
+      if (list.isError) {
+        void list.refetch();
+        return;
+      }
+      void coverage.refetch();
+    },
+  };
+}
+
+function useCreditCardsData(): CardsData {
+  const query = useQuery({
+    queryKey: ["credit-cards"],
+    queryFn: getCreditCards,
+  });
+  const cards = (query.data ?? []).filter((card) => card.isActive);
+  const commitments = useQuery({
+    queryKey: ["credit-card-commitments", cards.map((card) => card.id)],
+    enabled: query.isSuccess && cards.length > 0,
+    queryFn: async () => {
+      const entries = await Promise.all(
+        cards.map(async (card) => {
+          const result = await getCreditCardCommitments(card.id);
+          return [card.id, result] as const;
+        })
+      );
+      return Object.fromEntries(entries) as Record<string, CreditCardCommitments>;
+    },
+  });
+
+  const byId = commitments.data ?? {};
+  return {
+    cards,
+    commitments: byId,
+    debtByCurrency: sumByCurrency(
+      cards.map((card) => ({
+        currency: card.currency,
+        amount: byId[card.id]?.currentCardDebt ?? "0.00",
+      }))
+    ),
+    query,
+  };
+}
+
+function housingReserve(
+  housing: HousingData
+): { currency: Currency; balance: string; covered: string | null } | null {
+  const coverage = housing.coverage.data;
+  if (!housing.selected || !coverage || coverage.reserveBalance === null) {
+    return null;
+  }
+  return {
+    currency: coverage.currency,
+    balance: coverage.reserveBalance,
+    covered:
+      coverage.coveredInstallments === null
+        ? null
+        : formatCoveredInstallments(coverage.coveredInstallments),
+  };
+}
+
+function activeAccounts(accounts: Account[]): Account[] {
+  return accounts.filter((account) => account.isActive).slice(0, ACCOUNTS_PREVIEW_LIMIT);
+}
+
+function recentExpenses(transactions: Transaction[]): Transaction[] {
+  return transactions
+    .filter(
+      (transaction) => transaction.status === "ACTIVE" && transaction.type === "EXPENSE"
+    )
+    .slice(0, EXPENSES_PREVIEW_LIMIT);
+}
+
+function activeInvestmentTotals(investments: Investment[]): CurrencyTotal[] {
+  return sumByCurrency(
+    investments
+      .filter((investment) => investment.status === "ACTIVE")
+      .map((investment) => ({
+        currency: investment.currency,
+        amount: investment.principal,
+      }))
+  );
+}
+
+function sumByCurrency(items: CurrencyTotal[]): CurrencyTotal[] {
+  const totals = new Map<Currency, string>();
+  for (const item of items) {
+    totals.set(item.currency, addAmounts(totals.get(item.currency) ?? "0.00", item.amount));
+  }
+  return [...totals.entries()]
+    .filter(([, amount]) => amountToCents(amount) > BigInt(0))
+    .map(([currency, amount]) => ({ currency, amount }));
 }

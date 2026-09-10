@@ -4,7 +4,7 @@
   gap: 0.35rem;
   min-height: 1.75rem;
   padding: 0.15rem 0.55rem;
-  border-radius: 999px;
+  border-radius: var(--pf-radius-pill);
   font-size: 0.78rem;
   font-weight: 650;
   line-height: 1.2;
@@ -61,11 +61,11 @@
 
 .primary {
   background: rgb(15 118 110 / 18%);
-  color: #0f766e;
+  color: var(--pf-primary);
 }
 
 .primary .dot {
-  background: #0f766e;
+  background: var(--pf-primary);
 }
 
 .active {

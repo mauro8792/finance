@@ -187,7 +187,20 @@ describe("CreditCardsPage", () => {
     expect(await screen.findByText("Netflix")).toBeTruthy();
     expect(screen.getByText(/Estimado mensual · Todavía no registrado/)).toBeTruthy();
     expect(screen.getByText("Spotify")).toBeTruthy();
-    expect(screen.getByText(/Registrado este mes \$ 2\.500,00/)).toBeTruthy();
+    expect(screen.getByText(/Registrado este mes/)).toBeTruthy();
+    expect(screen.getAllByText("$ 2.500,00").length).toBeGreaterThan(0);
+  });
+
+  it("renders the page header with the privacy toggle", async () => {
+    getCreditCards.mockResolvedValue([primaryCard]);
+    getCreditCardCommitments.mockResolvedValue(commitments);
+    getRecurringChargeOutlook.mockResolvedValue(outlook);
+
+    renderPage();
+
+    expect(screen.getByRole("heading", { name: "Tarjetas" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Ocultar montos" })).toBeTruthy();
+    expect(await screen.findByText("Netflix")).toBeTruthy();
   });
 
   it("does not merge estimated pending into current debt display", async () => {
@@ -199,7 +212,7 @@ describe("CreditCardsPage", () => {
     await screen.findByText("Recurrentes estimados pendientes");
 
     await waitFor(() => {
-      expect(screen.getByText("$ 3.500,00")).toBeTruthy();
+      expect(screen.getAllByText("$ 3.500,00").length).toBeGreaterThan(0);
     });
 
     expect(screen.getAllByText("Deuda actual").length).toBeGreaterThan(0);

@@ -1,41 +1,15 @@
 .page {
   display: flex;
   flex-direction: column;
-  gap: 1.25rem;
+  gap: var(--pf-space-4);
   width: 100%;
   min-width: 0;
-}
-
-.intro {
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-}
-
-.kicker {
-  margin: 0;
-  color: #0f766e;
-  font-size: 0.8rem;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-
-.title {
-  margin: 0;
-  font-size: 1.7rem;
-  line-height: 1.15;
-}
-
-.lead {
-  margin: 0;
-  color: #57534e;
 }
 
 .layout {
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: var(--pf-space-4);
   min-width: 0;
 }
 
@@ -79,7 +53,7 @@
 
 .heroMeta {
   margin: 0;
-  color: rgb(255 255 255 / 82%);
+  color: var(--pf-hero-text-muted);
   font-size: 0.88rem;
 }
 
@@ -112,6 +86,8 @@
   margin: 0.1rem 0 0;
   font-size: 0.95rem;
   font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
 }
 
 .recurringList {
@@ -128,9 +104,9 @@
   flex-direction: column;
   gap: 0.55rem;
   padding: 0.85rem 0.95rem;
-  border: 1px solid #e7e5e4;
-  border-radius: 0.85rem;
-  background: #fffcf7;
+  border: 1px solid var(--pf-border);
+  border-radius: var(--pf-radius-lg);
+  background: var(--pf-surface);
 }
 
 .recurringHead {
@@ -148,14 +124,16 @@
 
 .recurringMeta {
   margin: 0.15rem 0 0;
-  color: #78716c;
+  color: var(--pf-text-subtle);
   font-size: 0.84rem;
+  overflow-wrap: anywhere;
 }
 
 .recurringStatus {
   margin: 0;
-  color: #57534e;
+  color: var(--pf-text-muted);
   font-size: 0.84rem;
+  overflow-wrap: anywhere;
 }
 
 .primaryCta,

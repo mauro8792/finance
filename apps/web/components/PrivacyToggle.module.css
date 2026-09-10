@@ -1,0 +1,23 @@
+.toggle {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--pf-touch-target);
+  min-height: var(--pf-touch-target);
+  padding: 0;
+  border: 0;
+  border-radius: var(--pf-radius-md);
+  background: transparent;
+  color: var(--pf-text-strong);
+  cursor: pointer;
+}
+
+.toggle:hover {
+  background: var(--pf-primary-soft);
+  color: var(--pf-primary);
+}
+
+.toggle[aria-pressed="true"] {
+  color: var(--pf-primary);
+}

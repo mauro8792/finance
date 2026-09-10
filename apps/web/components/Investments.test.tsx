@@ -101,19 +101,25 @@ describe("InvestmentsPage", () => {
     getAccounts.mockResolvedValue(accounts);
   });
 
-  it("shows a loading state without the empty copy", () => {
+  it("shows a skeleton loading state without the empty copy", () => {
     getInvestments.mockReturnValue(new Promise(() => undefined));
     renderInvestments();
-    expect(screen.getByText("Cargando inversiones")).toBeTruthy();
-    expect(screen.queryByText("Aún no registraste inversiones.")).toBeNull();
+    expect(screen.getByLabelText("Cargando inversiones")).toBeTruthy();
+    expect(screen.queryByText(/No hay inversiones/)).toBeNull();
   });
 
   it("shows the empty state without treating it as an error", async () => {
     getInvestments.mockResolvedValue([]);
     renderInvestments();
-    expect(await screen.findByText("Aún no registraste inversiones.")).toBeTruthy();
+    expect(await screen.findByText(/No hay inversiones/)).toBeTruthy();
     expect(screen.queryByRole("alert")).toBeNull();
     expect(screen.getByRole("button", { name: "Crear inversión" })).toBeTruthy();
+  });
+
+  it("exposes the privacy toggle in the header", async () => {
+    getInvestments.mockResolvedValue([active]);
+    renderInvestments();
+    expect(await screen.findByRole("button", { name: "Ocultar montos" })).toBeTruthy();
   });
 
   it("recovers from a list error", async () => {
@@ -135,10 +141,30 @@ describe("InvestmentsPage", () => {
     expect(screen.getAllByText("$ 100.000,00").length).toBeGreaterThan(0);
     expect(screen.getByText("30%")).toBeTruthy();
     expect(screen.getByText("$ 575,34")).toBeTruthy();
+    expect(screen.getByText("Rendimiento esperado")).toBeTruthy();
+    expect(screen.getByText("Estimación, todavía no cobrada")).toBeTruthy();
     expect(screen.getByText("Caja ARS")).toBeTruthy();
     expect(screen.getByText("QA caución")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Registrar vencimiento" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Renovar" })).toBeTruthy();
+  });
+
+  it("emphasises the maturity date on ACTIVE cards and the capital total", async () => {
+    getInvestments.mockResolvedValue([active]);
+    renderInvestments();
+    expect(await screen.findByText("Vence")).toBeTruthy();
+    expect(screen.getByText("Capital colocado")).toBeTruthy();
+    expect(screen.getByText(/1 caución activa/)).toBeTruthy();
+    expect(screen.queryByText("Interés real")).toBeNull();
+  });
+
+  it("emphasises the real return on MATURED cards", async () => {
+    getInvestments.mockResolvedValue([matured]);
+    renderInvestments();
+    expect(await screen.findByText("Interés real cobrado")).toBeTruthy();
+    expect(screen.getByText("$ 560,00")).toBeTruthy();
+    expect(screen.queryByText("Vence")).toBeNull();
+    expect(screen.queryByText("Capital colocado")).toBeNull();
   });
 
   it("renders several investments and keeps history after renewal", async () => {
@@ -173,7 +199,7 @@ describe("InvestmentsPage", () => {
     getInvestments.mockResolvedValue([]);
     createInvestment.mockResolvedValue(active);
     renderInvestments();
-    await screen.findByText("Aún no registraste inversiones.");
+    await screen.findByText(/No hay inversiones/);
     await user.click(screen.getByRole("button", { name: "Crear inversión" }));
     expect(await screen.findByLabelText("Cuenta origen")).toBeTruthy();
     await user.selectOptions(screen.getByLabelText("Moneda"), "USD");
@@ -234,8 +260,9 @@ describe("InvestmentsPage", () => {
     matureInvestment.mockResolvedValue(matured);
     renderInvestments();
     await user.click(await screen.findByRole("button", { name: "Registrar vencimiento" }));
-    expect(screen.getByText("Capital retornado: $ 100.000,00")).toBeTruthy();
-    expect(screen.getByText("Esperado: $ 575,34")).toBeTruthy();
+    expect(screen.getByText(/Capital retornado/)).toBeTruthy();
+    expect(screen.getByText(/Esperado/)).toBeTruthy();
+    expect(screen.getAllByText("$ 575,34").length).toBeGreaterThan(0);
     await user.selectOptions(screen.getByLabelText("Cuenta destino"), "acc-ars");
     await user.type(screen.getByLabelText("Interés real"), "560");
     fireEvent.change(screen.getByLabelText("Fecha de la operación"), {

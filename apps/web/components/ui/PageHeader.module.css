@@ -1,0 +1,49 @@
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--pf-space-3);
+  min-width: 0;
+}
+
+.text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pf-space-1);
+  min-width: 0;
+}
+
+.kicker {
+  margin: 0;
+  color: var(--pf-primary);
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.title {
+  margin: 0;
+  font-size: 1.7rem;
+  line-height: 1.15;
+  word-break: break-word;
+}
+
+.description {
+  margin: 0;
+  color: var(--pf-text-muted);
+  line-height: 1.4;
+}
+
+.actions {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: var(--pf-space-2);
+}
+
+@media (max-width: 767px) {
+  .title {
+    font-size: 1.45rem;
+  }
+}

@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { LAST_ACCOUNT_KEY } from "../lib/quick-add";
 import type { Account } from "../lib/types";
 import { AccountsPage } from "./Accounts";
 
@@ -49,6 +50,7 @@ function renderAccounts(client = new QueryClient({ defaultOptions: { queries: { 
 
 describe("AccountsPage", () => {
   beforeEach(() => {
+    localStorage.clear();
     getAccounts.mockReset();
     getAccountBalance.mockReset();
     createAccount.mockReset();
@@ -68,17 +70,17 @@ describe("AccountsPage", () => {
     expect(screen.getByRole("heading", { name: "Cuentas" })).toBeTruthy();
   });
 
-  it("shows a loading state without the empty copy", () => {
+  it("shows a skeleton loading state without the empty copy", () => {
     getAccounts.mockReturnValue(new Promise(() => undefined));
     renderAccounts();
-    expect(screen.getByText("Cargando cuentas")).toBeTruthy();
-    expect(screen.queryByText("Aún no creaste cuentas.")).toBeNull();
+    expect(screen.getByLabelText("Cargando cuentas")).toBeTruthy();
+    expect(screen.queryByText(/Todavía no tenés cuentas/)).toBeNull();
   });
 
   it("shows the empty state", async () => {
     getAccounts.mockResolvedValue([]);
     renderAccounts();
-    expect(await screen.findByText("Aún no creaste cuentas.")).toBeTruthy();
+    expect(await screen.findByText(/Todavía no tenés cuentas/)).toBeTruthy();
     expect(screen.getByRole("button", { name: "Crear cuenta" })).toBeTruthy();
     expect(screen.queryByRole("alert")).toBeNull();
   });
@@ -93,17 +95,48 @@ describe("AccountsPage", () => {
     expect(await screen.findByText("QA Fondo")).toBeTruthy();
   });
 
-  it("renders cards with name, currency, type label, balance and status", async () => {
+  it("renders cards with name, type tag, currency, balance and status", async () => {
     getAccounts.mockResolvedValue([fondo, inactive]);
     renderAccounts();
     expect(await screen.findByText("QA Fondo")).toBeTruthy();
     expect(screen.getByText("Caja vieja")).toBeTruthy();
-    expect(screen.getByText("ARS · Fondo")).toBeTruthy();
-    expect(screen.getByText("USD · Efectivo")).toBeTruthy();
+    expect(screen.getByText("Fondo")).toBeTruthy();
+    expect(screen.getByText("Efectivo")).toBeTruthy();
+    expect(screen.getByText("ARS")).toBeTruthy();
+    expect(screen.getByText("USD")).toBeTruthy();
     expect(await screen.findByText("$ 100.000,00")).toBeTruthy();
     expect(screen.getByText("USD 0,00")).toBeTruthy();
     expect(screen.getByText("Activa")).toBeTruthy();
     expect(screen.getByText("Inactiva")).toBeTruthy();
+  });
+
+  it("exposes the privacy toggle in the header", async () => {
+    getAccounts.mockResolvedValue([fondo]);
+    renderAccounts();
+    expect(await screen.findByRole("button", { name: "Ocultar montos" })).toBeTruthy();
+  });
+
+  it("marks an account as the default one for Registrar", async () => {
+    const user = userEvent.setup();
+    getAccounts.mockResolvedValue([fondo, { ...inactive, isActive: true }]);
+    renderAccounts();
+    expect(await screen.findByText("QA Fondo")).toBeTruthy();
+    expect(screen.queryByText("Predeterminada")).toBeNull();
+    expect(screen.getAllByRole("button", { name: "Usar al registrar" }).length).toBe(2);
+
+    await user.click(screen.getAllByRole("button", { name: "Usar al registrar" })[0]);
+
+    expect(localStorage.getItem(LAST_ACCOUNT_KEY)).toBe("acc-fondo");
+    expect(screen.getByText("Predeterminada")).toBeTruthy();
+    expect(screen.getAllByRole("button", { name: "Usar al registrar" }).length).toBe(1);
+  });
+
+  it("reads the stored default account on mount and hides the action on inactive accounts", async () => {
+    localStorage.setItem(LAST_ACCOUNT_KEY, "acc-fondo");
+    getAccounts.mockResolvedValue([fondo, inactive]);
+    renderAccounts();
+    expect(await screen.findByText("Predeterminada")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Usar al registrar" })).toBeNull();
   });
 
   it("submits create without an initial balance and invalidates accounts", async () => {
@@ -111,7 +144,7 @@ describe("AccountsPage", () => {
     getAccounts.mockResolvedValue([]);
     createAccount.mockResolvedValue(fondo);
     const { invalidate } = renderAccounts();
-    await screen.findByText("Aún no creaste cuentas.");
+    await screen.findByText(/Todavía no tenés cuentas/);
     await user.click(screen.getByRole("button", { name: "Crear cuenta" }));
     await user.type(screen.getByLabelText("Nombre"), "QA Fondo");
     await user.selectOptions(screen.getByLabelText("Tipo"), "FUND");
@@ -131,6 +164,15 @@ describe("AccountsPage", () => {
     });
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ["account-balances"] });
     expect(await screen.findByText("QA Fondo")).toBeTruthy();
+  });
+
+  it("opens the create form from the header CTA", async () => {
+    const user = userEvent.setup();
+    getAccounts.mockResolvedValue([fondo]);
+    renderAccounts();
+    await screen.findByText("QA Fondo");
+    await user.click(screen.getByRole("button", { name: "Nueva cuenta" }));
+    expect(screen.getByRole("heading", { name: "Nueva cuenta" })).toBeTruthy();
   });
 
   it("edits name and type without sending currency", async () => {

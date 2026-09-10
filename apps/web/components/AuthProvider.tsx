@@ -13,6 +13,7 @@ import {
 } from "react";
 import { getMe, logout as logoutRequest, setOnUnauthorized } from "../lib/api";
 import type { AuthUser } from "../lib/types";
+import { MobileBottomNav } from "./MobileBottomNav";
 import { LoadingState } from "./QueryStatus";
 import { SiteHeader } from "./SiteHeader";
 
@@ -121,7 +122,11 @@ export function AuthHeader() {
   if (pathname === "/login") {
     return null;
   }
+  const onLogout = status === "authenticated" ? () => void logout() : undefined;
   return (
-    <SiteHeader onLogout={status === "authenticated" ? () => void logout() : undefined} />
+    <>
+      <SiteHeader onLogout={onLogout} />
+      {status === "authenticated" ? <MobileBottomNav onLogout={onLogout} /> : null}
+    </>
   );
 }
