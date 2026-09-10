@@ -398,16 +398,34 @@ Dashboard
 ↓
 + Registrar
 ↓
-Gasto
+Gasto | Ingreso | Transferencia
 ↓
-Importe
-↓
-Categoría
-↓
-Guardar
+(si Gasto) Importe → Categoría → Guardar
 ```
 
-Defaults:
+Tabs en `/registrar` (P0.12.1):
+
+```text
+Gasto
+Ingreso
+Transferencia
+```
+
+Transferencia (manual, sin AI):
+
+```text
+Desde
+Hacia
+Monto
+Fecha
+Descripción opcional
+```
+
+Copy auxiliar: “Mové dinero entre tus cuentas sin registrarlo como gasto o ingreso.”
+
+Destino: cuentas activas, misma currency que origen, excluye origen. Sin FX acá (FX sigue en `/transfers`). Persiste vía `POST /api/transfers` (misma autoridad que Mover dinero).
+
+Defaults (gasto/ingreso):
 
 ```text
 Moneda = ARS
@@ -1304,25 +1322,31 @@ destinationAccountId
 amount
 occurredAt opcional
 description opcional
+idempotencyKey requerido (≥ 8)
 ```
 
 El backend genera `transferId` y `direction`. El cliente no los envía.
+
+Listado lógico:
+
+```text
+GET /api/transfers
+GET /api/transfers/:id
+```
 
 Validar:
 
 ```text
 same currency
+cuentas activas del mismo user
+origen ≠ destino
 ```
 
-y:
+No se rechaza por saldo insuficiente (el origen puede quedar negativo). Locks FOR UPDATE en orden UUID.
 
-```text
-available balance
-```
+No se permite cambio de moneda en este flujo (FX → `/transfers` currency-exchange / `POST /api/currency-exchanges`).
 
-No se permite cambio de moneda en este flujo.
-
-UI (M7.9): `/transfers` con operación Transferencia. Alta de gasto/ingreso sigue en `/registrar`.
+UI (M7.9): `/transfers` con operación Transferencia. También tab Transferencia en `/registrar` (P0.12.1) → mismo endpoint. Movimientos agrupa OUT+IN; CSV mantiene 2 filas físicas.
 
 ---
 

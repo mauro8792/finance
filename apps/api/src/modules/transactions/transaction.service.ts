@@ -23,6 +23,7 @@ import {
   type PaymentMethod,
   type Transaction,
   type TransactionRepository,
+  type TransferCreateResult,
   type UpdateTransactionInput,
 } from "./transaction.types.js";
 import {
@@ -342,7 +343,14 @@ export class TransactionService {
   async createTransfer(
     userId: string,
     input: CreateTransferInput
-  ): Promise<{ transferId: string; out: Transaction; in: Transaction }> {
+  ): Promise<TransferCreateResult> {
+    if (!input.idempotencyKey || input.idempotencyKey.trim().length < 8) {
+      throw new AppError(
+        "VALIDATION_ERROR",
+        "idempotencyKey es obligatorio (mínimo 8 caracteres).",
+        400
+      );
+    }
     if (input.sourceAccountId === input.destinationAccountId) {
       throw new AppError(
         "VALIDATION_ERROR",
@@ -351,67 +359,36 @@ export class TransactionService {
       );
     }
 
-    const source = await this.requireActiveOwnedAccount(
-      userId,
-      input.sourceAccountId
-    );
-    const destination = await this.requireActiveOwnedAccount(
-      userId,
-      input.destinationAccountId
-    );
-
-    if (source.currency !== destination.currency) {
-      throw new AppError(
-        "CURRENCY_MISMATCH",
-        "La transferencia requiere la misma moneda en ambas cuentas.",
-        400
-      );
-    }
-
     const amount = parsePositiveAmount(input.amount);
-    const sourceMovements = await this.transactions.findByUserId(userId, {
-      accountId: source.id,
-      status: "ACTIVE",
-    });
-    const available = computeBalance(source.initialBalance, sourceMovements);
-
-    if (toCents(available) < toCents(amount)) {
-      throw new AppError(
-        "INSUFFICIENT_BALANCE",
-        "La cuenta origen no tiene saldo suficiente.",
-        400
-      );
-    }
-
-    const transferId = randomUUID();
+    const clientSentOccurredAt = input.occurredAt !== undefined;
     const occurredAt = input.occurredAt ?? new Date();
     const description = normalizeDescription(input.description);
-    const shared = {
+
+    return this.transactions.createTransferAtomic({
       userId,
-      categoryId: null,
-      type: "TRANSFER" as const,
-      status: "ACTIVE" as const,
+      sourceAccountId: input.sourceAccountId,
+      destinationAccountId: input.destinationAccountId,
       amount,
-      currency: source.currency,
       description,
       occurredAt,
-      relatedTransactionId: null,
-    };
+      clientSentOccurredAt,
+      idempotencyKey: input.idempotencyKey.trim(),
+    });
+  }
 
-    const [out, incoming] = await this.transactions.createTransferPair(
-      {
-        ...shared,
-        accountId: source.id,
-        metadata: { transferId, direction: "OUT" },
-      },
-      {
-        ...shared,
-        accountId: destination.id,
-        metadata: { transferId, direction: "IN" },
-      }
+  async listTransfers(userId: string) {
+    return this.transactions.listTransfers(userId);
+  }
+
+  async getTransfer(userId: string, transferId: string) {
+    const transfer = await this.transactions.findTransferById(
+      userId,
+      transferId
     );
-
-    return { transferId, out, in: incoming };
+    if (!transfer) {
+      throw new AppError("NOT_FOUND", "Transferencia no encontrada.", 404);
+    }
+    return transfer;
   }
 
   async getNetExpense(

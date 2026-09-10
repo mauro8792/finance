@@ -56,6 +56,70 @@ const IMMUTABLE_TYPES = new Set<TransactionType>([
 
 export type AmountSign = "+" | "-" | "";
 
+export type MovementListItem =
+  | { kind: "transaction"; transaction: Transaction }
+  | { kind: "transfer"; transferId: string; out: Transaction; in: Transaction };
+
+function isTransferLeg(transaction: Transaction): boolean {
+  return (
+    transaction.type === "TRANSFER" &&
+    Boolean(transaction.metadata?.transferId) &&
+    (transaction.metadata?.direction === "OUT" || transaction.metadata?.direction === "IN")
+  );
+}
+
+export function groupTransactionsForDisplay(items: Transaction[]): MovementListItem[] {
+  const pairs = new Map<string, { out?: Transaction; in?: Transaction }>();
+
+  for (const transaction of items) {
+    if (!isTransferLeg(transaction)) {
+      continue;
+    }
+    const transferId = transaction.metadata!.transferId!;
+    const entry = pairs.get(transferId) ?? {};
+    if (transaction.metadata!.direction === "OUT") {
+      entry.out = transaction;
+    } else {
+      entry.in = transaction;
+    }
+    pairs.set(transferId, entry);
+  }
+
+  const completePairs = new Set<string>();
+  for (const [transferId, pair] of pairs) {
+    if (pair.out && pair.in) {
+      completePairs.add(transferId);
+    }
+  }
+
+  const consumed = new Set<string>();
+  const result: MovementListItem[] = [];
+
+  for (const transaction of items) {
+    if (consumed.has(transaction.id)) {
+      continue;
+    }
+
+    const transferId = transaction.metadata?.transferId;
+    if (isTransferLeg(transaction) && transferId && completePairs.has(transferId)) {
+      const pair = pairs.get(transferId)!;
+      consumed.add(pair.out!.id);
+      consumed.add(pair.in!.id);
+      result.push({
+        kind: "transfer",
+        transferId,
+        out: pair.out!,
+        in: pair.in!,
+      });
+      continue;
+    }
+
+    result.push({ kind: "transaction", transaction });
+  }
+
+  return result;
+}
+
 export function transactionTypeLabel(type: TransactionType): string {
   return TRANSACTION_TYPE_LABELS[type];
 }

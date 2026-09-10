@@ -10,10 +10,11 @@ import {
   CreateTransferSchema,
   ListTransactionsQuerySchema,
   TransactionIdParamsSchema,
+  TransferIdParamsSchema,
   UpdateTransactionSchema,
 } from "./transaction.schema.js";
 import type { TransactionService } from "./transaction.service.js";
-import type { Transaction } from "./transaction.types.js";
+import type { Transaction, TransferView } from "./transaction.types.js";
 
 export class TransactionController {
   constructor(
@@ -84,12 +85,26 @@ export class TransactionController {
       amount: body.amount,
       description: body.description,
       occurredAt: body.occurredAt ? new Date(body.occurredAt) : undefined,
+      idempotencyKey: body.idempotencyKey,
     });
-    res.status(201).json({
+    res.status(created.created ? 201 : 200).json({
       transferId: created.transferId,
       out: toTransactionResponse(created.out),
       in: toTransactionResponse(created.in),
     });
+  };
+
+  listTransfers = async (req: Request, res: Response): Promise<void> => {
+    const userId = getAuthUserId(req);
+    const items = await this.transactions.listTransfers(userId);
+    res.status(200).json(items.map(toTransferResponse));
+  };
+
+  getTransfer = async (req: Request, res: Response): Promise<void> => {
+    const userId = getAuthUserId(req);
+    const { id } = parseBody(TransferIdParamsSchema, req.params);
+    const item = await this.transactions.getTransfer(userId, id);
+    res.status(200).json(toTransferResponse(item));
   };
 
   createExpense = async (req: Request, res: Response): Promise<void> => {
@@ -179,5 +194,20 @@ function toTransactionResponse(transaction: Transaction) {
     metadata: transaction.metadata,
     createdAt: transaction.createdAt.toISOString(),
     updatedAt: transaction.updatedAt.toISOString(),
+  };
+}
+
+function toTransferResponse(item: TransferView) {
+  return {
+    transferId: item.transferId,
+    sourceAccountId: item.sourceAccountId,
+    destinationAccountId: item.destinationAccountId,
+    amount: item.amount,
+    currency: item.currency,
+    description: item.description,
+    occurredAt: item.occurredAt.toISOString(),
+    outTransactionId: item.outTransactionId,
+    inTransactionId: item.inTransactionId,
+    createdAt: item.createdAt.toISOString(),
   };
 }

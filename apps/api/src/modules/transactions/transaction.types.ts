@@ -110,6 +110,38 @@ export type CreateTransferInput = {
   amount: string;
   description?: string;
   occurredAt?: Date;
+  idempotencyKey: string;
+};
+
+export type TransferView = {
+  transferId: string;
+  sourceAccountId: string;
+  destinationAccountId: string;
+  amount: string;
+  currency: Currency;
+  description: string | null;
+  occurredAt: Date;
+  outTransactionId: string;
+  inTransactionId: string;
+  createdAt: Date;
+};
+
+export type TransferCreateResult = {
+  created: boolean;
+  transferId: string;
+  out: Transaction;
+  in: Transaction;
+};
+
+export type CreateTransferAtomicInput = {
+  userId: string;
+  sourceAccountId: string;
+  destinationAccountId: string;
+  amount: string;
+  description: string | null;
+  occurredAt: Date;
+  clientSentOccurredAt: boolean;
+  idempotencyKey: string;
 };
 
 export type CreateReimbursementInput = {
@@ -197,4 +229,12 @@ export type TransactionRepository = {
     outgoing: CreateTransactionInput,
     incoming: CreateTransactionInput
   ): Promise<[Transaction, Transaction]>;
+  createTransferAtomic(
+    input: CreateTransferAtomicInput
+  ): Promise<TransferCreateResult>;
+  listTransfers(userId: string): Promise<TransferView[]>;
+  findTransferById(
+    userId: string,
+    transferId: string
+  ): Promise<TransferView | null>;
 };

@@ -135,6 +135,15 @@ class MemoryTransactionRepository implements TransactionRepository {
   ): Promise<[Transaction, Transaction]> {
     return [await this.create(outgoing), await this.create(incoming)];
   }
+  async createTransferAtomic(): Promise<never> {
+    throw new Error("createTransferAtomic not used in this test double");
+  }
+  async listTransfers(): Promise<[]> {
+    return [];
+  }
+  async findTransferById(): Promise<null> {
+    return null;
+  }
 }
 
 const userId = randomUUID();
@@ -962,4 +971,63 @@ test("FinancialService open month for runway uses the user timezone, not UTC", a
   assert.equal(september.monthlyGrossExpenses, "15000.00");
   assert.equal(september.averageMonthlyFundConsumption, "2000000.00");
   assert.equal(september.totalAvailableARS, "2985000.00");
+});
+
+test("FinancialService INVESTMENT→BANK transfer reclassifies liquidity without income/expense", async () => {
+  const { service, accounts, transactions } = await setup();
+  const investment = await accounts.create({
+    userId,
+    name: "Bull Market",
+    currency: "ARS",
+    type: "INVESTMENT",
+  });
+  const bank = await accounts.create({
+    userId,
+    name: "Santander",
+    currency: "ARS",
+    type: "BANK",
+  });
+  await movement(transactions, {
+    accountId: investment.id,
+    type: "INCOME",
+    amount: "95784.34",
+    currency: "ARS",
+    occurredAt: at(YEAR, MONTH),
+    metadata: { incomeKind: "CAPITAL" },
+  });
+  await movement(transactions, {
+    accountId: bank.id,
+    type: "INCOME",
+    amount: "54193.93",
+    currency: "ARS",
+    occurredAt: at(YEAR, MONTH),
+    metadata: { incomeKind: "CAPITAL" },
+  });
+  const before = await service.getFinancialSummary(userId, YEAR, MONTH, TZ);
+  assert.equal(before.totalAvailableARS, "54193.93");
+
+  const transferId = randomUUID();
+  await movement(transactions, {
+    accountId: investment.id,
+    type: "TRANSFER",
+    amount: "95784.34",
+    currency: "ARS",
+    occurredAt: at(YEAR, MONTH),
+    metadata: { transferId, direction: "OUT" },
+  });
+  await movement(transactions, {
+    accountId: bank.id,
+    type: "TRANSFER",
+    amount: "95784.34",
+    currency: "ARS",
+    occurredAt: at(YEAR, MONTH),
+    metadata: { transferId, direction: "IN" },
+  });
+
+  const after = await service.getFinancialSummary(userId, YEAR, MONTH, TZ);
+  assert.equal(after.monthlyGrossExpenses, "0.00");
+  assert.equal(after.monthlyNetExpenses, "0.00");
+  assert.equal(after.monthlyOperatingIncome, "0.00");
+  assert.equal(after.monthlyFundConsumption, "0.00");
+  assert.equal(after.totalAvailableARS, "149978.27");
 });

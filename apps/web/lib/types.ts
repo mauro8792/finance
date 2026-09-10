@@ -52,7 +52,7 @@ export type PaymentMethod =
 
 export type IncomeKind = "OPERATING" | "CAPITAL";
 
-export type MovementKind = "EXPENSE" | "INCOME";
+export type MovementKind = "EXPENSE" | "INCOME" | "TRANSFER";
 
 export type CreateExpenseRequest = {
   amount: string;
@@ -146,12 +146,26 @@ export type CreateTransferRequest = {
   amount: string;
   description?: string;
   occurredAt?: string;
+  idempotencyKey: string;
 };
 
 export type TransferResult = {
   transferId: string;
   out: Transaction;
   in: Transaction;
+};
+
+export type TransferView = {
+  transferId: string;
+  sourceAccountId: string;
+  destinationAccountId: string;
+  amount: string;
+  currency: Currency;
+  description: string | null;
+  occurredAt: string;
+  outTransactionId: string;
+  inTransactionId: string;
+  createdAt: string;
 };
 
 export type CreateCurrencyExchangeRequest = {

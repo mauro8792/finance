@@ -262,6 +262,43 @@ describe("TransactionsPage", () => {
     expect(screen.queryByRole("button", { name: "Eliminar" })).toBeNull();
   });
 
+  it("groups paired transfer legs into one card", async () => {
+    const caja: Account = {
+      id: "acc-caja",
+      name: "Caja ARS",
+      currency: "ARS",
+      type: "CASH",
+      isActive: true,
+    };
+    getAccounts.mockResolvedValue([fondo, caja]);
+    getTransactions.mockResolvedValue([
+      movement({
+        id: "tx-out",
+        type: "TRANSFER",
+        accountId: fondo.id,
+        categoryId: null,
+        amount: "500.00",
+        occurredAt: "2026-08-20T15:00:00.000Z",
+        metadata: { transferId: "tr-1", direction: "OUT" },
+      }),
+      movement({
+        id: "tx-in",
+        type: "TRANSFER",
+        accountId: caja.id,
+        categoryId: null,
+        amount: "500.00",
+        occurredAt: "2026-08-20T15:00:00.000Z",
+        metadata: { transferId: "tr-1", direction: "IN" },
+      }),
+    ]);
+    renderPage();
+    expect(await screen.findByText("Fondo indemnización prueba → Caja ARS")).toBeTruthy();
+    expect(screen.getByText("$ 500,00")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Editar" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Anular" })).toBeNull();
+    expect(screen.getAllByRole("button", { name: "Ver detalle" }).length).toBe(1);
+  });
+
   it("voids an allowed movement after confirmation", async () => {
     const user = userEvent.setup();
     getTransactions.mockResolvedValue([august]);

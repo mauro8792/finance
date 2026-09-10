@@ -5,6 +5,7 @@ import express from "express";
 import { stubAuth } from "../../middlewares/require-auth.js";
 import request from "supertest";
 import { errorHandler } from "../../middlewares/error-handler.js";
+import { AppError } from "../../shared/errors/app-error.js";
 import type {
   Account,
   AccountRepository,
@@ -27,12 +28,74 @@ import {
 } from "./transaction.routes.js";
 import { TransactionService } from "./transaction.service.js";
 import type {
+  CreateTransferAtomicInput,
   CreateTransactionInput,
   FindTransactionsQuery,
   Transaction,
   TransactionRepository,
+  TransferCreateResult,
+  TransferView,
   UpdateTransactionRecord,
 } from "./transaction.types.js";
+
+type TransferLinkRecord = {
+  transferId: string;
+  userId: string;
+  sourceAccountId: string;
+  destinationAccountId: string;
+  amount: string;
+  currency: Account["currency"];
+  description: string | null;
+  occurredAt: Date;
+  clientSentOccurredAt: boolean;
+  idempotencyKey: string;
+  outTransactionId: string;
+  inTransactionId: string;
+  createdAt: Date;
+};
+
+function transferIdempotencyKey(): string {
+  return `xfer-${randomUUID()}`;
+}
+
+function assertTransferIdempotentReplay(
+  existing: TransferLinkRecord,
+  input: CreateTransferAtomicInput
+): void {
+  const sameCore =
+    existing.sourceAccountId === input.sourceAccountId &&
+    existing.destinationAccountId === input.destinationAccountId &&
+    existing.amount === input.amount &&
+    (existing.description ?? null) === (input.description ?? null);
+
+  const sameOccurredAt =
+    !input.clientSentOccurredAt ||
+    (existing.clientSentOccurredAt &&
+      existing.occurredAt.getTime() === input.occurredAt.getTime());
+
+  if (!sameCore || !sameOccurredAt) {
+    throw new AppError(
+      "IDEMPOTENCY_CONFLICT",
+      "idempotencyKey ya usado con otro payload de transferencia.",
+      409
+    );
+  }
+}
+
+function toTransferView(row: TransferLinkRecord): TransferView {
+  return {
+    transferId: row.transferId,
+    sourceAccountId: row.sourceAccountId,
+    destinationAccountId: row.destinationAccountId,
+    amount: row.amount,
+    currency: row.currency,
+    description: row.description,
+    occurredAt: row.occurredAt,
+    outTransactionId: row.outTransactionId,
+    inTransactionId: row.inTransactionId,
+    createdAt: row.createdAt,
+  };
+}
 
 function matchesOccurredAt(occurredAt: Date, query: FindTransactionsQuery): boolean {
   if (query.occurredAtRanges && query.occurredAtRanges.length > 0) {
@@ -137,6 +200,8 @@ class MemoryCategoryRepository implements CategoryRepository {
 
 class MemoryTransactionRepository implements TransactionRepository {
   readonly items: Transaction[] = [];
+  accounts: AccountRepository | null = null;
+  private readonly transferLinksByKey = new Map<string, TransferLinkRecord>();
 
   async create(input: CreateTransactionInput): Promise<Transaction> {
     const now = new Date();
@@ -252,6 +317,123 @@ class MemoryTransactionRepository implements TransactionRepository {
       throw error;
     }
   }
+
+  async createTransferAtomic(
+    input: CreateTransferAtomicInput
+  ): Promise<TransferCreateResult> {
+    const key = `${input.userId}::${input.idempotencyKey}`;
+    const existing = this.transferLinksByKey.get(key);
+    if (existing) {
+      assertTransferIdempotentReplay(existing, input);
+      const out = await this.findById(existing.outTransactionId);
+      const inn = await this.findById(existing.inTransactionId);
+      if (!out || !inn) {
+        throw new Error("missing transfer legs");
+      }
+      return {
+        created: false,
+        transferId: existing.transferId,
+        out,
+        in: inn,
+      };
+    }
+
+    if (!this.accounts) {
+      throw new Error("accounts not bound for createTransferAtomic");
+    }
+
+    const source = await this.accounts.findById(input.sourceAccountId);
+    const destination = await this.accounts.findById(input.destinationAccountId);
+    if (!source || source.userId !== input.userId) {
+      throw new AppError("NOT_FOUND", "Cuenta origen no encontrada.", 404);
+    }
+    if (!destination || destination.userId !== input.userId) {
+      throw new AppError("NOT_FOUND", "Cuenta destino no encontrada.", 404);
+    }
+    if (!source.isActive) {
+      throw new AppError(
+        "VALIDATION_ERROR",
+        "No se puede operar sobre una cuenta origen inactiva.",
+        400
+      );
+    }
+    if (!destination.isActive) {
+      throw new AppError(
+        "VALIDATION_ERROR",
+        "No se puede operar sobre una cuenta destino inactiva.",
+        400
+      );
+    }
+    if (source.currency !== destination.currency) {
+      throw new AppError(
+        "CURRENCY_MISMATCH",
+        "La transferencia requiere la misma moneda en ambas cuentas.",
+        400
+      );
+    }
+
+    const transferId = randomUUID();
+    const shared = {
+      userId: input.userId,
+      categoryId: null,
+      type: "TRANSFER" as const,
+      status: "ACTIVE" as const,
+      amount: input.amount,
+      currency: source.currency,
+      description: input.description,
+      occurredAt: input.occurredAt,
+      relatedTransactionId: null,
+    };
+
+    const [out, inn] = await this.createTransferPair(
+      {
+        ...shared,
+        accountId: source.id,
+        metadata: { transferId, direction: "OUT" },
+      },
+      {
+        ...shared,
+        accountId: destination.id,
+        metadata: { transferId, direction: "IN" },
+      }
+    );
+
+    const link: TransferLinkRecord = {
+      transferId,
+      userId: input.userId,
+      sourceAccountId: source.id,
+      destinationAccountId: destination.id,
+      amount: input.amount,
+      currency: source.currency,
+      description: input.description,
+      occurredAt: input.occurredAt,
+      clientSentOccurredAt: input.clientSentOccurredAt,
+      idempotencyKey: input.idempotencyKey,
+      outTransactionId: out.id,
+      inTransactionId: inn.id,
+      createdAt: out.createdAt,
+    };
+    this.transferLinksByKey.set(key, link);
+
+    return { created: true, transferId, out, in: inn };
+  }
+
+  async listTransfers(userId: string): Promise<TransferView[]> {
+    return [...this.transferLinksByKey.values()]
+      .filter((row) => row.userId === userId)
+      .sort((left, right) => right.occurredAt.getTime() - left.occurredAt.getTime())
+      .map(toTransferView);
+  }
+
+  async findTransferById(
+    userId: string,
+    transferId: string
+  ): Promise<TransferView | null> {
+    const row = [...this.transferLinksByKey.values()].find(
+      (item) => item.userId === userId && item.transferId === transferId
+    );
+    return row ? toTransferView(row) : null;
+  }
 }
 
 function buildApp() {
@@ -317,11 +499,13 @@ function buildApp() {
     [destinationAccount.id, destinationAccount],
   ]);
 
+  const accountRepository = new MemoryAccountRepository(accounts);
   const transactions = new MemoryTransactionRepository();
+  transactions.accounts = accountRepository;
   const controller = new TransactionController(
     new TransactionService(
       transactions,
-      new MemoryAccountRepository(accounts),
+      accountRepository,
       new MemoryCategoryRepository(categories)
     ),
     new MemoryUserRepository(user)
@@ -937,6 +1121,7 @@ test("POST /api/transfers creates an atomic same-currency transfer", async () =>
     destinationAccountId: destinationAccount.id,
     amount: "300.00",
     description: "Ahorro",
+    idempotencyKey: transferIdempotencyKey(),
   });
 
   assert.equal(response.status, 201);
@@ -967,6 +1152,7 @@ test("POST /api/transfers rejects client-owned fields", async () => {
     sourceAccountId: account.id,
     destinationAccountId: destinationAccount.id,
     amount: "10.00",
+    idempotencyKey: transferIdempotencyKey(),
     transferId: randomUUID(),
     direction: "OUT",
     type: "TRANSFER",
@@ -984,6 +1170,7 @@ test("POST /api/transfers rejects an unknown source account", async () => {
     sourceAccountId: randomUUID(),
     destinationAccountId: destinationAccount.id,
     amount: "10.00",
+    idempotencyKey: transferIdempotencyKey(),
   });
 
   assert.equal(response.status, 404);
@@ -997,6 +1184,7 @@ test("PATCH /api/transactions/:id rejects an individual TRANSFER leg", async () 
     sourceAccountId: account.id,
     destinationAccountId: destinationAccount.id,
     amount: "10.00",
+    idempotencyKey: transferIdempotencyKey(),
   });
 
   const response = await request(app)
@@ -1014,6 +1202,7 @@ test("POST /api/transactions/:id/void rejects an individual TRANSFER leg", async
     sourceAccountId: account.id,
     destinationAccountId: destinationAccount.id,
     amount: "10.00",
+    idempotencyKey: transferIdempotencyKey(),
   });
 
   const response = await request(app).post(
@@ -1173,6 +1362,74 @@ test("GET /api/transactions/export rejects year without month", async () => {
 
   assert.equal(response.status, 400);
   assert.equal(response.body.error.code, "VALIDATION_ERROR");
+});
+
+test("GET /api/transfers returns logical transfers and detail by transferId", async () => {
+  const { app, account, destinationAccount, incomeCategory } = buildApp();
+  await fundSource(app, account.id, incomeCategory.id);
+  const created = await request(app).post("/api/transfers").send({
+    sourceAccountId: account.id,
+    destinationAccountId: destinationAccount.id,
+    amount: "25.00",
+    description: "Mover",
+    idempotencyKey: transferIdempotencyKey(),
+  });
+  assert.equal(created.status, 201);
+
+  const listed = await request(app).get("/api/transfers");
+  assert.equal(listed.status, 200);
+  assert.equal(listed.body.length, 1);
+  assert.equal(listed.body[0].transferId, created.body.transferId);
+  assert.equal(listed.body[0].amount, "25.00");
+  assert.equal(listed.body[0].sourceAccountId, account.id);
+  assert.equal(listed.body[0].destinationAccountId, destinationAccount.id);
+
+  const detail = await request(app).get(`/api/transfers/${created.body.transferId}`);
+  assert.equal(detail.status, 200);
+  assert.equal(detail.body.transferId, created.body.transferId);
+  assert.equal(detail.body.description, "Mover");
+});
+
+test("POST /api/transfers replays same idempotencyKey with 200", async () => {
+  const { app, account, destinationAccount, incomeCategory } = buildApp();
+  await fundSource(app, account.id, incomeCategory.id);
+  const key = transferIdempotencyKey();
+  const first = await request(app).post("/api/transfers").send({
+    sourceAccountId: account.id,
+    destinationAccountId: destinationAccount.id,
+    amount: "10.00",
+    idempotencyKey: key,
+  });
+  const second = await request(app).post("/api/transfers").send({
+    sourceAccountId: account.id,
+    destinationAccountId: destinationAccount.id,
+    amount: "10.00",
+    idempotencyKey: key,
+  });
+  assert.equal(first.status, 201);
+  assert.equal(second.status, 200);
+  assert.equal(second.body.transferId, first.body.transferId);
+  assert.equal(second.body.out.id, first.body.out.id);
+});
+
+test("POST /api/transfers conflicts when idempotencyKey payload differs", async () => {
+  const { app, account, destinationAccount, incomeCategory } = buildApp();
+  await fundSource(app, account.id, incomeCategory.id);
+  const key = transferIdempotencyKey();
+  await request(app).post("/api/transfers").send({
+    sourceAccountId: account.id,
+    destinationAccountId: destinationAccount.id,
+    amount: "10.00",
+    idempotencyKey: key,
+  });
+  const conflict = await request(app).post("/api/transfers").send({
+    sourceAccountId: account.id,
+    destinationAccountId: destinationAccount.id,
+    amount: "20.00",
+    idempotencyKey: key,
+  });
+  assert.equal(conflict.status, 409);
+  assert.equal(conflict.body.error.code, "IDEMPOTENCY_CONFLICT");
 });
 
 function csvLineCount(csv: string): number {

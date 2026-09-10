@@ -154,6 +154,15 @@ class MemoryTransactionRepository implements TransactionRepository {
       throw error;
     }
   }
+  async createTransferAtomic(): Promise<never> {
+    throw new Error("createTransferAtomic not used in this test double");
+  }
+  async listTransfers(): Promise<[]> {
+    return [];
+  }
+  async findTransferById(): Promise<null> {
+    return null;
+  }
 }
 
 function createService(transactions = new MemoryTransactionRepository()) {

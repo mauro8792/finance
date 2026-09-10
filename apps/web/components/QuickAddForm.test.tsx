@@ -7,6 +7,7 @@ import { QuickAddForm } from "./QuickAddForm";
 const getAccounts = vi.fn();
 const getCategories = vi.fn();
 const createTransaction = vi.fn();
+const createTransfer = vi.fn();
 
 vi.mock("../lib/api", () => ({
   ApiClientError: class ApiClientError extends Error {
@@ -16,6 +17,7 @@ vi.mock("../lib/api", () => ({
   getAccounts: () => getAccounts(),
   getCategories: () => getCategories(),
   createTransaction: (payload: unknown) => createTransaction(payload),
+  createTransfer: (payload: unknown) => createTransfer(payload),
 }));
 
 function renderForm() {
@@ -34,6 +36,7 @@ describe("QuickAddForm", () => {
     getAccounts.mockResolvedValue([
       { id: "acc-1", name: "Santander", currency: "ARS", isActive: true },
       { id: "acc-2", name: "Reserva", currency: "USD", isActive: false },
+      { id: "acc-3", name: "Caja", currency: "ARS", isActive: true },
     ]);
     getCategories.mockResolvedValue([
       { id: "cat-exp", name: "Comida", type: "EXPENSE", isActive: true },
@@ -50,6 +53,47 @@ describe("QuickAddForm", () => {
       categoryId: payload.categoryId,
       metadata: payload.incomeKind ? { incomeKind: payload.incomeKind } : null,
     }));
+    createTransfer.mockResolvedValue({
+      transferId: "tr-1",
+      out: { type: "TRANSFER", amount: "100.00", currency: "ARS" },
+      in: { type: "TRANSFER", amount: "100.00", currency: "ARS" },
+    });
+  });
+
+  it("shows the Transferencia tab and hides category when selected", async () => {
+    const user = userEvent.setup();
+    renderForm();
+    await screen.findByRole("button", { name: "Guardar" });
+    expect(screen.getByRole("button", { name: "Transferencia" })).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Transferencia" }));
+    expect(
+      screen.getByText("Mové dinero entre tus cuentas sin registrarlo como gasto o ingreso.")
+    ).toBeTruthy();
+    expect(screen.queryByLabelText("Categoría")).toBeNull();
+    expect(screen.getByLabelText("Desde")).toBeTruthy();
+    expect(screen.getByLabelText("Hacia")).toBeTruthy();
+  });
+
+  it("submits a transfer via createTransfer", async () => {
+    const user = userEvent.setup();
+    renderForm();
+    await screen.findByRole("button", { name: "Guardar" });
+    await user.click(screen.getByRole("button", { name: "Transferencia" }));
+    await user.type(screen.getByPlaceholderText("0,00"), "100");
+    await user.selectOptions(screen.getByLabelText("Hacia"), "acc-3");
+    await user.click(screen.getByRole("button", { name: "Guardar" }));
+    await waitFor(() =>
+      expect(createTransfer).toHaveBeenCalledWith(
+        expect.objectContaining({
+          sourceAccountId: "acc-1",
+          destinationAccountId: "acc-3",
+          amount: "100.00",
+          idempotencyKey: expect.any(String),
+        })
+      )
+    );
+    expect(createTransaction).not.toHaveBeenCalled();
+    expect(await screen.findByText("Transferencia registrada.")).toBeTruthy();
   });
 
   it("renders expense fields by default and hides incomeKind", async () => {

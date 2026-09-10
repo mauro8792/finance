@@ -9,6 +9,7 @@ import type { AIParsedTransaction } from "../lib/types";
 const getAccounts = vi.fn();
 const getCategories = vi.fn();
 const createTransaction = vi.fn();
+const createTransfer = vi.fn();
 const parseTransaction = vi.fn();
 
 vi.mock("../lib/api", () => {
@@ -27,6 +28,7 @@ vi.mock("../lib/api", () => {
     getAccounts: () => getAccounts(),
     getCategories: () => getCategories(),
     createTransaction: (payload: unknown) => createTransaction(payload),
+    createTransfer: (payload: unknown) => createTransfer(payload),
     parseTransaction: (payload: unknown) => parseTransaction(payload),
   };
 });

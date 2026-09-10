@@ -176,3 +176,36 @@ test("CSV row preserves UTF-8, quoted specials and the expected field count", ()
     "2026-08-15"
   );
 });
+
+test("buildTransactionsCsv labels TRANSFER legs as Transferencia without grouping", () => {
+  const transferId = "transfer-1";
+  const csv = buildTransactionsCsv(
+    [
+      expense({
+        id: "tx-out",
+        type: "TRANSFER",
+        categoryId: null,
+        amount: "95.78",
+        description: "Mover",
+        paymentMethod: null,
+        metadata: { transferId, direction: "OUT" },
+      }),
+      expense({
+        id: "tx-in",
+        type: "TRANSFER",
+        accountId: "acc-1",
+        categoryId: null,
+        amount: "95.78",
+        description: "Mover",
+        paymentMethod: null,
+        metadata: { transferId, direction: "IN" },
+        occurredAt: new Date("2026-08-15T15:00:00.000Z"),
+      }),
+    ],
+    lookups
+  );
+  const rows = parseCsv(csv).slice(1);
+  assert.equal(rows.length, 2);
+  assert.equal(rows[0]?.[1], "Transferencia");
+  assert.equal(rows[1]?.[1], "Transferencia");
+});

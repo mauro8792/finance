@@ -151,7 +151,7 @@ Acreditaciones parciales: una expectativa puede recibir múltiples `REIMBURSEMEN
 Cancel remaining: sin acreditaciones → `CANCELLED`; con acreditaciones → `ACCREDITED` (conserva txs reales).
 
 **P0.11:** DONE definitivo (Neon + deploy).  
-**P0.12:** DONE definitivo (promotions/caps; Neon + deploy). **P0.13 NOT STARTED.**
+**P0.12:** DONE definitivo LIVE (promotions/caps; Neon + Render smoke). **P0.13 NOT STARTED.**
 
 ---
 
@@ -345,7 +345,7 @@ credit_card_promotion_applications (P0.12)
   partial UNIQUE (promotion_id, purchase_id) / (promotion_id, original_expense_transaction_id)
 ```
 
-P0.12 promotions / cap windows: DONE definitivo (Neon + deploy).
+P0.12 promotions / cap windows: DONE definitivo LIVE (Neon + Render smoke).
 
 ### Derivación de métricas (concepto)
 
@@ -379,7 +379,7 @@ totalOutstandingCommitment = currentCardDebt + futureInstallmentCommitment
 | P0.9 CreditCardStatement (F9) | DONE definitivo (código + Neon + API) |
 | `CREDIT_CARD_PAYMENT` / P0.10 | DONE definitivo (código + Neon + API) |
 | ExpectedRefund + acreditación F6 / P0.11 | DONE definitivo (código + Neon + API) |
-| Promotions / caps P0.12 | DONE definitivo (código + Neon migrate + deploy) |
+| Promotions / caps P0.12 | DONE definitivo LIVE (código + Neon + Render smoke) |
 
 ### Modelado P0.6–P0.7 (opción B)
 

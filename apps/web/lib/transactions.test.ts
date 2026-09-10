@@ -6,6 +6,7 @@ import {
   canVoidTransaction,
   filterYearOptions,
   formatTransactionDate,
+  groupTransactionsForDisplay,
   incomeKindLabel,
   isImmutableTransactionType,
   reimbursementLabel,
@@ -143,5 +144,64 @@ describe("transactions helpers", () => {
       }),
       {}
     );
+  });
+
+  it("groups transfer legs into a single movement item", () => {
+    const expense = tx({
+      id: "tx-exp",
+      type: "EXPENSE",
+      occurredAt: "2026-08-10T15:00:00.000Z",
+    });
+    const out = tx({
+      id: "tx-out",
+      type: "TRANSFER",
+      accountId: "acc-source",
+      categoryId: null,
+      amount: "500.00",
+      occurredAt: "2026-08-20T15:00:00.000Z",
+      metadata: { transferId: "tr-1", direction: "OUT" },
+    });
+    const inTx = tx({
+      id: "tx-in",
+      type: "TRANSFER",
+      accountId: "acc-dest",
+      categoryId: null,
+      amount: "500.00",
+      occurredAt: "2026-08-20T15:00:00.000Z",
+      metadata: { transferId: "tr-1", direction: "IN" },
+    });
+
+    const grouped = groupTransactionsForDisplay([expense, out, inTx]);
+    assert.equal(grouped.length, 2);
+    assert.equal(grouped[0]?.kind, "transaction");
+    assert.equal(grouped[1]?.kind, "transfer");
+    if (grouped[1]?.kind === "transfer") {
+      assert.equal(grouped[1].transferId, "tr-1");
+      assert.equal(grouped[1].out.id, "tx-out");
+      assert.equal(grouped[1].in.id, "tx-in");
+    }
+  });
+
+  it("keeps incomplete transfer legs as individual transactions", () => {
+    const legacy = tx({
+      id: "tx-legacy",
+      type: "TRANSFER",
+      categoryId: null,
+      metadata: { direction: "OUT" },
+    });
+    const orphanOut = tx({
+      id: "tx-orphan",
+      type: "TRANSFER",
+      categoryId: null,
+      metadata: { transferId: "tr-missing", direction: "OUT" },
+    });
+
+    const grouped = groupTransactionsForDisplay([legacy, orphanOut]);
+    assert.equal(grouped.length, 2);
+    assert.equal(grouped[0]?.kind, "transaction");
+    assert.equal(grouped[1]?.kind, "transaction");
+    if (grouped[0]?.kind === "transaction") {
+      assert.equal(grouped[0].transaction.id, "tx-legacy");
+    }
   });
 });

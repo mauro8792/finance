@@ -161,6 +161,7 @@ describe("TransfersPage", () => {
           sourceAccountId: "acc-fondo",
           destinationAccountId: "acc-caja",
           amount: "1000.00",
+          idempotencyKey: expect.any(String),
         })
       );
     });

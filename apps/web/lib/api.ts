@@ -11,6 +11,7 @@ import type {
   CreateTransactionRequest,
   CreateTransferRequest,
   CurrencyExchangeResult,
+  TransferView,
   FinancialSummary,
   HousingCoverage,
   HousingObligation,
@@ -241,6 +242,14 @@ export async function createTransfer(
     method: "POST",
     body: JSON.stringify(payload),
   });
+}
+
+export async function getTransfers(): Promise<TransferView[]> {
+  return requestJson<TransferView[]>("/api/transfers");
+}
+
+export async function getTransfer(id: string): Promise<TransferView> {
+  return requestJson<TransferView>(`/api/transfers/${id}`);
 }
 
 export async function createCurrencyExchange(

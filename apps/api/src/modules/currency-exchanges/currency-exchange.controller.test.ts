@@ -177,6 +177,15 @@ class MemoryTransactionRepository implements TransactionRepository {
   ): Promise<[Transaction, Transaction]> {
     return [await this.create(outgoing), await this.create(incoming)];
   }
+  async createTransferAtomic(): Promise<never> {
+    throw new Error("createTransferAtomic not used in this test double");
+  }
+  async listTransfers(): Promise<[]> {
+    return [];
+  }
+  async findTransferById(): Promise<null> {
+    return null;
+  }
 }
 
 class MemoryCurrencyExchangeRepository implements CurrencyExchangeRepository {

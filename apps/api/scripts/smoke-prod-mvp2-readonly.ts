@@ -116,11 +116,36 @@ async function main(): Promise<void> {
 
   await get("/api/accounts", "GET /api/accounts");
   await get("/api/transactions", "GET /api/transactions");
-  await get("/api/financial/summary", "GET /api/financial/summary");
+  await get(
+    "/api/financial/summary?year=2026&month=9",
+    "GET /api/financial/summary"
+  );
   await get("/api/credit-cards", "GET /api/credit-cards");
   await get("/api/credit-card-purchases", "GET /api/credit-card-purchases");
   await get("/api/investments", "GET /api/investments");
   await get("/api/credit-card-refunds/expected", "GET refunds/expected");
+  await get("/api/transfers", "GET /api/transfers");
+  {
+    const { res, text } = await get(
+      `/api/transfers/${missing}`,
+      "GET transfer missing id → controlled",
+      404
+    );
+    results.push({
+      name: "GET transfer missing → domain NOT_FOUND (not route miss)",
+      ok:
+        res.status === 404 &&
+        text.includes("Transferencia no encontrada") &&
+        !text.includes("Ruta no encontrada"),
+      detail: `${res.status} ${text.slice(0, 160)}`,
+    });
+  }
+  await post(
+    "/api/transfers",
+    "POST transfer invalid → controlled",
+    { amount: "0" },
+    [400]
+  );
   const promoList = await get(
     "/api/credit-card-promotions",
     "GET /api/credit-card-promotions"
@@ -128,13 +153,13 @@ async function main(): Promise<void> {
   try {
     const parsed = JSON.parse(promoList.text) as unknown;
     results.push({
-      name: "promotions list empty or array",
-      ok: Array.isArray(parsed),
+      name: "promotions list empty array",
+      ok: Array.isArray(parsed) && parsed.length === 0,
       detail: Array.isArray(parsed) ? `len=${parsed.length}` : "not-array",
     });
   } catch {
     results.push({
-      name: "promotions list empty or array",
+      name: "promotions list empty array",
       ok: false,
       detail: "invalid json",
     });
@@ -150,26 +175,56 @@ async function main(): Promise<void> {
     "GET payments missing card → controlled",
     404
   );
-  await get(
-    `/api/credit-card-promotions/${missing}`,
-    "GET promotion missing id → controlled",
-    404
-  );
-  await post(
-    `/api/credit-card-promotions/${missing}/preview`,
-    "POST preview missing promo → controlled",
-    { originalExpenseTransactionId: missing },
-    [404, 400]
-  );
-  await post(
-    `/api/credit-card-promotions/${missing}/apply`,
-    "POST apply missing promo → controlled (no create)",
-    {
-      originalExpenseTransactionId: missing,
-      idempotencyKey: `smoke-p12-${randomUUID()}`,
-    },
-    [404, 400]
-  );
+  {
+    const { res, text } = await get(
+      `/api/credit-card-promotions/${missing}`,
+      "GET promotion missing id → controlled",
+      404
+    );
+    results.push({
+      name: "GET promotion missing → domain NOT_FOUND (not route miss)",
+      ok:
+        res.status === 404 &&
+        text.includes("Promoción no encontrada") &&
+        !text.includes("Ruta no encontrada"),
+      detail: `${res.status} ${text.slice(0, 160)}`,
+    });
+  }
+  {
+    const { res, text } = await post(
+      `/api/credit-card-promotions/${missing}/preview`,
+      "POST preview missing promo → controlled",
+      { originalExpenseTransactionId: missing },
+      [404]
+    );
+    results.push({
+      name: "POST preview missing → domain NOT_FOUND (not route miss)",
+      ok:
+        res.status === 404 &&
+        text.includes("Promoción no encontrada") &&
+        !text.includes("Ruta no encontrada"),
+      detail: `${res.status} ${text.slice(0, 160)}`,
+    });
+  }
+  {
+    const { res, text } = await post(
+      `/api/credit-card-promotions/${missing}/apply`,
+      "POST apply missing promo → controlled (no create)",
+      {
+        originalExpenseTransactionId: missing,
+        idempotencyKey: `smoke-p12-${randomUUID()}`,
+      },
+      [404]
+    );
+    results.push({
+      name: "POST apply missing → domain NOT_FOUND (no writes)",
+      ok:
+        res.status === 404 &&
+        text.includes("Promoción no encontrada") &&
+        !text.includes("Ruta no encontrada"),
+      detail: `${res.status} ${text.slice(0, 160)}`,
+    });
+  }
 
   await get(
     `/api/credit-card-refunds/expected/${missing}`,
@@ -185,24 +240,26 @@ async function main(): Promise<void> {
 
   const prisma = new PrismaClient();
   try {
-    const [tx, inv, promo, app, exp, acc] = await Promise.all([
+    const [tx, inv, promo, app, exp, acc, links] = await Promise.all([
       prisma.transaction.count(),
       prisma.investment.count(),
       prisma.creditCardPromotion.count(),
       prisma.creditCardPromotionApplication.count(),
       prisma.creditCardRefundExpectation.count(),
       prisma.creditCardRefundAccreditation.count(),
+      prisma.transferLink.count(),
     ]);
     results.push({
       name: "Neon counts after smoke (no fictitious writes)",
       ok:
-        tx === 21 &&
+        tx === 22 &&
         inv === 2 &&
         promo === 0 &&
         app === 0 &&
         exp === 0 &&
-        acc === 0,
-      detail: `tx=${tx} inv=${inv} promo=${promo} app=${app} exp=${exp} acc=${acc}`,
+        acc === 0 &&
+        links === 0,
+      detail: `tx=${tx} inv=${inv} promo=${promo} app=${app} exp=${exp} acc=${acc} links=${links}`,
     });
   } finally {
     await prisma.$disconnect();

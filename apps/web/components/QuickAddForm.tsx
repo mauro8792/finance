@@ -3,7 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { AI_QUERY_INVALIDATIONS } from "../lib/ai-quick-input";
-import { createTransaction, getAccounts, getCategories } from "../lib/api";
+import { createTransaction, createTransfer, getAccounts, getCategories } from "../lib/api";
 import {
   LAST_ACCOUNT_KEY,
   LAST_PAYMENT_KEY,
@@ -17,6 +17,7 @@ import {
   toApiAmount,
   toLocalDateTimeInput,
 } from "../lib/quick-add";
+import { destinationAccountsForTransfer } from "../lib/transfers";
 import type { Currency, IncomeKind, MovementKind, PaymentMethod } from "../lib/types";
 import { EmptyState, ErrorState, LoadingState } from "./QueryStatus";
 import styles from "./QuickAddForm.module.css";
@@ -40,6 +41,14 @@ type QuickAddFormProps = {
   onSaved?: () => void;
 };
 
+async function invalidateAfterSave(queryClient: ReturnType<typeof useQueryClient>) {
+  await Promise.all(
+    AI_QUERY_INVALIDATIONS.map((queryKey) =>
+      queryClient.invalidateQueries({ queryKey: [queryKey] })
+    )
+  );
+}
+
 export function QuickAddForm({ initialValues, onSaved }: QuickAddFormProps = {}) {
   const queryClient = useQueryClient();
   const accountsQuery = useQuery({ queryKey: ["accounts"], queryFn: getAccounts });
@@ -52,6 +61,7 @@ export function QuickAddForm({ initialValues, onSaved }: QuickAddFormProps = {})
   const [kind, setKind] = useState<MovementKind>(initialValues?.kind ?? "EXPENSE");
   const [amount, setAmount] = useState(initialValues?.amount ?? "");
   const [accountId, setAccountId] = useState(initialValues?.accountId ?? "");
+  const [destinationAccountId, setDestinationAccountId] = useState("");
   const [categoryId, setCategoryId] = useState(initialValues?.categoryId ?? "");
   const [description, setDescription] = useState(initialValues?.description ?? "");
   const [occurredAt, setOccurredAt] = useState(
@@ -78,6 +88,13 @@ export function QuickAddForm({ initialValues, onSaved }: QuickAddFormProps = {})
     [categoriesQuery.data, kind]
   );
   const selectedAccount = accounts.find((account) => account.id === accountId);
+  const transferDestinations = useMemo(
+    () => destinationAccountsForTransfer(accountsQuery.data ?? [], accountId),
+    [accountsQuery.data, accountId]
+  );
+  const selectedDestination = transferDestinations.find(
+    (account) => account.id === destinationAccountId
+  );
 
   useEffect(() => {
     if (accounts.length === 0) {
@@ -114,7 +131,18 @@ export function QuickAddForm({ initialValues, onSaved }: QuickAddFormProps = {})
     );
   }, [categories]);
 
-  const mutation = useMutation({
+  useEffect(() => {
+    if (kind !== "TRANSFER") {
+      return;
+    }
+    setDestinationAccountId((current) =>
+      transferDestinations.some((account) => account.id === current)
+        ? current
+        : (transferDestinations[0]?.id ?? "")
+    );
+  }, [kind, transferDestinations]);
+
+  const transactionMutation = useMutation({
     mutationFn: createTransaction,
     onSuccess: async (created) => {
       if (accountId) {
@@ -123,31 +151,49 @@ export function QuickAddForm({ initialValues, onSaved }: QuickAddFormProps = {})
       if (kind === "EXPENSE") {
         localStorage.setItem(LAST_PAYMENT_KEY, paymentMethod);
       }
-      await Promise.all(
-        AI_QUERY_INVALIDATIONS.map((queryKey) =>
-          queryClient.invalidateQueries({ queryKey: [queryKey] })
-        )
-      );
+      await invalidateAfterSave(queryClient);
       setAmount("");
       setDescription("");
       setOccurredAt(toLocalDateTimeInput(new Date()));
       setIsFixed(false);
       setSuccess(
-        created.type === "INCOME"
-          ? "Ingreso registrado."
-          : "Gasto registrado."
+        created.type === "INCOME" ? "Ingreso registrado." : "Gasto registrado."
       );
       onSaved?.();
     },
   });
 
+  const transferMutation = useMutation({
+    mutationFn: createTransfer,
+    onSuccess: async () => {
+      if (accountId) {
+        localStorage.setItem(LAST_ACCOUNT_KEY, accountId);
+      }
+      await invalidateAfterSave(queryClient);
+      setAmount("");
+      setDescription("");
+      setOccurredAt(toLocalDateTimeInput(new Date()));
+      setSuccess("Transferencia registrada.");
+      onSaved?.();
+    },
+  });
+
+  const saving = transactionMutation.isPending || transferMutation.isPending;
+  const persistError =
+    transactionMutation.isError || transferMutation.isError
+      ? "No pudimos guardar el movimiento. Intentá nuevamente."
+      : null;
+
   const loading = accountsQuery.isPending || categoriesQuery.isPending;
   const loadError = accountsQuery.isError || categoriesQuery.isError;
   const categoryRequired = isCategoryRequired(kind, incomeKind);
+  const isTransfer = kind === "TRANSFER";
   const canSubmit =
-    !mutation.isPending &&
+    !saving &&
     Boolean(accountId && selectedAccount && isValidAmount(amount)) &&
-    (!categoryRequired || Boolean(categoryId));
+    (isTransfer
+      ? Boolean(destinationAccountId && selectedDestination)
+      : !categoryRequired || Boolean(categoryId));
 
   function onSubmit(event: FormEvent) {
     event.preventDefault();
@@ -156,6 +202,22 @@ export function QuickAddForm({ initialValues, onSaved }: QuickAddFormProps = {})
     if (!selectedAccount || !isValidAmount(amount)) {
       return;
     }
+
+    if (kind === "TRANSFER") {
+      if (!destinationAccountId || !selectedDestination) {
+        return;
+      }
+      transferMutation.mutate({
+        sourceAccountId: selectedAccount.id,
+        destinationAccountId: selectedDestination.id,
+        amount: toApiAmount(amount),
+        idempotencyKey: crypto.randomUUID(),
+        ...(description.trim() ? { description: description.trim() } : {}),
+        ...(occurredAt ? { occurredAt: localDateTimeToIso(occurredAt) } : {}),
+      });
+      return;
+    }
+
     if (categoryRequired && !categoryId) {
       return;
     }
@@ -169,7 +231,7 @@ export function QuickAddForm({ initialValues, onSaved }: QuickAddFormProps = {})
     };
 
     if (kind === "INCOME") {
-      mutation.mutate({
+      transactionMutation.mutate({
         ...shared,
         ...(categoryId ? { categoryId } : {}),
         type: "INCOME",
@@ -178,7 +240,7 @@ export function QuickAddForm({ initialValues, onSaved }: QuickAddFormProps = {})
       return;
     }
 
-    mutation.mutate({
+    transactionMutation.mutate({
       ...shared,
       categoryId,
       paymentMethod,
@@ -211,10 +273,6 @@ export function QuickAddForm({ initialValues, onSaved }: QuickAddFormProps = {})
     );
   }
 
-  const persistError = mutation.isError
-    ? "No pudimos guardar el movimiento. Intentá nuevamente."
-    : null;
-
   return (
     <form className={styles.form} onSubmit={onSubmit} noValidate aria-label={aiMode ? "Revisar movimiento interpretado" : "Registrar movimiento"}>
       <fieldset className={styles.kind}>
@@ -233,10 +291,25 @@ export function QuickAddForm({ initialValues, onSaved }: QuickAddFormProps = {})
         >
           Ingreso
         </button>
+        {!aiMode ? (
+          <button
+            type="button"
+            className={kind === "TRANSFER" ? styles.kindActive : styles.kindButton}
+            onClick={() => setKind("TRANSFER")}
+          >
+            Transferencia
+          </button>
+        ) : null}
       </fieldset>
 
+      {isTransfer ? (
+        <p className={styles.status}>
+          Mové dinero entre tus cuentas sin registrarlo como gasto o ingreso.
+        </p>
+      ) : null}
+
       <label className={styles.amountLabel} htmlFor="quick-add-amount">
-        Importe
+        {isTransfer ? "Monto" : "Importe"}
         <span className={styles.amountRow}>
           <span className={styles.currency}>{selectedAccount?.currency ?? "—"}</span>
           <input
@@ -248,7 +321,7 @@ export function QuickAddForm({ initialValues, onSaved }: QuickAddFormProps = {})
             autoCorrect="off"
             spellCheck={false}
             enterKeyHint="done"
-            autoFocus
+            autoFocus={!aiMode}
             placeholder="0,00"
             value={amount}
             onChange={(event) => {
@@ -261,7 +334,7 @@ export function QuickAddForm({ initialValues, onSaved }: QuickAddFormProps = {})
       </label>
 
       <label className={styles.field} htmlFor="quick-add-account">
-        Cuenta
+        {isTransfer ? "Desde" : "Cuenta"}
         <select
           id="quick-add-account"
           value={accountId}
@@ -277,27 +350,55 @@ export function QuickAddForm({ initialValues, onSaved }: QuickAddFormProps = {})
         </select>
       </label>
 
-      <label className={styles.field} htmlFor="quick-add-category">
-        Categoría
-        {!categoryRequired ? <span className={styles.optional}> (opcional)</span> : null}
-        <select
-          id="quick-add-category"
-          value={categoryId}
-          onChange={(event) => setCategoryId(event.target.value)}
-          required={categoryRequired}
-        >
-          <option value="">Elegí una categoría</option>
-          {categories.map((category) => (
-            <option key={category.id} value={category.id}>
-              {category.name}
-            </option>
-          ))}
-        </select>
-      </label>
-      {categories.length === 0 ? (
-        <p className={styles.status}>
-          No hay categorías activas para este tipo de movimiento.
-        </p>
+      {isTransfer ? (
+        <label className={styles.field} htmlFor="quick-add-destination">
+          Hacia
+          <select
+            id="quick-add-destination"
+            value={destinationAccountId}
+            onChange={(event) => setDestinationAccountId(event.target.value)}
+            required
+          >
+            {transferDestinations.length === 0 ? (
+              <option value="">
+                No hay otra cuenta activa en {selectedAccount?.currency ?? "—"}
+              </option>
+            ) : (
+              transferDestinations.map((account) => (
+                <option key={account.id} value={account.id}>
+                  {account.name} — {account.currency}
+                </option>
+              ))
+            )}
+          </select>
+        </label>
+      ) : null}
+
+      {!isTransfer ? (
+        <>
+          <label className={styles.field} htmlFor="quick-add-category">
+            Categoría
+            {!categoryRequired ? <span className={styles.optional}> (opcional)</span> : null}
+            <select
+              id="quick-add-category"
+              value={categoryId}
+              onChange={(event) => setCategoryId(event.target.value)}
+              required={categoryRequired}
+            >
+              <option value="">Elegí una categoría</option>
+              {categories.map((category) => (
+                <option key={category.id} value={category.id}>
+                  {category.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          {categories.length === 0 ? (
+            <p className={styles.status}>
+              No hay categorías activas para este tipo de movimiento.
+            </p>
+          ) : null}
+        </>
       ) : null}
 
       {kind === "INCOME" ? (
@@ -395,8 +496,8 @@ export function QuickAddForm({ initialValues, onSaved }: QuickAddFormProps = {})
         </p>
       ) : null}
 
-      <button className={styles.submit} type="submit" disabled={!canSubmit || mutation.isPending}>
-        {mutation.isPending ? "Guardando…" : "Guardar"}
+      <button className={styles.submit} type="submit" disabled={!canSubmit || saving}>
+        {saving ? "Guardando…" : "Guardar"}
       </button>
     </form>
   );

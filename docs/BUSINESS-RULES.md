@@ -320,9 +320,10 @@ Una transferencia entre cuentas propias:
 - no es ingreso;
 - no es gasto;
 - no altera patrimonio total;
-- sí altera saldos individuales.
+- sí altera saldos individuales;
+- puede dejar el saldo origen negativo (misma política de balances derivados que otros movimientos; no hay `INSUFFICIENT_BALANCE` exclusivo para transfers).
 
-Se representa con dos movimientos `TRANSFER` vinculados por `metadata.transferId`.
+Se representa con dos movimientos `Transaction.type = TRANSFER` vinculados por `metadata.transferId` (source of truth desde MVP1). No existe entidad `InternalTransfer` ni un `TransactionType` adicional.
 
 ```text
 metadata.direction = OUT
@@ -336,11 +337,31 @@ metadata.direction = IN
 
 crédito en la cuenta destino.
 
+Lookup lógico / idempotencia (P0.12.1): tabla aditiva `transfer_links` con UNIQUE `(user_id, idempotency_key)`. Las dos piernas siguen siendo la autoridad financiera.
+
+Canonical payload de idempotencia:
+
+```text
+sourceAccountId
+destinationAccountId
+amount
+description (normalizada; null si vacía)
+occurredAt solo si el cliente lo envió
+```
+
+Misma key + mismo payload → misma transferencia lógica. Misma key + payload distinto → `409 IDEMPOTENCY_CONFLICT`.
+
+Antes de crear piernas: `SELECT … FOR UPDATE` de ambas cuentas en orden determinístico de UUID (menor → mayor) para evitar deadlocks; luego validar existencia, mismo user, activas, origen ≠ destino, misma currency. OUT + IN + link en la misma DB transaction.
+
+Transferencia INVESTMENT → BANK reclasifica liquidez (`totalAvailableARS` puede subir); no es income; no muta `Investment` / cauciones.
+
 Debe persistirse atómicamente: OUT e IN juntos, o rollback completo.
 
-No se edita ni se anula una pierna individual (`PATCH` / `void` sobre `TRANSFER` se rechazan).
+No se edita ni se anula una pierna individual (`PATCH` / `void` sobre `TRANSFER` se rechazan con `TRANSFER_IMMUTABLE`).
 
-La anulación o edición de la operación completa, si se implementa, será atómica y futura.
+Corrección/reversión atómica de la operación completa: P0.15 (no hard delete).
+
+CSV export: sigue emitiendo **2 filas físicas** con label `Transferencia` (compatibilidad); no agrupa. La UI de Movimientos sí agrupa por `transferId` cuando el par OUT+IN está completo; piernas legacy incompletas se muestran individuales.
 
 ---
 
@@ -561,7 +582,7 @@ Sin `closingDay`: proyección limitada; no afirmar “próximo resumen” cierto
 `CreditCardStatement` no es fuente de deuda: `currentCardDebt` se deriva de eventos (`EXPENSE` reconocidos, `CREDIT_CARD_PAYMENT`, reintegros a tarjeta, cargos explícitos). Cambiar `actualAmount` del statement **no** altera la deuda en silencio (`MVP2-DECISIONES-P0.md` F9).
 
 **P0.11:** expectations + accreditations implementados (Neon aplicado).  
-**P0.12 DONE definitivo:** promotions + applications + `cancelledRemainingAmount`; migration Neon aplicada. Apply/preview sin impacto en confirmado. Cap consumed = expected − cancelledRemaining.
+**P0.12 DONE definitivo LIVE:** promotions + applications + `cancelledRemainingAmount`; Neon + Render live (smoke GET promotions `[]`, preview domain 404). Apply/preview sin impacto en confirmado. Cap consumed = expected − cancelledRemaining.
 
 ## 23.2 Legacy MVP1
 

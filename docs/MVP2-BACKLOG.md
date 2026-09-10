@@ -330,7 +330,7 @@ No auto-acreditar. Estados expectativa: `EXPECTED` | `PARTIALLY_ACCREDITED` | `A
 
 ## P0.12 — Topes de promoción
 
-**Estado: DONE definitivo** (código + Neon migrate + API deploy/smoke). **P0.13 NOT STARTED.**
+**Estado: DONE definitivo LIVE** (código + Neon migrate + API Render smoke 2026-09-10). **P0.13 NOT STARTED.**
 
 **Objetivo:** Tope por promo/ventana; expected acotado (§11).
 
@@ -347,6 +347,37 @@ No auto-acreditar. Estados expectativa: `EXPECTED` | `PARTIALLY_ACCREDITED` | `A
 **Criterio de aceptación:** §11; sin efecto en confirmado.
 
 **Dependencias:** P0.11. **Siguiente gate:** autorización P0.13 (**NOT STARTED**).
+
+---
+
+## P0.12.1 — Internal Transfers UX/robustness
+
+**Estado: DONE definitivo LIVE** (código + Neon migrate + API/web deploy smoke 2026-09-10). **P0.13 NOT STARTED.**
+
+**Objetivo:** Robustecer transferencias internas ya existentes (MVP1) sin nuevo tipo ni `InternalTransfer`.
+
+**Modelo autoridad (sin cambio):**
+
+- `TransactionType.TRANSFER` + 2 piernas OUT/IN;
+- `metadata.transferId` + `direction`;
+- tabla aditiva `transfer_links` sólo para idempotency/lookup lógico.
+
+**Reglas:**
+
+- `idempotencyKey` requerida; UNIQUE DB `(user_id, idempotency_key)`;
+- locks `FOR UPDATE` orden UUID asc;
+- sin `INSUFFICIENT_BALANCE` en transfers (saldo origen puede quedar negativo);
+- QuickAdd tab Transferencia → mismo `POST /api/transfers`;
+- Movimientos agrupan par completo; legacy incompleto = fila individual;
+- CSV sigue 2 filas físicas “Transferencia”;
+- void atómico de transferencia → P0.15;
+- sin AI parsing de transferencias.
+
+**Migraciones:** `20260910120000_add_transfer_link` (additive). Aplicada en Neon.
+
+**API:** `POST/GET /api/transfers`, `GET /api/transfers/:id`.
+
+**Dependencias:** MVP1 transfers. **Siguiente gate:** autorización P0.13 (**NOT STARTED**).
 
 ---
 

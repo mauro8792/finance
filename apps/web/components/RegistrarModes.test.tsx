@@ -14,6 +14,7 @@ vi.mock("../lib/api", () => ({
   getCategories: () =>
     Promise.resolve([{ id: "cat-exp", name: "Comida", type: "EXPENSE", isActive: true }]),
   createTransaction: vi.fn(),
+  createTransfer: vi.fn(),
   parseTransaction: vi.fn(),
 }));
 

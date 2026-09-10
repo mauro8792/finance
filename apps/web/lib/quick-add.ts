@@ -76,6 +76,9 @@ export function isCategoryRequired(
   kind: MovementKind,
   incomeKind?: IncomeKind | null
 ): boolean {
+  if (kind === "TRANSFER") {
+    return false;
+  }
   if (kind === "EXPENSE") {
     return true;
   }
@@ -86,6 +89,9 @@ export function filterCategoriesForType(
   categories: Category[],
   kind: MovementKind
 ): Category[] {
+  if (kind === "TRANSFER") {
+    return [];
+  }
   const allowed = kind === "EXPENSE" ? ["EXPENSE", "BOTH"] : ["INCOME", "BOTH"];
   return categories.filter(
     (category) => category.isActive && allowed.includes(category.type)

@@ -94,12 +94,25 @@ export const CreateReimbursementSchema = z
 export const CreateTransferSchema = z
   .object({
     sourceAccountId: z.string().uuid("El sourceAccountId debe ser un UUID."),
-    destinationAccountId: z.string().uuid("El destinationAccountId debe ser un UUID."),
+    destinationAccountId: z
+      .string()
+      .uuid("El destinationAccountId debe ser un UUID."),
     amount: z.string().min(1, "El importe es obligatorio."),
     description: z.string().max(255).optional(),
-    occurredAt: z.iso.datetime({ error: "occurredAt debe ser un datetime ISO." }).optional(),
+    occurredAt: z
+      .iso.datetime({ error: "occurredAt debe ser un datetime ISO." })
+      .optional(),
+    idempotencyKey: z
+      .string()
+      .trim()
+      .min(8, { error: "idempotencyKey debe tener al menos 8 caracteres." })
+      .max(128),
   })
   .strict();
+
+export const TransferIdParamsSchema = z.object({
+  id: z.string().uuid("El id debe ser un UUID."),
+});
 
 export const UpdateTransactionSchema = z
   .object({

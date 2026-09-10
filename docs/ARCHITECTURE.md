@@ -1982,15 +1982,16 @@ TransactionController.createTransfer()
 ↓
 TransactionService.createTransfer()
 ↓
-validate accounts, currency, balance
-↓
-generate transferId
+idempotencyKey + canonical payload
 ↓
 transaction DB
+   ├── lock accounts FOR UPDATE (UUID asc)
+   ├── validate accounts / currency / active
    ├── TRANSFER OUT
-   └── TRANSFER IN
+   ├── TRANSFER IN
+   └── transfer_links (idempotency)
 ↓
-response { transferId, out, in }
+response { transferId, out, in }  (201 created | 200 replay)
 ```
 
 Metadata:
@@ -1999,7 +2000,9 @@ Metadata:
 { transferId, direction: "OUT" | "IN" }
 ```
 
-PATCH/void de una pierna se rechazan.
+PATCH/void de una pierna se rechazan (`TRANSFER_IMMUTABLE`). Void atómico: P0.15.
+
+No se rechaza por saldo insuficiente en transfers (balance derivado puede quedar negativo).
 
 ---
 

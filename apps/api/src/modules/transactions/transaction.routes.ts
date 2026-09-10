@@ -35,6 +35,8 @@ export const transactionRouter = createTransactionRouter(transactionController);
 export function createTransferRouter(controller: TransactionController): Router {
   const router = Router();
   router.post("/", controller.createTransfer);
+  router.get("/", controller.listTransfers);
+  router.get("/:id", controller.getTransfer);
   return router;
 }
 

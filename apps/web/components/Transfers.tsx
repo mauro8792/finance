@@ -105,6 +105,7 @@ function TransferForm({ accounts }: { accounts: Account[] }) {
   const destinations = destinationAccountsForTransfer(accounts, sourceId);
   const [destinationId, setDestinationId] = useState(destinations[0]?.id ?? "");
   const [amount, setAmount] = useState("");
+  const [description, setDescription] = useState("");
   const [occurredAt, setOccurredAt] = useState(() => toLocalDateTimeInput(new Date()));
   const [success, setSuccess] = useState<string | null>(null);
   const queryClient = useQueryClient();
@@ -129,6 +130,8 @@ function TransferForm({ accounts }: { accounts: Account[] }) {
         destinationAccountId: destinationId,
         amount: toApiAmount(amount),
         occurredAt: localDateTimeToIso(occurredAt),
+        idempotencyKey: crypto.randomUUID(),
+        ...(description.trim() ? { description: description.trim() } : {}),
       });
     },
     onSuccess: async (result) => {
@@ -209,6 +212,15 @@ function TransferForm({ accounts }: { accounts: Account[] }) {
           type="datetime-local"
           value={occurredAt}
           onChange={(event) => setOccurredAt(event.target.value)}
+        />
+      </label>
+      <label className={styles.field}>
+        Descripción (opcional)
+        <input
+          aria-label="Descripción"
+          maxLength={255}
+          value={description}
+          onChange={(event) => setDescription(event.target.value)}
         />
       </label>
       {save.isError ? <p className={styles.formError}>{moveFormError(save.error)}</p> : null}

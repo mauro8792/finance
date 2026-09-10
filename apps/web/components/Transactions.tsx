@@ -24,6 +24,7 @@ import {
   directionLabel,
   filterYearOptions,
   formatTransactionDate,
+  groupTransactionsForDisplay,
   incomeKindLabel,
   paymentMethodLabel,
   reimbursementLabel,
@@ -33,6 +34,7 @@ import {
   toTransactionListFilters,
   transactionStatusLabel,
   transactionTypeLabel,
+  type MovementListItem,
 } from "../lib/transactions";
 import type {
   Category,
@@ -92,6 +94,10 @@ export function TransactionsPage() {
   );
   const categoryNames = Object.fromEntries(
     (categories.data ?? []).map((category) => [category.id, category.name])
+  );
+  const movementItems = useMemo(
+    () => (query.data ? groupTransactionsForDisplay(query.data) : []),
+    [query.data]
   );
 
   async function refreshAfterChange() {
@@ -243,19 +249,26 @@ export function TransactionsPage() {
 
       {query.data && query.data.length > 0 ? (
         <ul className={styles.list}>
-          {query.data.map((transaction) => (
-            <li key={transaction.id}>
-              <TransactionCard
-                transaction={transaction}
-                accountName={accountNames[transaction.accountId] ?? "Cuenta"}
-                categoryName={
-                  transaction.categoryId
-                    ? categoryNames[transaction.categoryId] ?? "Categoría"
-                    : null
-                }
-                categories={categories.data ?? []}
-                onChanged={refreshAfterChange}
-              />
+          {movementItems.map((item) => (
+            <li key={movementItemKey(item)}>
+              {item.kind === "transfer" ? (
+                <TransferCard
+                  item={item}
+                  accountNames={accountNames}
+                />
+              ) : (
+                <TransactionCard
+                  transaction={item.transaction}
+                  accountName={accountNames[item.transaction.accountId] ?? "Cuenta"}
+                  categoryName={
+                    item.transaction.categoryId
+                      ? categoryNames[item.transaction.categoryId] ?? "Categoría"
+                      : null
+                  }
+                  categories={categories.data ?? []}
+                  onChanged={refreshAfterChange}
+                />
+              )}
             </li>
           ))}
         </ul>
@@ -271,6 +284,65 @@ function TransactionsSkeleton() {
       <div className={styles.skeletonBlock} />
       <div className={styles.skeletonBlock} />
     </div>
+  );
+}
+
+function movementItemKey(item: MovementListItem): string {
+  return item.kind === "transfer" ? item.transferId : item.transaction.id;
+}
+
+function TransferCard({
+  item,
+  accountNames,
+}: {
+  item: Extract<MovementListItem, { kind: "transfer" }>;
+  accountNames: Record<string, string>;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const sourceName = accountNames[item.out.accountId] ?? "Cuenta origen";
+  const destinationName = accountNames[item.in.accountId] ?? "Cuenta destino";
+  const money = formatMoney(item.out.amount, item.out.currency);
+  const description = item.out.description ?? item.in.description;
+
+  return (
+    <article className={styles.card}>
+      <div className={styles.cardTop}>
+        <div>
+          <p className={styles.date}>{formatTransactionDate(item.out.occurredAt)}</p>
+          <p className={styles.type}>Transferencia</p>
+        </div>
+        <p className={styles.amount}>{money}</p>
+      </div>
+      <p className={styles.metaLine}>
+        {sourceName} → {destinationName}
+      </p>
+      {description ? <p className={styles.metaLine}>{description}</p> : null}
+      <span className={styles.badge}>{transactionStatusLabel(item.out.status)}</span>
+
+      {expanded ? (
+        <div className={styles.details}>
+          <p className={styles.metaLine}>Desde: {sourceName}</p>
+          <p className={styles.metaLine}>Hacia: {destinationName}</p>
+          <p className={styles.metaLine}>Monto: {money}</p>
+          <p className={styles.metaLine}>
+            Fecha: {formatTransactionDate(item.out.occurredAt)}
+          </p>
+          {description ? (
+            <p className={styles.metaLine}>Descripción: {description}</p>
+          ) : null}
+        </div>
+      ) : null}
+
+      <div className={styles.actions}>
+        <button
+          type="button"
+          className={styles.secondary}
+          onClick={() => setExpanded((value) => !value)}
+        >
+          {expanded ? "Ocultar detalle" : "Ver detalle"}
+        </button>
+      </div>
+    </article>
   );
 }
 

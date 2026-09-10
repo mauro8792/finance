@@ -723,9 +723,38 @@ y:
 
 La creación es atómica: OUT e IN se persisten juntos o no se persiste ninguna.
 
-No existe tabla `transfers` en M2.3.
+## P0.12.1 — `transfer_links` (lookup + idempotencia)
 
-No se edita ni se anula una pierna de forma individual.
+Tabla aditiva (no reemplaza las piernas):
+
+```text
+transfer_links
+```
+
+Campos relevantes:
+
+```text
+id                     UUID PK
+user_id                UUID FK
+transfer_id            UUID UNIQUE  (= metadata.transferId de las piernas)
+source_account_id      UUID FK
+destination_account_id UUID FK
+out_transaction_id     UUID UNIQUE FK
+in_transaction_id      UUID UNIQUE FK
+amount                 NUMERIC(18,2)
+currency               currency_enum
+description            VARCHAR(255) NULL
+occurred_at            TIMESTAMPTZ
+client_sent_occurred_at BOOLEAN
+idempotency_key        VARCHAR(128)
+created_at             TIMESTAMPTZ
+
+UNIQUE (user_id, idempotency_key)
+```
+
+No hay backfill financiero. Piernas legacy sin link siguen válidas; el UI agrupa por metadata cuando el par está completo.
+
+No se edita ni se anula una pierna de forma individual (`TRANSFER_IMMUTABLE`). Void atómico de transferencia: P0.15.
 
 ---
 
