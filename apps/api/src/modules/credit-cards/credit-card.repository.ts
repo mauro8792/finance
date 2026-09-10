@@ -35,6 +35,10 @@ export class PrismaCreditCardRepository implements CreditCardRepository {
           closingDay: input.closingDay === undefined ? null : input.closingDay,
           dueDay: input.dueDay === undefined ? null : input.dueDay,
           ...(input.feeStatus !== undefined ? { feeStatus: input.feeStatus } : {}),
+          ...(input.feeExpectedAmount !== undefined
+            ? { feeExpectedAmount: input.feeExpectedAmount }
+            : {}),
+          ...(input.feeNotes !== undefined ? { feeNotes: input.feeNotes } : {}),
         },
       });
     });
@@ -68,6 +72,10 @@ export class PrismaCreditCardRepository implements CreditCardRepository {
         ...(input.closingDay !== undefined ? { closingDay: input.closingDay } : {}),
         ...(input.dueDay !== undefined ? { dueDay: input.dueDay } : {}),
         ...(input.feeStatus !== undefined ? { feeStatus: input.feeStatus } : {}),
+        ...(input.feeExpectedAmount !== undefined
+          ? { feeExpectedAmount: input.feeExpectedAmount }
+          : {}),
+        ...(input.feeNotes !== undefined ? { feeNotes: input.feeNotes } : {}),
       },
     });
     return toCreditCard(record);
@@ -101,6 +109,11 @@ function toCreditCard(record: PrismaCreditCard): CreditCard {
     closingDay: record.closingDay,
     dueDay: record.dueDay,
     feeStatus: record.feeStatus as CreditCardFeeStatus,
+    feeExpectedAmount:
+      record.feeExpectedAmount == null
+        ? null
+        : record.feeExpectedAmount.toFixed(2),
+    feeNotes: record.feeNotes,
     createdAt: record.createdAt,
     updatedAt: record.updatedAt,
   };

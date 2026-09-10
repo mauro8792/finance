@@ -21,6 +21,8 @@ export type CreditCard = {
   closingDay: number | null;
   dueDay: number | null;
   feeStatus: CreditCardFeeStatus;
+  feeExpectedAmount: string | null;
+  feeNotes: string | null;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -36,6 +38,8 @@ export type CreateCreditCardInput = {
   closingDay?: number | null;
   dueDay?: number | null;
   feeStatus?: CreditCardFeeStatus;
+  feeExpectedAmount?: string | null;
+  feeNotes?: string | null;
 };
 
 export type UpdateCreditCardInput = {
@@ -48,6 +52,8 @@ export type UpdateCreditCardInput = {
   closingDay?: number | null;
   dueDay?: number | null;
   feeStatus?: CreditCardFeeStatus;
+  feeExpectedAmount?: string | null;
+  feeNotes?: string | null;
 };
 
 export type CreditCardRepository = {

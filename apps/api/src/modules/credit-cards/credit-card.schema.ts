@@ -19,6 +19,35 @@ const DayOfMonthSchema = z
 
 const NullableDayOfMonthSchema = z.union([DayOfMonthSchema, z.null()]);
 
+const FeeExpectedAmountSchema = z
+  .union([
+    z
+      .union([z.string(), z.number()])
+      .transform((value, ctx) => {
+        const raw = String(value).trim();
+        if (!/^\d+(\.\d{1,2})?$/.test(raw)) {
+          ctx.addIssue({
+            code: "custom",
+            message: "feeExpectedAmount inválido: use hasta 2 decimales.",
+          });
+          return z.NEVER;
+        }
+        const normalized = raw.includes(".") ? raw : `${raw}.00`;
+        const [whole, fraction = "00"] = normalized.split(".");
+        const cents = BigInt(whole) * 100n + BigInt(fraction.padEnd(2, "0"));
+        if (cents <= 0n) {
+          ctx.addIssue({
+            code: "custom",
+            message: "feeExpectedAmount debe ser mayor a 0.",
+          });
+          return z.NEVER;
+        }
+        return `${whole}.${fraction.padEnd(2, "0").slice(0, 2)}`;
+      }),
+    z.null(),
+  ])
+  .optional();
+
 export const CreateCreditCardSchema = z.object({
   name: z.string().trim().min(1, "El nombre es obligatorio.").max(120),
   issuer: z.string().trim().min(1, "El banco/emisor es obligatorio.").max(120),
@@ -27,6 +56,8 @@ export const CreateCreditCardSchema = z.object({
   closingDay: NullableDayOfMonthSchema.optional(),
   dueDay: NullableDayOfMonthSchema.optional(),
   feeStatus: CreditCardFeeStatusSchema.optional(),
+  feeExpectedAmount: FeeExpectedAmountSchema,
+  feeNotes: z.string().max(500).nullable().optional(),
   isPrimary: z.boolean().optional(),
 });
 
@@ -44,6 +75,8 @@ export const UpdateCreditCardSchema = z
     closingDay: NullableDayOfMonthSchema.optional(),
     dueDay: NullableDayOfMonthSchema.optional(),
     feeStatus: CreditCardFeeStatusSchema.optional(),
+    feeExpectedAmount: FeeExpectedAmountSchema,
+    feeNotes: z.string().max(500).nullable().optional(),
     isActive: z.boolean().optional(),
   })
   .refine(
@@ -55,6 +88,8 @@ export const UpdateCreditCardSchema = z
       value.closingDay !== undefined ||
       value.dueDay !== undefined ||
       value.feeStatus !== undefined ||
+      value.feeExpectedAmount !== undefined ||
+      value.feeNotes !== undefined ||
       value.isActive !== undefined,
     { message: "Debe enviarse al menos un campo para actualizar." }
   );

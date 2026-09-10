@@ -151,7 +151,9 @@ Acreditaciones parciales: una expectativa puede recibir múltiples `REIMBURSEMEN
 Cancel remaining: sin acreditaciones → `CANCELLED`; con acreditaciones → `ACCREDITED` (conserva txs reales).
 
 **P0.11:** DONE definitivo (Neon + deploy).  
-**P0.12:** DONE definitivo LIVE (promotions/caps; Neon + Render smoke). **P0.13 NOT STARTED.**
+**P0.12:** DONE definitivo LIVE (promotions/caps; Neon + Render smoke).  
+**P0.12.1:** DONE definitivo LIVE (transfers UX).  
+**P0.13:** DONE definitivo LIVE (recurring charges + UI Tarjetas; Neon + Render + Vercel). **P0.14 NOT STARTED.**
 
 ---
 

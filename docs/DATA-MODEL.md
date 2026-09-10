@@ -263,6 +263,8 @@ is_primary    BOOLEAN NOT NULL DEFAULT false
 closing_day   INTEGER NULL  -- CHECK 1..31
 due_day       INTEGER NULL  -- CHECK 1..31
 fee_status    credit_card_fee_status_enum NOT NULL DEFAULT 'UNKNOWN'
+fee_expected_amount DECIMAL(18,2) NULL  -- hint P0.13; CHECK null or > 0
+fee_notes     VARCHAR(500) NULL           -- condición de bonificación (informativo)
 created_at    TIMESTAMPTZ NOT NULL
 updated_at    TIMESTAMPTZ NOT NULL
 ```
@@ -274,6 +276,38 @@ WAIVED
 POTENTIALLY_WAIVED
 UNKNOWN
 ```
+
+`fee_status` / `fee_expected_amount` / `fee_notes` son **configuración**. No generan `Transaction` ni mueven deuda.
+
+---
+
+### P0.13 — Cargos recurrentes
+
+```text
+credit_card_recurring_charges
+```
+
+Plantilla (impacto financiero 0):
+
+```text
+id, user_id, credit_card_id, category_id
+kind (MAINTENANCE | RECURRING_SERVICE | INSURANCE | OTHER)
+description, expected_amount NULL (= variable), currency
+frequency MONTHLY, day_of_month_hint NULL, is_active, notes
+```
+
+```text
+credit_card_recurring_charge_occurrences
+```
+
+Confirmación idempotente → link a `transactions.id` (`EXPENSE` tarjeta):
+
+```text
+UNIQUE (recurring_charge_id, occurrence_key)  -- YYYY-MM
+UNIQUE (user_id, idempotency_key)
+```
+
+El cargo confirmado es el mismo SoT financiero que P0.5: `EXPENSE` + `creditCardId` + `accountId` null.
 
 Índices:
 

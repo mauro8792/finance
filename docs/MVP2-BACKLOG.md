@@ -330,29 +330,23 @@ No auto-acreditar. Estados expectativa: `EXPECTED` | `PARTIALLY_ACCREDITED` | `A
 
 ## P0.12 — Topes de promoción
 
-**Estado: DONE definitivo LIVE** (código + Neon migrate + API Render smoke 2026-09-10). **P0.13 NOT STARTED.**
+**Estado: DONE definitivo LIVE** (código + Neon migrate + API Render smoke 2026-09-10).
 
 **Objetivo:** Tope por promo/ventana; expected acotado (§11).
 
-**Reglas:** solo expectativa; neto confirmado intacto. Cap consumed = `expectedAmount - cancelledRemainingAmount`. Cancel libera remanente no acreditado. Promotion ≠ acreditación (P0.11 sigue siendo autoridad ACCREDITED).
+**Reglas:** solo expectativa; neto confirmado intacto. Cap consumed = `expectedAmount - cancelledRemainingAmount`.
 
-**Migraciones:** `20260910010000_add_credit_card_promotion` (promotions + applications + expectation snapshot/cancelledRemaining; partial uniques; additive). Aplicada en Neon.
+**Migraciones:** `20260910010000_add_credit_card_promotion` (additive). Aplicada en Neon.
 
 **API:** `/api/credit-card-promotions` — CRUD, activate/deactivate, preview, apply.
 
-**Tests:** tope 25k mensual, dos compras → segundo expected 9k; cancel libera; apply sin impacto financiero; concurrency shared cap.
-
-**Limitaciones conocidas (no bloquean cierre):** sin fees/recurring (P0.13); sin auto-detect por descripción; sin scheduler/lagDays; `expectedDate` en apply aún null; GET promotion sin `capUsed/capReserved/capRemaining` (sí en preview/apply); sin UI grande; sin AI.
-
-**Criterio de aceptación:** §11; sin efecto en confirmado.
-
-**Dependencias:** P0.11. **Siguiente gate:** autorización P0.13 (**NOT STARTED**).
+**Dependencias:** P0.11. **Siguiente:** P0.13 DONE definitivo LIVE.
 
 ---
 
 ## P0.12.1 — Internal Transfers UX/robustness
 
-**Estado: DONE definitivo LIVE** (código + Neon migrate + API/web deploy smoke 2026-09-10). **P0.13 NOT STARTED.**
+**Estado: DONE definitivo LIVE** (código + Neon migrate + API/web deploy smoke 2026-09-10). **P0.13 DONE definitivo LIVE.**
 
 **Objetivo:** Robustecer transferencias internas ya existentes (MVP1) sin nuevo tipo ni `InternalTransfer`.
 
@@ -377,27 +371,38 @@ No auto-acreditar. Estados expectativa: `EXPECTED` | `PARTIALLY_ACCREDITED` | `A
 
 **API:** `POST/GET /api/transfers`, `GET /api/transfers/:id`.
 
-**Dependencias:** MVP1 transfers. **Siguiente gate:** autorización P0.13 (**NOT STARTED**).
+**Dependencias:** MVP1 transfers. **Siguiente:** P0.13 DONE definitivo LIVE.
 
 ---
 
 ## P0.13 — Comisiones / recurrentes (registro real)
 
-**Objetivo:** Config en tarjeta; cargo real = movimiento confirmado (EXPENSE tarjeta o línea de statement), no posteo silencioso.
+**Estado: DONE definitivo LIVE** (código + Neon migrate + Render API + Vercel web smoke 2026-09-10). **P0.14 NOT STARTED.** **P0.15 void/correcciones pendiente.**
 
-**Reglas:** proyección puede mostrar estimado **separado** de confirmado.
+**Objetivo:** Plantillas de cargos recurrentes en tarjeta + confirmación explícita → `EXPENSE` tarjeta. `feeStatus` solo configuración.
 
-**Migraciones:** flags/plantillas aditivas.
+**Modelo:**
 
-**Tests:** plantilla ≠ Transaction; registro manual impacta current/gasto según tipo.
+- `CreditCardRecurringCharge` (template; impacto financiero 0);
+- `CreditCardRecurringChargeOccurrence` (idempotency + link a Transaction);
+- confirm → `EXPENSE` `creditCardId` set / `accountId` null → debt+ / spending+ / budget+ / bank 0;
+- `CreditCard.feeExpectedAmount` / `feeNotes` opcionales (hints; sin dinero).
 
-**Criterio de aceptación:** comisión registrable; sin secretos PAN/CVV.
+**Reglas:** sin scheduler; sin auto-posting; sin AI; no reutilizar Installment como recurrencia; estimado ≠ confirmado; estimado nunca entra a `currentCardDebt`.
 
-**Dependencias:** P0.3, P0.9.
+**Migraciones:** `20260910140000_add_credit_card_recurring_charge` (additive). Aplicada en Neon.
+
+**API:** `/api/credit-card-recurring-charges` CRUD + activate/deactivate + confirm + outlook.
+
+**UI:** `/cards` — card heroes visuales, recurrentes, confirm sheet, expected vs confirmed separados. Primer hito visual fuerte MVP2 (solo Tarjetas).
+
+**Dependencias:** P0.3, P0.5, P0.9. **Siguiente:** P0.14 NOT STARTED; P0.15 void/correcciones pendiente.
 
 ---
 
 ## P0.14 — Parsing monetario es-AR
+
+**Estado: NOT STARTED.**
 
 Sin cambio por F1–F8. Paralelizable.
 

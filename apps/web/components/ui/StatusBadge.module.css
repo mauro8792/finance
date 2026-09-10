@@ -1,0 +1,87 @@
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 1.75rem;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 650;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.dot {
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.icon {
+  display: inline-flex;
+  flex-shrink: 0;
+}
+
+.positive {
+  background: rgb(16 185 129 / 16%);
+  color: #047857;
+}
+
+.positive .dot {
+  background: #10b981;
+}
+
+.warning {
+  background: rgb(245 158 11 / 16%);
+  color: #b45309;
+}
+
+.warning .dot {
+  background: #f59e0b;
+}
+
+.neutral {
+  background: rgb(100 116 139 / 14%);
+  color: #334155;
+}
+
+.neutral .dot {
+  background: #64748b;
+}
+
+.muted {
+  background: rgb(120 113 108 / 12%);
+  color: #57534e;
+}
+
+.muted .dot {
+  background: #a8a29e;
+}
+
+.primary {
+  background: rgb(15 118 110 / 18%);
+  color: #0f766e;
+}
+
+.primary .dot {
+  background: #0f766e;
+}
+
+.active {
+  background: rgb(16 185 129 / 14%);
+  color: #047857;
+}
+
+.active .dot {
+  background: #10b981;
+}
+
+.inactive {
+  background: rgb(120 113 108 / 12%);
+  color: #57534e;
+}
+
+.inactive .dot {
+  background: #a8a29e;
+}

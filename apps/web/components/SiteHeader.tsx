@@ -18,6 +18,9 @@ export function SiteHeader({ onLogout }: { onLogout?: () => void }) {
         <Link href="/accounts" className={`${styles.homeLink} ${styles.showFrom1024}`}>
           Cuentas
         </Link>
+        <Link href="/cards" className={`${styles.homeLink} ${styles.showFrom1024}`}>
+          Tarjetas
+        </Link>
         <Link href="/budgets" className={`${styles.homeLink} ${styles.showFrom1280}`}>
           Presupuestos
         </Link>
@@ -32,6 +35,9 @@ export function SiteHeader({ onLogout }: { onLogout?: () => void }) {
             </Link>
             <Link href="/accounts" className={`${styles.moreLink} ${styles.hideFrom1024}`}>
               Cuentas
+            </Link>
+            <Link href="/cards" className={`${styles.moreLink} ${styles.hideFrom1024}`}>
+              Tarjetas
             </Link>
             <Link href="/transfers" className={styles.moreLink}>
               Mover dinero

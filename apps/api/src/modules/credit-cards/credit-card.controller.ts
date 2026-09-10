@@ -100,6 +100,8 @@ function toCreditCardResponse(card: CreditCard) {
     closingDay: card.closingDay,
     dueDay: card.dueDay,
     feeStatus: card.feeStatus,
+    feeExpectedAmount: card.feeExpectedAmount,
+    feeNotes: card.feeNotes,
     configComplete: isConfigComplete(card),
     createdAt: card.createdAt.toISOString(),
     updatedAt: card.updatedAt.toISOString(),

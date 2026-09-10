@@ -34,6 +34,8 @@ class MemoryCreditCardRepository implements CreditCardRepository {
       closingDay: input.closingDay ?? null,
       dueDay: input.dueDay ?? null,
       feeStatus: input.feeStatus ?? "UNKNOWN",
+      feeExpectedAmount: input.feeExpectedAmount ?? null,
+      feeNotes: input.feeNotes ?? null,
       createdAt: now,
       updatedAt: now,
     };

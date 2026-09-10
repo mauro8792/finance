@@ -1,0 +1,65 @@
+.card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  width: 100%;
+  min-width: 0;
+  padding: 1.1rem 1.15rem;
+  border: 0;
+  border-radius: 1.25rem;
+  text-align: left;
+  font: inherit;
+  overflow: hidden;
+}
+
+.surface {
+  background: #fffcf7;
+  border: 1px solid #e7e5e4;
+  box-shadow: 0 1px 2px rgb(28 25 23 / 6%);
+  color: #1c1917;
+}
+
+.hero {
+  color: #fff;
+  background:
+    radial-gradient(circle at 85% 15%, rgb(255 255 255 / 14%), transparent 42%),
+    linear-gradient(135deg, #1e293b 0%, #134e4a 55%, #0f766e 100%);
+  box-shadow:
+    0 10px 24px rgb(15 118 110 / 22%),
+    inset 0 1px 0 rgb(255 255 255 / 12%);
+}
+
+.hero::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    120deg,
+    transparent 35%,
+    rgb(255 255 255 / 8%) 50%,
+    transparent 65%
+  );
+}
+
+.interactive {
+  cursor: pointer;
+  min-height: 2.75rem;
+}
+
+.interactive:focus-visible {
+  outline: 2px solid #99f6e4;
+  outline-offset: 2px;
+}
+
+.selected.hero {
+  box-shadow:
+    0 0 0 2px #99f6e4,
+    0 12px 28px rgb(15 118 110 / 28%);
+}
+
+.selected.surface {
+  border-color: #0f766e;
+  box-shadow: 0 0 0 1px #0f766e;
+}

@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { SiteHeader } from "./SiteHeader";
 
 describe("SiteHeader", () => {
-  it("links Inicio, Movimientos, Cuentas, Mover dinero, Presupuestos, Vivienda, Inversiones, Simulaciones, Asistente and Registrar", () => {
+  it("links Inicio, Movimientos, Cuentas, Tarjetas, Mover dinero, Presupuestos, Vivienda, Inversiones, Simulaciones, Asistente and Registrar", () => {
     render(<SiteHeader />);
     expect(screen.getByRole("link", { name: "Inicio" }).getAttribute("href")).toBe("/");
     expect(screen.getByRole("link", { name: "Registrar" }).getAttribute("href")).toBe(
@@ -20,6 +20,9 @@ describe("SiteHeader", () => {
     const accounts = screen.getAllByRole("link", { name: "Cuentas" });
     expect(accounts.length).toBeGreaterThan(0);
     expect(accounts.every((link) => link.getAttribute("href") === "/accounts")).toBe(true);
+    const cards = screen.getAllByRole("link", { name: "Tarjetas" });
+    expect(cards.length).toBeGreaterThan(0);
+    expect(cards.every((link) => link.getAttribute("href") === "/cards")).toBe(true);
     const budgets = screen.getAllByRole("link", { name: "Presupuestos" });
     expect(budgets.every((link) => link.getAttribute("href") === "/budgets")).toBe(true);
     const housing = screen.getAllByRole("link", { name: "Vivienda" });
@@ -37,6 +40,7 @@ describe("SiteHeader", () => {
     expect(screen.getByText("Más")).toBeTruthy();
     expect(screen.getAllByRole("link", { name: "Movimientos" })).toHaveLength(2);
     expect(screen.getAllByRole("link", { name: "Cuentas" })).toHaveLength(2);
+    expect(screen.getAllByRole("link", { name: "Tarjetas" })).toHaveLength(2);
     expect(screen.getAllByRole("link", { name: "Presupuestos" })).toHaveLength(2);
     expect(screen.getAllByRole("link", { name: "Vivienda" })).toHaveLength(2);
     expect(screen.getAllByRole("link", { name: "Mover dinero" })).toHaveLength(1);

@@ -126,6 +126,67 @@ async function main(): Promise<void> {
   await get("/api/credit-card-refunds/expected", "GET refunds/expected");
   await get("/api/transfers", "GET /api/transfers");
   {
+    const list = await get(
+      "/api/credit-card-recurring-charges",
+      "GET /api/credit-card-recurring-charges"
+    );
+    try {
+      const parsed = JSON.parse(list.text) as unknown;
+      results.push({
+        name: "recurring charges list empty array",
+        ok: Array.isArray(parsed) && parsed.length === 0,
+        detail: Array.isArray(parsed) ? `len=${parsed.length}` : "not-array",
+      });
+    } catch {
+      results.push({
+        name: "recurring charges list empty array",
+        ok: false,
+        detail: "invalid json",
+      });
+    }
+  }
+  {
+    const { res, text } = await get(
+      `/api/credit-card-recurring-charges/${missing}`,
+      "GET recurring missing id → controlled",
+      404
+    );
+    results.push({
+      name: "GET recurring missing → domain NOT_FOUND (not route miss)",
+      ok:
+        res.status === 404 &&
+        text.includes("Cargo recurrente no encontrado") &&
+        !text.includes("Ruta no encontrada"),
+      detail: `${res.status} ${text.slice(0, 160)}`,
+    });
+  }
+  await get(
+    `/api/credit-card-recurring-charges/outlook?creditCardId=${missing}`,
+    "GET outlook incomplete query → VALIDATION_ERROR",
+    400
+  );
+  {
+    const { res, text } = await get(
+      `/api/credit-card-recurring-charges/outlook?creditCardId=${missing}&year=2026&month=9`,
+      "GET outlook missing card → controlled",
+      404
+    );
+    results.push({
+      name: "GET outlook missing card → domain NOT_FOUND",
+      ok:
+        res.status === 404 &&
+        text.includes("Tarjeta no encontrada") &&
+        !text.includes("Ruta no encontrada"),
+      detail: `${res.status} ${text.slice(0, 160)}`,
+    });
+  }
+  await post(
+    "/api/credit-card-recurring-charges",
+    "POST recurring invalid → VALIDATION_ERROR",
+    { name: "" },
+    [400]
+  );
+  {
     const { res, text } = await get(
       `/api/transfers/${missing}`,
       "GET transfer missing id → controlled",
@@ -240,26 +301,33 @@ async function main(): Promise<void> {
 
   const prisma = new PrismaClient();
   try {
-    const [tx, inv, promo, app, exp, acc, links] = await Promise.all([
-      prisma.transaction.count(),
-      prisma.investment.count(),
-      prisma.creditCardPromotion.count(),
-      prisma.creditCardPromotionApplication.count(),
-      prisma.creditCardRefundExpectation.count(),
-      prisma.creditCardRefundAccreditation.count(),
-      prisma.transferLink.count(),
-    ]);
+    const [tx, inv, promo, app, exp, acc, links, charges, occs, cards] =
+      await Promise.all([
+        prisma.transaction.count(),
+        prisma.investment.count(),
+        prisma.creditCardPromotion.count(),
+        prisma.creditCardPromotionApplication.count(),
+        prisma.creditCardRefundExpectation.count(),
+        prisma.creditCardRefundAccreditation.count(),
+        prisma.transferLink.count(),
+        prisma.creditCardRecurringCharge.count(),
+        prisma.creditCardRecurringChargeOccurrence.count(),
+        prisma.creditCard.count(),
+      ]);
     results.push({
       name: "Neon counts after smoke (no fictitious writes)",
       ok:
-        tx === 22 &&
+        tx === 24 &&
         inv === 2 &&
         promo === 0 &&
         app === 0 &&
         exp === 0 &&
         acc === 0 &&
-        links === 0,
-      detail: `tx=${tx} inv=${inv} promo=${promo} app=${app} exp=${exp} acc=${acc} links=${links}`,
+        links === 1 &&
+        charges === 0 &&
+        occs === 0 &&
+        cards === 0,
+      detail: `tx=${tx} inv=${inv} promo=${promo} app=${app} exp=${exp} acc=${acc} links=${links} charges=${charges} occs=${occs} cards=${cards}`,
     });
   } finally {
     await prisma.$disconnect();

@@ -95,6 +95,8 @@ export class CreditCardService {
       closingDay?: number | null;
       dueDay?: number | null;
       feeStatus?: CreditCardFeeStatus;
+      feeExpectedAmount?: string | null;
+      feeNotes?: string | null;
       isPrimary?: boolean;
     }
   ): Promise<CreditCard> {
@@ -114,6 +116,10 @@ export class CreditCardService {
         input.feeStatus !== undefined
           ? requireFeeStatus(input.feeStatus)
           : "UNKNOWN",
+      ...(input.feeExpectedAmount !== undefined
+        ? { feeExpectedAmount: input.feeExpectedAmount }
+        : {}),
+      ...(input.feeNotes !== undefined ? { feeNotes: input.feeNotes } : {}),
       isPrimary: input.isPrimary === true,
       isActive: true,
     };
@@ -149,6 +155,12 @@ export class CreditCardService {
     }
     if (input.feeStatus !== undefined) {
       patch.feeStatus = requireFeeStatus(input.feeStatus);
+    }
+    if (input.feeExpectedAmount !== undefined) {
+      patch.feeExpectedAmount = input.feeExpectedAmount;
+    }
+    if (input.feeNotes !== undefined) {
+      patch.feeNotes = input.feeNotes;
     }
     if (input.isActive !== undefined) {
       patch.isActive = input.isActive;

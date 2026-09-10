@@ -27,6 +27,16 @@ import type {
   ChatResponse,
   AuthUser,
   LoginRequest,
+  CreditCard,
+  CreditCardCommitments,
+  CreateCreditCardRequest,
+  UpdateCreditCardRequest,
+  CreditCardRecurringCharge,
+  CreateRecurringChargeRequest,
+  UpdateRecurringChargeRequest,
+  ConfirmRecurringChargeRequest,
+  ConfirmRecurringChargeResult,
+  RecurringChargeOutlook,
   RegisterHousingPaymentRequest,
   RenewInvestmentRequest,
   RenewInvestmentResult,
@@ -416,4 +426,132 @@ export async function getMe(): Promise<{ user: AuthUser }> {
 
 export async function logout(): Promise<void> {
   await requestJson<void>("/api/auth/logout", { method: "POST" });
+}
+
+export async function getCreditCards(): Promise<CreditCard[]> {
+  return requestJson<CreditCard[]>("/api/credit-cards");
+}
+
+export async function createCreditCard(
+  payload: CreateCreditCardRequest
+): Promise<CreditCard> {
+  return requestJson<CreditCard>("/api/credit-cards", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateCreditCard(
+  id: string,
+  payload: UpdateCreditCardRequest
+): Promise<CreditCard> {
+  return requestJson<CreditCard>(`/api/credit-cards/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function activateCreditCard(id: string): Promise<CreditCard> {
+  return requestJson<CreditCard>(`/api/credit-cards/${id}/activate`, {
+    method: "POST",
+  });
+}
+
+export async function deactivateCreditCard(id: string): Promise<CreditCard> {
+  return requestJson<CreditCard>(`/api/credit-cards/${id}/deactivate`, {
+    method: "POST",
+  });
+}
+
+export async function setPrimaryCreditCard(id: string): Promise<CreditCard> {
+  return requestJson<CreditCard>(`/api/credit-cards/${id}/set-primary`, {
+    method: "POST",
+  });
+}
+
+export async function getCreditCardCommitments(
+  id: string
+): Promise<CreditCardCommitments> {
+  return requestJson<CreditCardCommitments>(`/api/credit-cards/${id}/commitments`);
+}
+
+export async function getRecurringCharges(
+  creditCardId?: string
+): Promise<CreditCardRecurringCharge[]> {
+  const params = new URLSearchParams();
+  if (creditCardId) {
+    params.set("creditCardId", creditCardId);
+  }
+  const query = params.toString();
+  return requestJson<CreditCardRecurringCharge[]>(
+    `/api/credit-card-recurring-charges${query ? `?${query}` : ""}`
+  );
+}
+
+export async function createRecurringCharge(
+  payload: CreateRecurringChargeRequest
+): Promise<CreditCardRecurringCharge> {
+  return requestJson<CreditCardRecurringCharge>("/api/credit-card-recurring-charges", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateRecurringCharge(
+  id: string,
+  payload: UpdateRecurringChargeRequest
+): Promise<CreditCardRecurringCharge> {
+  return requestJson<CreditCardRecurringCharge>(
+    `/api/credit-card-recurring-charges/${id}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }
+  );
+}
+
+export async function activateRecurringCharge(
+  id: string
+): Promise<CreditCardRecurringCharge> {
+  return requestJson<CreditCardRecurringCharge>(
+    `/api/credit-card-recurring-charges/${id}/activate`,
+    { method: "POST" }
+  );
+}
+
+export async function deactivateRecurringCharge(
+  id: string
+): Promise<CreditCardRecurringCharge> {
+  return requestJson<CreditCardRecurringCharge>(
+    `/api/credit-card-recurring-charges/${id}/deactivate`,
+    { method: "POST" }
+  );
+}
+
+export async function confirmRecurringCharge(
+  id: string,
+  payload: ConfirmRecurringChargeRequest
+): Promise<ConfirmRecurringChargeResult> {
+  return requestJson<ConfirmRecurringChargeResult>(
+    `/api/credit-card-recurring-charges/${id}/confirm`,
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }
+  );
+}
+
+export async function getRecurringChargeOutlook(
+  creditCardId: string,
+  year: number,
+  month: number
+): Promise<RecurringChargeOutlook> {
+  const params = new URLSearchParams({
+    creditCardId,
+    year: String(year),
+    month: String(month),
+  });
+  return requestJson<RecurringChargeOutlook>(
+    `/api/credit-card-recurring-charges/outlook?${params}`
+  );
 }

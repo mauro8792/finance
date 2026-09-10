@@ -1022,6 +1022,19 @@ currentCardDebt ↑  (o futureInstallmentCommitment si aún no reconocida)
 
 La cuenta bancaria **no** disminuye en la compra.
 
+## 31.3 Tarjetas UI + recurrentes (P0.13)
+
+Ruta:
+
+```text
+/cards
+```
+
+- Card heroes visuales (nombre, emisor, marca, moneda, deuda, cierre, vencimiento, feeStatus humano).
+- Cargos recurrentes: estimado vs confirmado del mes **separados** de `currentCardDebt`.
+- “Registrar este mes” → confirm explícito → `EXPENSE` tarjeta.
+- Sin PAN/CVV. Sin auto-posting.
+
 Ejemplo contado:
 
 ```text

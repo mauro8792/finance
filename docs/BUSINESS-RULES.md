@@ -584,6 +584,8 @@ Sin `closingDay`: proyección limitada; no afirmar “próximo resumen” cierto
 **P0.11:** expectations + accreditations implementados (Neon aplicado).  
 **P0.12 DONE definitivo LIVE:** promotions + applications + `cancelledRemainingAmount`; Neon + Render live (smoke GET promotions `[]`, preview domain 404). Apply/preview sin impacto en confirmado. Cap consumed = expected − cancelledRemaining.
 
+**P0.13 DONE definitivo LIVE:** plantillas `CreditCardRecurringCharge` no mueven dinero. Confirmación explícita → `EXPENSE` tarjeta (`accountId` null) → `currentCardDebt`+ / gross+ / budget+ / banco 0. `feeStatus` nunca genera movimientos. Estimado ≠ confirmado; estimado fuera de deuda.
+
 ## 23.2 Legacy MVP1
 
 Movimientos con `paymentMethod = CREDIT_CARD` **sin** el modelo de entidad tarjeta (típicamente con `accountId` y sin `creditCardId` MVP2):

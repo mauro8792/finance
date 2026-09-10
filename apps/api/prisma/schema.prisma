@@ -158,6 +158,21 @@ enum CreditCardPromotionCapPeriod {
   @@map("credit_card_promotion_cap_period_enum")
 }
 
+enum CreditCardRecurringChargeKind {
+  MAINTENANCE
+  RECURRING_SERVICE
+  INSURANCE
+  OTHER
+
+  @@map("credit_card_recurring_charge_kind_enum")
+}
+
+enum CreditCardRecurringChargeFrequency {
+  MONTHLY
+
+  @@map("credit_card_recurring_charge_frequency_enum")
+}
+
 model User {
   id           String        @id @default(uuid()) @db.Uuid
   name         String        @db.VarChar(120)
@@ -181,6 +196,8 @@ model User {
   creditCardRefundAccreditations   CreditCardRefundAccreditation[]
   creditCardPromotions             CreditCardPromotion[]
   creditCardPromotionApplications  CreditCardPromotionApplication[]
+  creditCardRecurringCharges       CreditCardRecurringCharge[]
+  creditCardRecurringChargeOccurrences CreditCardRecurringChargeOccurrence[]
   transferLinks                    TransferLink[]
   sessions                         Session[]
 
@@ -215,6 +232,7 @@ model Category {
   transactions Transaction[]
   budgets      Budget[]
   creditCardPurchases CreditCardPurchase[]
+  creditCardRecurringCharges CreditCardRecurringCharge[]
 
   @@unique([userId, name])
   @@map("categories")
@@ -277,6 +295,7 @@ model Transaction {
   refundAccreditation    CreditCardRefundAccreditation?
   transferLinkAsOut      TransferLink? @relation("TransferLinkOut")
   transferLinkAsIn       TransferLink? @relation("TransferLinkIn")
+  creditCardRecurringChargeOccurrence CreditCardRecurringChargeOccurrence?
 
   @@index([userId, occurredAt])
   @@index([accountId, occurredAt])
@@ -433,7 +452,9 @@ model CreditCard {
   isPrimary   Boolean             @default(false) @map("is_primary")
   closingDay  Int?                @map("closing_day")
   dueDay      Int?                @map("due_day")
-  feeStatus   CreditCardFeeStatus @default(UNKNOWN) @map("fee_status")
+  feeStatus          CreditCardFeeStatus @default(UNKNOWN) @map("fee_status")
+  feeExpectedAmount  Decimal?            @map("fee_expected_amount") @db.Decimal(18, 2)
+  feeNotes           String?             @map("fee_notes") @db.VarChar(500)
   createdAt   DateTime            @default(now()) @map("created_at") @db.Timestamptz
   updatedAt   DateTime            @updatedAt @map("updated_at") @db.Timestamptz
   user         User                @relation(fields: [userId], references: [id], onDelete: Restrict)
@@ -444,6 +465,7 @@ model CreditCard {
   refundExpectations   CreditCardRefundExpectation[]
   refundAccreditations CreditCardRefundAccreditation[]
   promotions           CreditCardPromotion[]
+  recurringCharges     CreditCardRecurringCharge[]
 
   @@index([userId])
   @@index([userId, isActive])
@@ -666,4 +688,51 @@ model CreditCardInstallment {
   @@index([status])
   @@index([scheduledFor])
   @@map("credit_card_installments")
+}
+
+/// P0.13: recurring charge template on credit card (no financial impact until confirm).
+model CreditCardRecurringCharge {
+  id              String                             @id @default(uuid()) @db.Uuid
+  userId          String                             @map("user_id") @db.Uuid
+  creditCardId    String                             @map("credit_card_id") @db.Uuid
+  kind            CreditCardRecurringChargeKind
+  categoryId      String                             @map("category_id") @db.Uuid
+  description     String                             @db.VarChar(255)
+  expectedAmount  Decimal?                           @map("expected_amount") @db.Decimal(18, 2)
+  currency        Currency
+  frequency       CreditCardRecurringChargeFrequency @default(MONTHLY)
+  dayOfMonthHint  Int?                               @map("day_of_month_hint")
+  isActive        Boolean                            @default(true) @map("is_active")
+  notes           String?                            @db.Text
+  createdAt       DateTime                           @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt       DateTime                           @updatedAt @map("updated_at") @db.Timestamptz
+  user            User                               @relation(fields: [userId], references: [id], onDelete: Restrict)
+  creditCard      CreditCard                         @relation(fields: [creditCardId], references: [id], onDelete: Restrict)
+  category        Category                           @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  occurrences     CreditCardRecurringChargeOccurrence[]
+
+  @@index([userId, creditCardId])
+  @@index([creditCardId, isActive])
+  @@map("credit_card_recurring_charges")
+}
+
+/// P0.13: confirmed occurrence → EXPENSE transaction (idempotent per YYYY-MM).
+model CreditCardRecurringChargeOccurrence {
+  id                String                  @id @default(uuid()) @db.Uuid
+  userId            String                  @map("user_id") @db.Uuid
+  recurringChargeId String                  @map("recurring_charge_id") @db.Uuid
+  occurrenceKey     String                  @map("occurrence_key") @db.VarChar(32)
+  idempotencyKey    String                  @map("idempotency_key") @db.VarChar(128)
+  transactionId     String                  @unique @map("transaction_id") @db.Uuid
+  amount            Decimal                 @db.Decimal(18, 2)
+  occurredAt        DateTime                @map("occurred_at") @db.Timestamptz
+  createdAt         DateTime                @default(now()) @map("created_at") @db.Timestamptz
+  user              User                    @relation(fields: [userId], references: [id], onDelete: Restrict)
+  recurringCharge   CreditCardRecurringCharge @relation(fields: [recurringChargeId], references: [id], onDelete: Restrict)
+  transaction       Transaction             @relation(fields: [transactionId], references: [id], onDelete: Restrict)
+
+  @@unique([recurringChargeId, occurrenceKey])
+  @@unique([userId, idempotencyKey])
+  @@index([userId, recurringChargeId])
+  @@map("credit_card_recurring_charge_occurrences")
 }

@@ -535,3 +535,147 @@ export type LoginRequest = {
   email: string;
   password: string;
 };
+
+export type CreditCardFeeStatus =
+  | "HAS_FEE"
+  | "WAIVED"
+  | "POTENTIALLY_WAIVED"
+  | "UNKNOWN";
+
+export type CreditCard = {
+  id: string;
+  userId: string;
+  name: string;
+  issuer: string;
+  brand: string;
+  currency: Currency;
+  isActive: boolean;
+  isPrimary: boolean;
+  closingDay: number | null;
+  dueDay: number | null;
+  feeStatus: CreditCardFeeStatus;
+  feeExpectedAmount: string | null;
+  feeNotes: string | null;
+  configComplete: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type CreditCardCommitments = {
+  creditCardId: string;
+  currentCardDebt: string;
+  futureInstallmentCommitment: string;
+  totalOutstandingCommitment: string;
+};
+
+export type CreditCardRecurringChargeKind =
+  | "MAINTENANCE"
+  | "RECURRING_SERVICE"
+  | "INSURANCE"
+  | "OTHER";
+
+export type CreditCardRecurringChargeFrequency = "MONTHLY";
+
+export type CreditCardRecurringCharge = {
+  id: string;
+  creditCardId: string;
+  kind: CreditCardRecurringChargeKind;
+  categoryId: string;
+  description: string;
+  expectedAmount: string | null;
+  currency: Currency;
+  frequency: CreditCardRecurringChargeFrequency;
+  dayOfMonthHint: number | null;
+  isActive: boolean;
+  notes: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type CreditCardRecurringChargeOccurrence = {
+  id: string;
+  recurringChargeId: string;
+  occurrenceKey: string;
+  transactionId: string;
+  amount: string;
+  currency: Currency;
+  occurredAt: string;
+  description: string | null;
+  idempotencyKey: string;
+};
+
+export type RecurringChargeOutlookItem = {
+  template: CreditCardRecurringCharge;
+  occurrenceKey: string;
+  hasOccurrence: boolean;
+  occurrence: CreditCardRecurringChargeOccurrence | null;
+};
+
+export type RecurringChargeOutlook = {
+  creditCardId: string;
+  occurrenceKey: string;
+  year: number;
+  month: number;
+  expectedSumFixed: string;
+  variableCountPending: number;
+  items: RecurringChargeOutlookItem[];
+};
+
+export type CreateCreditCardRequest = {
+  name: string;
+  issuer: string;
+  brand: string;
+  currency: Currency;
+  closingDay?: number | null;
+  dueDay?: number | null;
+  feeStatus?: CreditCardFeeStatus;
+  feeExpectedAmount?: string | null;
+  feeNotes?: string | null;
+  isPrimary?: boolean;
+};
+
+export type UpdateCreditCardRequest = {
+  name?: string;
+  issuer?: string;
+  brand?: string;
+  currency?: Currency;
+  closingDay?: number | null;
+  dueDay?: number | null;
+  feeStatus?: CreditCardFeeStatus;
+  feeExpectedAmount?: string | null;
+  feeNotes?: string | null;
+  isActive?: boolean;
+};
+
+export type CreateRecurringChargeRequest = {
+  creditCardId: string;
+  kind: CreditCardRecurringChargeKind;
+  categoryId: string;
+  description: string;
+  expectedAmount?: string | null;
+  dayOfMonthHint?: number | null;
+  notes?: string | null;
+  isActive?: boolean;
+};
+
+export type UpdateRecurringChargeRequest = {
+  kind?: CreditCardRecurringChargeKind;
+  categoryId?: string;
+  description?: string;
+  expectedAmount?: string | null;
+  dayOfMonthHint?: number | null;
+  notes?: string | null;
+};
+
+export type ConfirmRecurringChargeRequest = {
+  occurrenceKey: string;
+  amount: string;
+  idempotencyKey: string;
+  occurredAt?: string;
+  description?: string | null;
+};
+
+export type ConfirmRecurringChargeResult = {
+  created: boolean;
+  occurrence: CreditCardRecurringChargeOccurrence;
+};
