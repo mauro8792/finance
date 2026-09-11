@@ -87,3 +87,18 @@ export const RegisterHousingPaymentSchema = z
       .optional(),
   })
   .strict();
+
+export const UpdateHousingPaymentPeriodSchema = z
+  .object({
+    periodYear: z
+      .number({ error: "periodYear debe ser un entero." })
+      .int("periodYear debe ser un entero.")
+      .min(1970, "periodYear fuera de rango.")
+      .max(2100, "periodYear fuera de rango."),
+    periodMonth: z
+      .number({ error: "periodMonth debe ser un entero." })
+      .int("periodMonth debe ser un entero.")
+      .min(1, "periodMonth debe estar entre 1 y 12.")
+      .max(12, "periodMonth debe estar entre 1 y 12."),
+  })
+  .strict();

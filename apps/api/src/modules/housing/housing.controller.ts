@@ -10,6 +10,7 @@ import {
   HousingPaymentIdParamsSchema,
   RegisterHousingPaymentSchema,
   UpdateHousingObligationSchema,
+  UpdateHousingPaymentPeriodSchema,
   VoidHousingPaymentSchema,
 } from "./housing.schema.js";
 import type { HousingService } from "./housing.service.js";
@@ -97,6 +98,14 @@ export class HousingController {
       remainingInstallments: result.obligation.remainingInstallments,
       isActive: result.obligation.isActive,
     });
+  };
+
+  updatePaymentPeriod = async (req: Request, res: Response): Promise<void> => {
+    const userId = getAuthUserId(req);
+    const { id, paymentId } = parseValue(HousingPaymentIdParamsSchema, req.params);
+    const body = parseValue(UpdateHousingPaymentPeriodSchema, req.body);
+    const payment = await this.housing.updatePaymentPeriod(userId, id, paymentId, body);
+    res.status(200).json(toPaymentResponse(payment));
   };
 }
 

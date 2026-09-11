@@ -18,6 +18,7 @@ import type {
   VoidHousingPaymentAtomicResult,
 } from "./housing.types.js";
 import { RemainingInstallmentsConflictError } from "./housing.types.js";
+import { computeNextHousingInstallment } from "./housing-next-installment.js";
 
 export type CreateHousingObligationRequest = {
   name: string;
@@ -61,6 +62,11 @@ export type HousingCoverage = {
   installmentAmount: string;
   remainingInstallments: number;
   coveredInstallments: string | null;
+  nextInstallmentNumber: number | null;
+  nextPeriodYear: number | null;
+  nextPeriodMonth: number | null;
+  nextDueDate: string | null;
+  nextDueDateLabel: string | null;
 };
 
 export class HousingService {
@@ -85,11 +91,19 @@ export class HousingService {
 
   async getCoverage(userId: string, id: string): Promise<HousingCoverage> {
     const obligation = await this.requireOwned(userId, id);
+    const payments = await this.housing.findPaymentsByObligationId(id);
+    const next = computeNextHousingInstallment(payments, obligation.dueDay);
+
     const base = {
       housingObligationId: obligation.id,
       currency: obligation.currency,
       installmentAmount: obligation.installmentAmount,
       remainingInstallments: obligation.remainingInstallments,
+      nextInstallmentNumber: next.installmentNumber,
+      nextPeriodYear: next.periodYear,
+      nextPeriodMonth: next.periodMonth,
+      nextDueDate: next.dueDate,
+      nextDueDateLabel: next.dueDateLabel,
     };
 
     if (obligation.reserveAccountId === null) {
@@ -330,6 +344,51 @@ export class HousingService {
       obligationId,
       paymentId,
       idempotencyKey,
+    });
+  }
+
+  /**
+   * P1.2.1: correct period metadata only. No amount/paidAt/balance impact.
+   * VOIDED rows may also receive periods for audit clarity.
+   */
+  async updatePaymentPeriod(
+    userId: string,
+    obligationId: string,
+    paymentId: string,
+    input: { periodYear: number; periodMonth: number }
+  ): Promise<HousingPayment> {
+    await this.requireOwned(userId, obligationId);
+    const payments = await this.housing.findPaymentsByObligationId(obligationId);
+    const payment = payments.find((item) => item.id === paymentId);
+    if (!payment) {
+      throw new AppError("NOT_FOUND", "Pago de vivienda no encontrado.", 404);
+    }
+
+    const { periodYear, periodMonth } = requirePeriod(
+      input.periodYear,
+      input.periodMonth
+    );
+    if (periodYear === null || periodMonth === null) {
+      throw new AppError(
+        "VALIDATION_ERROR",
+        "periodYear y periodMonth son obligatorios.",
+        400
+      );
+    }
+
+    if (
+      payment.periodYear === periodYear &&
+      payment.periodMonth === periodMonth
+    ) {
+      return payment;
+    }
+
+    return this.housing.updatePaymentPeriod(paymentId, {
+      periodYear,
+      periodMonth,
+      previousPeriodYear: payment.periodYear,
+      previousPeriodMonth: payment.periodMonth,
+      periodCorrectedAt: new Date(),
     });
   }
 

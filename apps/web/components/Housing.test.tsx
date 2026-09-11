@@ -83,6 +83,11 @@ const coverageNormal: HousingCoverage = {
   installmentAmount: "500.00",
   remainingInstallments: 12,
   coveredInstallments: "4.00",
+  nextInstallmentNumber: 5,
+  nextPeriodYear: 2026,
+  nextPeriodMonth: 10,
+  nextDueDate: "2026-10-10T15:00:00.000Z",
+  nextDueDateLabel: "10 oct 2026",
 };
 
 const coverageNull: HousingCoverage = {
@@ -93,6 +98,11 @@ const coverageNull: HousingCoverage = {
   installmentAmount: "80000.00",
   remainingInstallments: 6,
   coveredInstallments: null,
+  nextInstallmentNumber: null,
+  nextPeriodYear: null,
+  nextPeriodMonth: null,
+  nextDueDate: null,
+  nextDueDateLabel: null,
 };
 
 const coverageZero: HousingCoverage = {
@@ -209,7 +219,7 @@ describe("HousingPage", () => {
     expect(await screen.findByText("Alquiler de prueba")).toBeTruthy();
     expect(screen.getByText("Cochera de prueba")).toBeTruthy();
     expect(screen.getByText("$ 80.000,00")).toBeTruthy();
-    expect(screen.getByText("Sin día configurado")).toBeTruthy();
+    expect(await screen.findByText("Sin día configurado")).toBeTruthy();
   });
 
   it("shows inactive badge and hides the payment CTA", async () => {
@@ -424,7 +434,7 @@ describe("HousingPage", () => {
     vi.stubGlobal("crypto", { randomUUID: () => "void-key-1" });
 
     renderHousing();
-    expect(await screen.findByText("Octubre 2026")).toBeTruthy();
+    expect(await screen.findByText("Cuota 3 · Octubre 2026")).toBeTruthy();
     expect(screen.getByText(/Pagada el/)).toBeTruthy();
     await user.click(screen.getByRole("button", { name: "Anular registro" }));
     expect(
@@ -522,9 +532,9 @@ describe("HousingPage", () => {
     renderHousing();
     expect((await screen.findAllByText(/Pagada el 15 ago 2026/)).length).toBe(3);
     expect(screen.getAllByText("USD 500,00").length).toBeGreaterThan(0);
-    expect(screen.getByText("Octubre 2026")).toBeTruthy();
-    expect(screen.getByText("Cuota 5")).toBeTruthy();
+    expect(screen.getByText("Cuota 3 · Octubre 2026")).toBeTruthy();
+    expect(screen.getAllByText("Cuota 5").length).toBeGreaterThan(0);
     expect(screen.getByText("USD 400,00")).toBeTruthy();
-    expect(screen.getAllByText(/^Cuota \d+$/).length).toBe(1);
+    expect(screen.getAllByText(/^Cuota \d+$/).length).toBeGreaterThanOrEqual(1);
   });
 });

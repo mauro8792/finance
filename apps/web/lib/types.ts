@@ -265,6 +265,11 @@ export type HousingCoverage = {
   installmentAmount: string;
   remainingInstallments: number;
   coveredInstallments: string | null;
+  nextInstallmentNumber: number | null;
+  nextPeriodYear: number | null;
+  nextPeriodMonth: number | null;
+  nextDueDate: string | null;
+  nextDueDateLabel: string | null;
 };
 
 export type HousingPayment = {

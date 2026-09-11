@@ -8,6 +8,7 @@ import {
   deactivateAccount,
   getAccountBalance,
   getAccounts,
+  reconcileAccountBalance,
   updateAccount,
 } from "../lib/api";
 import {
@@ -16,6 +17,13 @@ import {
   accountTypeLabel,
 } from "../lib/accounts";
 import { getDefaultAccountId, setDefaultAccountId } from "../lib/default-account";
+import {
+  isValidAmount,
+  localDateTimeToIso,
+  normalizeAmountInput,
+  toApiAmount,
+  toLocalDateTimeInput,
+} from "../lib/quick-add";
 import type { Account, AccountType, Currency } from "../lib/types";
 import { PrivacyToggle } from "./PrivacyToggle";
 import { EmptyState, ErrorState } from "./QueryStatus";
@@ -28,7 +36,8 @@ import styles from "./Accounts.module.css";
 
 type Panel =
   | { mode: "create" }
-  | { mode: "edit"; account: Account };
+  | { mode: "edit"; account: Account }
+  | { mode: "reconcile"; account: Account; balance: string };
 
 export function AccountsPage() {
   const [panel, setPanel] = useState<Panel | null>(null);
@@ -86,9 +95,21 @@ export function AccountsPage() {
         }
       />
 
-      {panel ? (
+      {panel?.mode === "create" || panel?.mode === "edit" ? (
         <AccountForm
           panel={panel}
+          onClose={() => setPanel(null)}
+          onSaved={async () => {
+            await refreshAccounts();
+            setPanel(null);
+          }}
+        />
+      ) : null}
+
+      {panel?.mode === "reconcile" ? (
+        <ReconcileBalanceForm
+          account={panel.account}
+          calculatedBalance={panel.balance}
           onClose={() => setPanel(null)}
           onSaved={async () => {
             await refreshAccounts();
@@ -133,6 +154,13 @@ export function AccountsPage() {
                 onMakeDefault={() => makeDefault(account.id)}
                 onRetryBalance={() => balances.refetch()}
                 onEdit={() => setPanel({ mode: "edit", account })}
+                onReconcile={() => {
+                  const balance = balances.data?.[account.id];
+                  if (balance == null) {
+                    return;
+                  }
+                  setPanel({ mode: "reconcile", account, balance });
+                }}
                 onChanged={refreshAccounts}
               />
             </li>
@@ -152,6 +180,7 @@ function AccountCard({
   onMakeDefault,
   onRetryBalance,
   onEdit,
+  onReconcile,
   onChanged,
 }: {
   account: Account;
@@ -162,6 +191,7 @@ function AccountCard({
   onMakeDefault: () => void;
   onRetryBalance: () => void;
   onEdit: () => void;
+  onReconcile: () => void;
   onChanged: () => Promise<void>;
 }) {
   const toggle = useMutation({
@@ -231,6 +261,11 @@ function AccountCard({
         <button type="button" className={styles.linkAction} onClick={onEdit}>
           Editar
         </button>
+        {account.isActive && balance !== null ? (
+          <button type="button" className={styles.linkAction} onClick={onReconcile}>
+            Conciliar saldo
+          </button>
+        ) : null}
         <button
           type="button"
           className={styles.linkAction}
@@ -268,7 +303,7 @@ function AccountForm({
   onClose,
   onSaved,
 }: {
-  panel: Panel;
+  panel: Extract<Panel, { mode: "create" } | { mode: "edit" }>;
   onClose: () => void;
   onSaved: () => Promise<void>;
 }) {
@@ -357,6 +392,164 @@ function AccountForm({
         </button>
         <button type="submit" className={styles.primaryCta} disabled={mutation.isPending}>
           {mutation.isPending ? "Guardando..." : isEdit ? "Guardar" : "Crear cuenta"}
+        </button>
+      </div>
+    </form>
+  );
+}
+
+function formatSignedDiff(calculated: string, observed: string): string {
+  const calc = Number(calculated);
+  const obs = Number(observed);
+  if (!Number.isFinite(calc) || !Number.isFinite(obs)) {
+    return "—";
+  }
+  const value = Math.round((obs - calc) * 100) / 100;
+  const abs = Math.abs(value).toFixed(2);
+  if (value === 0) {
+    return "0.00";
+  }
+  return value > 0 ? `+${abs}` : `-${abs}`;
+}
+
+function ReconcileBalanceForm({
+  account,
+  calculatedBalance,
+  onClose,
+  onSaved,
+}: {
+  account: Account;
+  calculatedBalance: string;
+  onClose: () => void;
+  onSaved: () => Promise<void>;
+}) {
+  const [observed, setObserved] = useState(calculatedBalance);
+  const [reason, setReason] = useState(
+    "Corrección de saldo inicial / conciliación con banco"
+  );
+  const [occurredAt, setOccurredAt] = useState(() => toLocalDateTimeInput(new Date()));
+  const [confirmed, setConfirmed] = useState(false);
+  const [localError, setLocalError] = useState<string | null>(null);
+
+  const mutation = useMutation({
+    mutationFn: () => {
+      const normalized = normalizeAmountInput(observed);
+      const observedBalance =
+        normalized === "0" || normalized === "0.0" || normalized === "0.00"
+          ? "0.00"
+          : toApiAmount(observed);
+      return reconcileAccountBalance(account.id, {
+        observedBalance,
+        reason: reason.trim(),
+        occurredAt: localDateTimeToIso(occurredAt),
+        idempotencyKey: crypto.randomUUID(),
+      });
+    },
+    onSuccess: async () => {
+      await onSaved();
+    },
+  });
+
+  function onSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const normalized = normalizeAmountInput(observed);
+    const allowZero = normalized === "0" || normalized === "0.0" || normalized === "0.00";
+    if (!allowZero && !isValidAmount(observed)) {
+      setLocalError("Ingresá un saldo real válido.");
+      return;
+    }
+    if (!reason.trim()) {
+      setLocalError("El motivo es obligatorio.");
+      return;
+    }
+    if (!confirmed) {
+      setLocalError("Confirmá la conciliación para continuar.");
+      return;
+    }
+    setLocalError(null);
+    mutation.mutate();
+  }
+
+  const observedApi = (() => {
+    const normalized = normalizeAmountInput(observed);
+    if (normalized === "0" || normalized === "0.0" || normalized === "0.00") {
+      return "0.00";
+    }
+    try {
+      return toApiAmount(observed);
+    } catch {
+      return null;
+    }
+  })();
+
+  const diffLabel =
+    observedApi != null ? formatSignedDiff(calculatedBalance, observedApi) : "—";
+
+  const errorMessage =
+    localError ?? (mutation.isError ? accountFormError(mutation.error) : null);
+
+  return (
+    <form className={styles.form} onSubmit={onSubmit} aria-busy={mutation.isPending}>
+      <h2 className={styles.formTitle}>Conciliar saldo</h2>
+      <p className={styles.formHint}>
+        Cuenta: {account.name} ({account.currency})
+      </p>
+      <p className={styles.formHint}>
+        Saldo calculado actual:{" "}
+        <Money amount={calculatedBalance} currency={account.currency} />
+      </p>
+      <label className={styles.field}>
+        Saldo real
+        <input
+          type="text"
+          inputMode="decimal"
+          value={observed}
+          onChange={(event) => setObserved(event.target.value)}
+          autoComplete="off"
+        />
+      </label>
+      <p className={styles.formHint}>Diferencia: {diffLabel}</p>
+      <label className={styles.field}>
+        Motivo
+        <input
+          type="text"
+          value={reason}
+          onChange={(event) => setReason(event.target.value)}
+          autoComplete="off"
+        />
+      </label>
+      <label className={styles.field}>
+        Fecha
+        <input
+          type="datetime-local"
+          value={occurredAt}
+          onChange={(event) => setOccurredAt(event.target.value)}
+        />
+      </label>
+      <p className={styles.formHint} role="note">
+        Esta operación ajusta el saldo de la cuenta. No se registrará como gasto ni ingreso.
+      </p>
+      <label className={styles.field}>
+        <span>
+          <input
+            type="checkbox"
+            checked={confirmed}
+            onChange={(event) => setConfirmed(event.target.checked)}
+          />{" "}
+          Confirmo la conciliación
+        </span>
+      </label>
+      {errorMessage ? (
+        <p className={styles.formError} role="alert">
+          {errorMessage}
+        </p>
+      ) : null}
+      <div className={styles.formActions}>
+        <button type="button" className={styles.secondary} onClick={onClose}>
+          Cancelar
+        </button>
+        <button type="submit" className={styles.primaryCta} disabled={mutation.isPending}>
+          {mutation.isPending ? "Conciliando..." : "Confirmar conciliación"}
         </button>
       </div>
     </form>

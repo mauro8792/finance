@@ -145,6 +145,31 @@ export async function getAccountBalance(id: string): Promise<AccountBalance> {
   return requestJson<AccountBalance>(`/api/accounts/${id}/balance`);
 }
 
+export async function reconcileAccountBalance(
+  id: string,
+  payload: {
+    observedBalance: string;
+    reason: string;
+    occurredAt?: string;
+    idempotencyKey: string;
+  }
+): Promise<{
+  created: boolean;
+  balance: string;
+  reconciliation: {
+    id: string;
+    observedBalance: string;
+    previousCalculatedBalance: string;
+    adjustmentAmount: string;
+    reason: string;
+  };
+}> {
+  return requestJson(`/api/accounts/${id}/reconcile-balance`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
 export async function createAccount(payload: CreateAccountRequest): Promise<Account> {
   return requestJson<Account>("/api/accounts", {
     method: "POST",
@@ -364,6 +389,20 @@ export async function voidHousingPayment(
     `/api/housing/${obligationId}/payments/${paymentId}/void`,
     {
       method: "POST",
+      body: JSON.stringify(payload),
+    }
+  );
+}
+
+export async function updateHousingPaymentPeriod(
+  obligationId: string,
+  paymentId: string,
+  payload: { periodYear: number; periodMonth: number }
+): Promise<HousingPayment> {
+  return requestJson<HousingPayment>(
+    `/api/housing/${obligationId}/payments/${paymentId}/period`,
+    {
+      method: "PATCH",
       body: JSON.stringify(payload),
     }
   );

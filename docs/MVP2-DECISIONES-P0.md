@@ -499,3 +499,10 @@ Registradas sin alterar F1–F8:
 2. **Marca (brand):** selector UX (Visa/MC/Amex/Otra) como string; **sin** enum DB.
 3. **Housing período ≠ pago:** `periodYear`/`periodMonth` independientes de `paidAt` (prepago). Void dedicado `HOUSING_PAYMENT_VOID` (REVERSED, restaura `remainingInstallments`, sin ingreso, idempotente).
 4. **F4 / QuickAdd:** legacy `CREDIT_CARD` sin `creditCardId` = path banco LEAVE. QuickAdd Crédito + tarjeta → F1/P0.5.
+
+## P1.2.1 — Decisiones (DONE LOCAL)
+
+1. **Conciliación de saldo:** entidad `AccountBalanceReconciliation` + pata `ADJUSTMENT` (direction). No income/expense/spending/budget. Idempotente DB-backed.
+2. **Próximo vencimiento vivienda:** máximo período ACTIVE + 1 mes; VOIDED no cubre; no `max(paidAt)+1`.
+3. **Corrección de período:** metadata-only; conserva previous period en el payment; unique ACTIVE period se mantiene.
+4. **VOIDED 27 ≠ installment 27 removido:** el registro anulado es auditoría; la cuota pendiente sigue siendo 27.

@@ -1269,25 +1269,30 @@ Desktop: Inicio, Cuentas, Presupuestos, Vivienda, Inversiones, Simulaciones, Asi
 
 ---
 
-# 38. Ajuste de saldo
+# 38. Ajuste de saldo / Conciliar saldo (P1.2.1)
 
-Si existe diferencia entre realidad y app:
+Si existe diferencia entre realidad bancaria y app:
 
 ```text
-Cuenta
+Cuentas → Conciliar saldo
 ↓
-Ajustar saldo
+Saldo calculado
+Saldo real
+Motivo
+Confirmar
 ```
 
-No editar saldo directamente.
+No editar `initial_balance` directamente.
 
 Crear:
 
 ```text
-Transaction.type = ADJUSTMENT
+AccountBalanceReconciliation
++ Transaction.type = ADJUSTMENT (direction IN|OUT)
 ```
 
-La UI debe dejar claro que es una corrección manual.
+La UI deja claro: no es gasto ni ingreso.
+Idempotencia por `idempotencyKey`.
 
 ---
 

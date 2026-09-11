@@ -236,7 +236,15 @@ class MemoryHousingRepository implements HousingObligationRepository {
       throw new RemainingInstallmentsConflictError();
     }
     const createdTx = await this.transactions.create(transaction);
-    const createdPayment: HousingPayment = { ...payment, createdAt: new Date() };
+    const createdPayment: HousingPayment = {
+      ...payment,
+      previousPeriodYear: null,
+      previousPeriodMonth: null,
+      periodCorrectedAt: null,
+      voidedAt: null,
+      voidIdempotencyKey: null,
+      createdAt: new Date(),
+    };
     this.payments.set(createdPayment.id, createdPayment);
     const updated = {
       ...current,
@@ -245,6 +253,36 @@ class MemoryHousingRepository implements HousingObligationRepository {
     };
     this.items.set(obligationId, updated);
     return { payment: createdPayment, transaction: createdTx, obligation: updated };
+  }
+
+  async voidPaymentAtomic(): Promise<never> {
+    throw new Error("voidPaymentAtomic not used in this test double");
+  }
+
+  async updatePaymentPeriod(
+    paymentId: string,
+    input: {
+      periodYear: number;
+      periodMonth: number;
+      previousPeriodYear: number | null;
+      previousPeriodMonth: number | null;
+      periodCorrectedAt: Date;
+    }
+  ): Promise<HousingPayment> {
+    const current = this.payments.get(paymentId);
+    if (!current) {
+      throw new Error("payment not found");
+    }
+    const updated: HousingPayment = {
+      ...current,
+      periodYear: input.periodYear,
+      periodMonth: input.periodMonth,
+      previousPeriodYear: input.previousPeriodYear,
+      previousPeriodMonth: input.previousPeriodMonth,
+      periodCorrectedAt: input.periodCorrectedAt,
+    };
+    this.payments.set(paymentId, updated);
+    return updated;
   }
 }
 
@@ -487,6 +525,11 @@ test("GET /api/housing/:id/coverage returns the HousingCoverage shape", async ()
     "currency",
     "housingObligationId",
     "installmentAmount",
+    "nextDueDate",
+    "nextDueDateLabel",
+    "nextInstallmentNumber",
+    "nextPeriodMonth",
+    "nextPeriodYear",
     "remainingInstallments",
     "reserveAccountId",
     "reserveBalance",

@@ -17,6 +17,14 @@ export type CurrencyExchangeMetadata = {
   direction: TransferDirection;
 };
 
+export type AdjustmentMetadata = {
+  reconciliationId: string;
+  direction: TransferDirection;
+  observedBalance: string;
+  previousCalculatedBalance: string;
+  reason: string;
+};
+
 export type HousingPaymentMetadata = {
   housingPaymentId: string;
   housingObligationId: string;
@@ -91,6 +99,40 @@ export function requireCurrencyExchangeDirection(
   return metadata.direction;
 }
 
+export function isAdjustmentMetadata(value: unknown): value is AdjustmentMetadata {
+  if (value === null || typeof value !== "object") {
+    return false;
+  }
+
+  const record = value as {
+    reconciliationId?: unknown;
+    direction?: unknown;
+    observedBalance?: unknown;
+    previousCalculatedBalance?: unknown;
+    reason?: unknown;
+  };
+  return (
+    typeof record.reconciliationId === "string" &&
+    record.reconciliationId.length > 0 &&
+    (record.direction === "OUT" || record.direction === "IN") &&
+    typeof record.observedBalance === "string" &&
+    typeof record.previousCalculatedBalance === "string" &&
+    typeof record.reason === "string"
+  );
+}
+
+export function requireAdjustmentDirection(metadata: unknown): TransferDirection {
+  if (!isAdjustmentMetadata(metadata)) {
+    throw new AppError(
+      "INVALID_ADJUSTMENT_METADATA",
+      "Un movimiento ADJUSTMENT debe tener metadata de conciliación con direction OUT o IN.",
+      500
+    );
+  }
+
+  return metadata.direction;
+}
+
 export function balanceDirection(movement: {
   type: TransactionType;
   metadata: unknown;
@@ -150,6 +192,13 @@ export function balanceDirection(movement: {
     movement.type === "INVESTMENT_RETURN"
   ) {
     return "credit";
+  }
+
+  if (movement.type === "ADJUSTMENT") {
+    // P1.2.1: technical balance reconciliation. amount > 0; sign via direction.
+    return requireAdjustmentDirection(movement.metadata) === "IN"
+      ? "credit"
+      : "debit";
   }
 
   throw new AppError(

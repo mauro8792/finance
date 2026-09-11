@@ -10,6 +10,7 @@ import {
   getHousingPayments,
   registerHousingPayment,
   updateHousing,
+  updateHousingPaymentPeriod,
   voidHousingPayment,
 } from "../lib/api";
 import { formatCoveredInstallments, formatMonthLabel, formatPaidAt } from "../lib/format-money";
@@ -18,7 +19,6 @@ import {
   coverageBarWidth,
   housingFormError,
   housingPaymentError,
-  nextDueDateLabel,
   parseOptionalInteger,
   parseRequiredInteger,
   paymentAccountsForHousing,
@@ -136,7 +136,15 @@ function HousingCard({
 }) {
   const [paying, setPaying] = useState(false);
   const reserve = accounts.find((account) => account.id === obligation.reserveAccountId);
-  const nextDue = nextDueDateLabel(obligation.dueDay);
+  const coverageQuery = useQuery({
+    queryKey: ["housing", obligation.id, "coverage"],
+    queryFn: () => getHousingCoverage(obligation.id),
+  });
+  const nextDue =
+    coverageQuery.data?.nextDueDateLabel ??
+    (coverageQuery.data?.nextDueDate
+      ? formatPaidAt(coverageQuery.data.nextDueDate)
+      : null);
 
   // Una sola historia de cobertura arriba (reserva + cuotas cubiertas + barra)
   // y después los datos operativos compactos, sin repetir la reserva.
@@ -155,7 +163,15 @@ function HousingCard({
         />
       </div>
 
-      <HousingCoverageCard obligationId={obligation.id} />
+      <HousingCoverageCard
+        obligationId={obligation.id}
+        coverage={coverageQuery.data}
+        isPending={coverageQuery.isPending}
+        isError={coverageQuery.isError}
+        onRetry={() => {
+          void coverageQuery.refetch();
+        }}
+      />
 
       <dl className={styles.meta}>
         <div>
@@ -174,8 +190,16 @@ function HousingCard({
         <div>
           <dt>Próximo vencimiento</dt>
           <dd>
-            {nextDue ?? "Sin día configurado"}
+            {nextDue ??
+              (coverageQuery.isPending
+                ? "…"
+                : obligation.dueDay === null
+                  ? "Sin día configurado"
+                  : "Asigná períodos a los pagos")}
             {obligation.dueDay === null ? null : <small>Día {obligation.dueDay}</small>}
+            {coverageQuery.data?.nextInstallmentNumber != null ? (
+              <small>Cuota {coverageQuery.data.nextInstallmentNumber}</small>
+            ) : null}
           </dd>
         </div>
         <div>
@@ -216,13 +240,22 @@ function HousingCard({
   );
 }
 
-function HousingCoverageCard({ obligationId }: { obligationId: string }) {
-  const query = useQuery({
-    queryKey: ["housing", obligationId, "coverage"],
-    queryFn: () => getHousingCoverage(obligationId),
-  });
+function HousingCoverageCard({
+  obligationId,
+  coverage,
+  isPending,
+  isError,
+  onRetry,
+}: {
+  obligationId: string;
+  coverage?: HousingCoverage;
+  isPending: boolean;
+  isError: boolean;
+  onRetry: () => void;
+}) {
+  void obligationId;
 
-  if (query.isPending) {
+  if (isPending) {
     return (
       <section className={styles.coverage}>
         <h3 className={styles.sectionTitle}>Cobertura de la reserva</h3>
@@ -231,26 +264,24 @@ function HousingCoverageCard({ obligationId }: { obligationId: string }) {
     );
   }
 
-  if (query.isError) {
+  if (isError) {
     return (
       <section className={styles.coverage}>
         <h3 className={styles.sectionTitle}>Cobertura de la reserva</h3>
         <ErrorState
           message="No pudimos cargar la cobertura. Probá de nuevo."
-          onRetry={() => {
-            void query.refetch();
-          }}
+          onRetry={onRetry}
           compact
         />
       </section>
     );
   }
 
-  if (!query.data) {
+  if (!coverage) {
     return null;
   }
 
-  return <CoverageBody coverage={query.data} />;
+  return <CoverageBody coverage={coverage} />;
 }
 
 function CoverageBody({ coverage }: { coverage: HousingCoverage }) {
@@ -364,7 +395,11 @@ function HousingPaymentHistory({ obligationId }: { obligationId: string }) {
 
 function paymentPeriodLabel(payment: HousingPayment): string {
   if (payment.periodYear != null && payment.periodMonth != null) {
-    return formatMonthLabel(payment.periodYear, payment.periodMonth);
+    const period = formatMonthLabel(payment.periodYear, payment.periodMonth);
+    if (payment.installmentNumber != null) {
+      return `Cuota ${payment.installmentNumber} · ${period}`;
+    }
+    return period;
   }
   if (payment.installmentNumber != null) {
     return `Cuota ${payment.installmentNumber}`;
@@ -382,6 +417,13 @@ function PaymentRow({
   onVoided: () => Promise<void>;
 }) {
   const [confirming, setConfirming] = useState(false);
+  const [editingPeriod, setEditingPeriod] = useState(false);
+  const [periodYear, setPeriodYear] = useState(
+    payment.periodYear != null ? String(payment.periodYear) : "2026"
+  );
+  const [periodMonth, setPeriodMonth] = useState(
+    payment.periodMonth != null ? String(payment.periodMonth) : "10"
+  );
   const isVoided = payment.voidedAt != null;
 
   const voidMutation = useMutation({
@@ -395,12 +437,26 @@ function PaymentRow({
     },
   });
 
+  const periodMutation = useMutation({
+    mutationFn: () =>
+      updateHousingPaymentPeriod(obligationId, payment.id, {
+        periodYear: Number(periodYear),
+        periodMonth: Number(periodMonth),
+      }),
+    onSuccess: async () => {
+      setEditingPeriod(false);
+      await onVoided();
+    },
+  });
+
   return (
     <>
       <div className={styles.paymentMain}>
         <p className={styles.paymentPeriod}>{paymentPeriodLabel(payment)}</p>
         <time className={styles.paymentDate} dateTime={payment.paidAt}>
-          Pagada el {formatPaidAt(payment.paidAt)}
+          {isVoided
+            ? `Pagada originalmente el ${formatPaidAt(payment.paidAt)}`
+            : `Pagada el ${formatPaidAt(payment.paidAt)}`}
         </time>
         {isVoided ? (
           <StatusBadge label="Anulada" tone="muted" />
@@ -411,9 +467,60 @@ function PaymentRow({
         currency={payment.currency}
         className={styles.paymentAmount}
       />
-      {!isVoided ? (
-        <div className={styles.paymentActions}>
-          {confirming ? (
+      <div className={styles.paymentActions}>
+        {editingPeriod ? (
+          <>
+            <label className={styles.field}>
+              Año
+              <input
+                type="number"
+                value={periodYear}
+                onChange={(event) => setPeriodYear(event.target.value)}
+              />
+            </label>
+            <label className={styles.field}>
+              Mes
+              <input
+                type="number"
+                min={1}
+                max={12}
+                value={periodMonth}
+                onChange={(event) => setPeriodMonth(event.target.value)}
+              />
+            </label>
+            <button
+              type="button"
+              className={styles.linkStrong}
+              disabled={periodMutation.isPending}
+              onClick={() => periodMutation.mutate()}
+            >
+              {periodMutation.isPending ? "Guardando…" : "Guardar período"}
+            </button>
+            <button
+              type="button"
+              className={styles.linkAction}
+              disabled={periodMutation.isPending}
+              onClick={() => setEditingPeriod(false)}
+            >
+              Cancelar
+            </button>
+            {periodMutation.isError ? (
+              <p className={styles.formError} role="alert">
+                {housingPaymentError(periodMutation.error)}
+              </p>
+            ) : null}
+          </>
+        ) : (
+          <button
+            type="button"
+            className={styles.linkAction}
+            onClick={() => setEditingPeriod(true)}
+          >
+            Corregir período
+          </button>
+        )}
+        {!isVoided ? (
+          confirming ? (
             <>
               <p className={styles.voidHint}>
                 El registro original se conservará en el historial.
@@ -443,14 +550,14 @@ function PaymentRow({
             >
               Anular registro
             </button>
-          )}
-          {voidMutation.isError ? (
-            <p className={styles.formError} role="alert">
-              {housingPaymentError(voidMutation.error)}
-            </p>
-          ) : null}
-        </div>
-      ) : null}
+          )
+        ) : null}
+        {voidMutation.isError ? (
+          <p className={styles.formError} role="alert">
+            {housingPaymentError(voidMutation.error)}
+          </p>
+        ) : null}
+      </div>
     </>
   );
 }

@@ -192,6 +192,9 @@ class MemoryHousingRepository implements HousingObligationRepository {
         ...payment,
         periodYear: payment.periodYear ?? null,
         periodMonth: payment.periodMonth ?? null,
+        previousPeriodYear: null,
+        previousPeriodMonth: null,
+        periodCorrectedAt: null,
         voidedAt: null,
         voidIdempotencyKey: null,
         createdAt: new Date(),
@@ -224,6 +227,10 @@ class MemoryHousingRepository implements HousingObligationRepository {
 
   async voidPaymentAtomic(): Promise<never> {
     throw new Error("voidPaymentAtomic not used in this test double");
+  }
+
+  async updatePaymentPeriod(): Promise<never> {
+    throw new Error("updatePaymentPeriod not used in this test double");
   }
 }
 

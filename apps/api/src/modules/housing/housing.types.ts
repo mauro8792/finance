@@ -45,6 +45,9 @@ export type HousingPayment = {
   installmentNumber: number | null;
   periodYear: number | null;
   periodMonth: number | null;
+  previousPeriodYear: number | null;
+  previousPeriodMonth: number | null;
+  periodCorrectedAt: Date | null;
   paidAt: Date;
   voidedAt: Date | null;
   voidIdempotencyKey: string | null;
@@ -107,4 +110,14 @@ export type HousingObligationRepository = {
   voidPaymentAtomic(
     input: VoidHousingPaymentInput
   ): Promise<VoidHousingPaymentAtomicResult>;
+  updatePaymentPeriod(
+    paymentId: string,
+    input: {
+      periodYear: number;
+      periodMonth: number;
+      previousPeriodYear: number | null;
+      previousPeriodMonth: number | null;
+      periodCorrectedAt: Date;
+    }
+  ): Promise<HousingPayment>;
 };

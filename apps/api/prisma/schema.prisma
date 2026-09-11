@@ -216,6 +216,7 @@ model User {
   creditCardRecurringChargeOccurrences CreditCardRecurringChargeOccurrence[]
   transferLinks                    TransferLink[]
   correctionOperations             CorrectionOperation[]
+  accountBalanceReconciliations    AccountBalanceReconciliation[]
   sessions                         Session[]
 
   @@map("users")
@@ -293,8 +294,34 @@ model Account {
   investments               Investment[]
   transferLinksAsSource     TransferLink[] @relation("TransferLinkSource")
   transferLinksAsDestination TransferLink[] @relation("TransferLinkDestination")
+  balanceReconciliations    AccountBalanceReconciliation[]
 
   @@map("accounts")
+}
+
+/// P1.2.1: auditable opening/bank balance reconciliation.
+/// Creates an ADJUSTMENT transaction leg (not income/expense/spending).
+model AccountBalanceReconciliation {
+  id                        String   @id @default(uuid()) @db.Uuid
+  userId                    String   @map("user_id") @db.Uuid
+  accountId                 String   @map("account_id") @db.Uuid
+  transactionId             String   @unique @map("transaction_id") @db.Uuid
+  observedBalance           Decimal  @map("observed_balance") @db.Decimal(18, 2)
+  previousCalculatedBalance Decimal  @map("previous_calculated_balance") @db.Decimal(18, 2)
+  /// Signed technical adjustment (observed − previous). Not income/expense.
+  adjustmentAmount          Decimal  @map("adjustment_amount") @db.Decimal(18, 2)
+  currency                  Currency
+  reason                    String   @db.VarChar(255)
+  occurredAt                DateTime @map("occurred_at") @db.Timestamptz
+  idempotencyKey            String   @map("idempotency_key") @db.VarChar(128)
+  createdAt                 DateTime @default(now()) @map("created_at") @db.Timestamptz
+  user                      User     @relation(fields: [userId], references: [id], onDelete: Restrict)
+  account                   Account  @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  transaction               Transaction @relation(fields: [transactionId], references: [id], onDelete: Restrict)
+
+  @@unique([userId, idempotencyKey])
+  @@index([userId, accountId])
+  @@map("account_balance_reconciliations")
 }
 
 model Transaction {
@@ -332,6 +359,7 @@ model Transaction {
   transferLinkAsOut      TransferLink? @relation("TransferLinkOut")
   transferLinkAsIn       TransferLink? @relation("TransferLinkIn")
   creditCardRecurringChargeOccurrence CreditCardRecurringChargeOccurrence?
+  balanceReconciliation  AccountBalanceReconciliation?
 
   @@index([userId, occurredAt])
   @@index([accountId, occurredAt])
@@ -444,6 +472,10 @@ model HousingPayment {
   /// Calendar period this installment covers (independent from paidAt).
   periodYear          Int?              @map("period_year")
   periodMonth         Int?              @map("period_month")
+  /// Previous period when corrected via P1.2.1 (audit of last change only).
+  previousPeriodYear  Int?              @map("previous_period_year")
+  previousPeriodMonth Int?              @map("previous_period_month")
+  periodCorrectedAt   DateTime?         @map("period_corrected_at") @db.Timestamptz
   paidAt              DateTime          @map("paid_at") @db.Timestamptz
   voidedAt            DateTime?         @map("voided_at") @db.Timestamptz
   voidIdempotencyKey  String?           @map("void_idempotency_key") @db.VarChar(128)

@@ -1412,6 +1412,13 @@ Calcular mediante:
 initial_balance
 +
 incoming movements
+−
+outgoing movements
+(+ ADJUSTMENT vía AccountBalanceReconciliation / P1.2.1)
+```
+
+Solo `Transaction.status = ACTIVE` participan. `ADJUSTMENT` mueve saldo con
+`metadata.direction` IN|OUT; no es income/expense.
 -
 outgoing movements
 ```

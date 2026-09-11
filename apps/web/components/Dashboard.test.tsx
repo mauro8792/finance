@@ -73,6 +73,11 @@ const coverageQa: HousingCoverage = {
   installmentAmount: "1100.00",
   remainingInstallments: 37,
   coveredInstallments: "8.00",
+  nextInstallmentNumber: null,
+  nextPeriodYear: null,
+  nextPeriodMonth: null,
+  nextDueDate: null,
+  nextDueDateLabel: null,
 };
 
 const fondo: Account = {

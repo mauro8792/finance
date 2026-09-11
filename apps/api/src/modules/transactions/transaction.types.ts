@@ -2,6 +2,7 @@ import type { Currency } from "shared";
 import type {
   TransferMetadata,
   CurrencyExchangeMetadata,
+  AdjustmentMetadata,
   HousingPaymentMetadata,
   InvestmentOutflowMetadata,
   InvestmentPrincipalReturnMetadata,
@@ -107,6 +108,7 @@ export type CreateTransactionInput = {
     | { incomeKind: IncomeKind }
     | TransferMetadata
     | CurrencyExchangeMetadata
+    | AdjustmentMetadata
     | HousingPaymentMetadata
     | InvestmentOutflowMetadata
     | InvestmentPrincipalReturnMetadata

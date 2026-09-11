@@ -555,7 +555,29 @@ deuda multi-moneda y void seguro de pagos de vivienda.
 
 **Migration:** `20260911120000_p12_housing_void_and_period` (aditiva).
 
-**No tocó:** cauciones/inversiones, Neon prod, deploys, datos productivos.
+**No tocó:** cauciones/inversiones (ya LIVE; no re-mutar).
+
+---
+
+## P1.2.1 — HOUSING RECONCILIATION + NEXT INSTALLMENT FIX
+
+**Estado: DONE LOCAL** (código + migration aditiva en repo; **NO** Neon / Render / Vercel / datos prod).
+
+**Objetivo:** Conciliación explícita de saldo de cuenta (sin income/expense) y próximo
+vencimiento de vivienda basado en períodos ACTIVE (no en `paidAt` solo).
+
+**Entregado:**
+- `AccountBalanceReconciliation` + pata `Transaction.type = ADJUSTMENT` (direction IN/OUT)
+- `POST /api/accounts/:id/reconcile-balance` idempotente
+- UI Cuentas → "Conciliar saldo"
+- Coverage: `nextInstallmentNumber` / `nextPeriod*` / `nextDueDateLabel`
+- `PATCH /api/housing/:id/payments/:paymentId/period` (solo metadata)
+- VOIDED payment ≠ installment removido
+
+**Migration:** `20260911180000_p121_account_balance_reconciliation` (aditiva).
+
+**Acceptance (manual UI post-aprobación):** reserva 5199.92 → 4099.93; coverage 3,73;
+pending 33; next due 10 ene 2027.
 
 ---
 

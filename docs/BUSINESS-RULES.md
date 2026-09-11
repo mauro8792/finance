@@ -274,6 +274,24 @@ Void dedicado (no el void genérico de Transaction):
 - marca `HousingPayment.voidedAt`; el historial se conserva;
 - idempotente por `idempotencyKey` (replay / conflicto igual que P0.15).
 
+### P1.2.1 — Conciliación de saldo + próximo vencimiento
+
+**Reconciliation ≠ income/expense.**  
+`AccountBalanceReconciliation` + pata `ADJUSTMENT` ajusta el saldo derivado
+(`observed − previous`). No gasta, no ingresa, no presupuesto, no deuda tarjeta,
+no rendimiento. Idempotente por `(userId, idempotencyKey)`.
+
+**paidAt ≠ período de cuota.**  
+El próximo vencimiento usa el máximo `periodYear/periodMonth` de pagos ACTIVE
+(`voidedAt` null). Un VOIDED no cubre el período. No usar `max(paidAt)+1 mes`.
+
+**VOIDED payment ≠ installment removido.**  
+El registro anulado de “cuota 27” es auditoría; la obligación sigue teniendo
+cuota 27 pendiente hasta que se pague de verdad.
+
+`PATCH /api/housing/:id/payments/:paymentId/period` corrige solo metadata de período
+(sin impacto financiero). `ADJUSTMENT` es inmutable vía void/PATCH genérico.
+
 ---
 
 # 14. Runway
@@ -662,13 +680,23 @@ El reconocimiento mueve valor de `futureInstallmentCommitment` a `currentCardDeb
 
 ---
 
-# 25. Ajustes
+# 25. Ajustes / conciliación de saldo (P1.2.1)
 
-`ADJUSTMENT` se utiliza para corregir discrepancias.
+`ADJUSTMENT` se utiliza para corregir discrepancias de saldo bancario vs saldo derivado.
 
-Debe incluir descripción obligatoria en UI/Service.
+La unidad auditable es `AccountBalanceReconciliation`:
+`observedBalance`, `previousCalculatedBalance`, `adjustmentAmount` (signed),
+`reason`, `occurredAt`, `idempotencyKey`.
 
-Un ajuste no debería considerarse gasto o ingreso operativo por defecto.
+La pata `Transaction` tiene `amount > 0` y `metadata.direction` IN|OUT.
+
+Un ajuste **no** es gasto ni ingreso operativo: no spending, no budget, no card debt,
+no investment return. Solo mueve el saldo derivado de la cuenta (y coverage/runway
+si esa cuenta participa).
+
+Debe incluir motivo obligatorio. `ADJUSTMENT` es inmutable vía void/PATCH genérico.
+
+API: `POST /api/accounts/:id/reconcile-balance`.
 
 ---
 

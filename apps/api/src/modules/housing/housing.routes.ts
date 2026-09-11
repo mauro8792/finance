@@ -14,6 +14,7 @@ export function createHousingRouter(controller: HousingController): Router {
   router.get("/:id/payments", controller.listPayments);
   router.post("/:id/payments", controller.registerPayment);
   router.post("/:id/payments/:paymentId/void", controller.voidPayment);
+  router.patch("/:id/payments/:paymentId/period", controller.updatePaymentPeriod);
   router.get("/:id", controller.getById);
   router.patch("/:id", controller.update);
   return router;

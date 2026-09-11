@@ -295,6 +295,40 @@ export class PrismaHousingObligationRepository implements HousingObligationRepos
       obligation: toHousingObligation(obligation),
     };
   }
+
+  async updatePaymentPeriod(
+    paymentId: string,
+    input: {
+      periodYear: number;
+      periodMonth: number;
+      previousPeriodYear: number | null;
+      previousPeriodMonth: number | null;
+      periodCorrectedAt: Date;
+    }
+  ): Promise<HousingPayment> {
+    try {
+      const record = await this.prisma.housingPayment.update({
+        where: { id: paymentId },
+        data: {
+          periodYear: input.periodYear,
+          periodMonth: input.periodMonth,
+          previousPeriodYear: input.previousPeriodYear,
+          previousPeriodMonth: input.previousPeriodMonth,
+          periodCorrectedAt: input.periodCorrectedAt,
+        },
+      });
+      return toHousingPayment(record);
+    } catch (error) {
+      if (isUniqueViolation(error)) {
+        throw new AppError(
+          "HOUSING_PERIOD_CONFLICT",
+          "Ya existe un pago activo para ese período.",
+          409
+        );
+      }
+      throw error;
+    }
+  }
 }
 
 function toHousingPayment(record: PrismaHousingPayment): HousingPayment {
@@ -308,6 +342,9 @@ function toHousingPayment(record: PrismaHousingPayment): HousingPayment {
     installmentNumber: record.installmentNumber,
     periodYear: record.periodYear,
     periodMonth: record.periodMonth,
+    previousPeriodYear: record.previousPeriodYear,
+    previousPeriodMonth: record.previousPeriodMonth,
+    periodCorrectedAt: record.periodCorrectedAt,
     paidAt: record.paidAt,
     voidedAt: record.voidedAt,
     voidIdempotencyKey: record.voidIdempotencyKey,

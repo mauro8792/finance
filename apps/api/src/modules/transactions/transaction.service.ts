@@ -808,6 +808,16 @@ function rejectImmutableLeg(transaction: Transaction, action: "editar" | "anular
     );
   }
 
+  if (transaction.type === "ADJUSTMENT") {
+    throw new AppError(
+      "ADJUSTMENT_IMMUTABLE",
+      action === "editar"
+        ? "No se puede editar una conciliación de saldo de forma individual."
+        : "No se puede anular una conciliación de saldo de forma individual.",
+      400
+    );
+  }
+
   /**
    * P0.15: investment legs stay IMMUTABLE. There is no void path for them;
    * corrections go through the investment lifecycle (mature / renew / cancel).

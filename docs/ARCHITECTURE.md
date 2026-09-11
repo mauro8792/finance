@@ -790,6 +790,7 @@ Ejemplos:
 GET    /api/accounts
 POST   /api/accounts
 GET    /api/accounts/:id/balance
+POST   /api/accounts/:id/reconcile-balance
 PATCH  /api/accounts/:id
 POST   /api/accounts/:id/activate
 POST   /api/accounts/:id/deactivate
@@ -832,6 +833,7 @@ GET    /api/housing/:id/coverage
 GET    /api/housing/:id/payments
 POST   /api/housing/:id/payments
 POST   /api/housing/:id/payments/:paymentId/void   -- P1.2 HOUSING_PAYMENT_VOID
+PATCH  /api/housing/:id/payments/:paymentId/period -- P1.2.1 metadata only
 
 GET    /api/investments
 POST   /api/investments
