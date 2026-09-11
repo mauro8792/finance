@@ -110,6 +110,8 @@ Los movimientos legacy con `paymentMethod = CREDIT_CARD` (típicamente con `acco
 - entran en gasto del período como hoy;
 - no forman parte de `currentCardDebt` / purchases MVP2.
 
+**Clarificación P1.2:** ese path banco aplica al legacy sin `creditCardId`. QuickAdd con Crédito + tarjeta elegida usa F1/P0.5 (`creditCardId`, `accountId` null) — no el path legacy.
+
 Cualquier asociación histórica futura: manual, explícita, **fuera de este P0**.
 
 ---
@@ -486,3 +488,14 @@ Ninguno de estos se “arregla” en silencio: requieren aprobación de Prisma/i
 - `docs/MVP2.md`
 - `docs/MVP2-BACKLOG.md`
 - SDD actualizado en P0.1: `BUSINESS-RULES`, `DATA-MODEL`, `DOMAIN`, `USER-FLOWS`, `ARCHITECTURE`
+
+---
+
+## P1.2 — Decisiones (DONE LOCAL)
+
+Registradas sin alterar F1–F8:
+
+1. **Multi-moneda en una tarjeta:** permitida. Consumos ARS/USD coexisten; deuda/commitment se leen `byCurrency`. Nunca sumar monedas ni FX implícito. F3: pago sin FX; reduce solo la lane de la moneda de la cuenta origen. F6 sin cambio.
+2. **Marca (brand):** selector UX (Visa/MC/Amex/Otra) como string; **sin** enum DB.
+3. **Housing período ≠ pago:** `periodYear`/`periodMonth` independientes de `paidAt` (prepago). Void dedicado `HOUSING_PAYMENT_VOID` (REVERSED, restaura `remainingInstallments`, sin ingreso, idempotente).
+4. **F4 / QuickAdd:** legacy `CREDIT_CARD` sin `creditCardId` = path banco LEAVE. QuickAdd Crédito + tarjeta → F1/P0.5.

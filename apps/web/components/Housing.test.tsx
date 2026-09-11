@@ -12,6 +12,7 @@ const getHousingPayments = vi.fn();
 const createHousing = vi.fn();
 const updateHousing = vi.fn();
 const registerHousingPayment = vi.fn();
+const voidHousingPayment = vi.fn();
 
 class MockApiError extends Error {
   constructor(
@@ -42,6 +43,8 @@ vi.mock("../lib/api", () => ({
   updateHousing: (id: string, payload: unknown) => updateHousing(id, payload),
   registerHousingPayment: (id: string, payload: unknown) =>
     registerHousingPayment(id, payload),
+  voidHousingPayment: (obligationId: string, paymentId: string, payload: unknown) =>
+    voidHousingPayment(obligationId, paymentId, payload),
 }));
 
 const accounts = [
@@ -114,7 +117,10 @@ const payment: HousingPayment = {
   amount: "500.00",
   currency: "USD",
   installmentNumber: 3,
+  periodYear: 2026,
+  periodMonth: 10,
   paidAt,
+  voidedAt: null,
 };
 
 function renderHousing() {
@@ -144,6 +150,7 @@ describe("HousingPage", () => {
     createHousing.mockReset();
     updateHousing.mockReset();
     registerHousingPayment.mockReset();
+    voidHousingPayment.mockReset();
     getAccounts.mockResolvedValue(accounts);
   });
 
@@ -360,7 +367,9 @@ describe("HousingPage", () => {
     await user.click(await screen.findByRole("button", { name: "Registrar cuota" }));
     expect(await screen.findByLabelText("Cuenta de pago")).toBeTruthy();
     expect((screen.getByLabelText("Monto") as HTMLInputElement).value).toBe("500.00");
-    expect(screen.getByLabelText("Fecha")).toBeTruthy();
+    expect(screen.getByLabelText("Fecha de pago")).toBeTruthy();
+    expect(screen.getByLabelText("Año del período")).toBeTruthy();
+    expect(screen.getByLabelText("Mes del período")).toBeTruthy();
     expect(screen.getByLabelText("Número de cuota")).toBeTruthy();
   });
 
@@ -378,6 +387,9 @@ describe("HousingPage", () => {
     renderHousing();
     await user.click(await screen.findByRole("button", { name: "Registrar cuota" }));
     await user.selectOptions(screen.getByLabelText("Cuenta de pago"), "acc-usd");
+    await user.clear(screen.getByLabelText("Año del período"));
+    await user.type(screen.getByLabelText("Año del período"), "2026");
+    await user.selectOptions(screen.getByLabelText("Mes del período"), "10");
     await user.type(screen.getByLabelText("Número de cuota"), "3");
     await user.click(screen.getByRole("button", { name: "Registrar pago" }));
 
@@ -388,12 +400,43 @@ describe("HousingPage", () => {
           accountId: "acc-usd",
           amount: "500.00",
           installmentNumber: 3,
+          periodYear: 2026,
+          periodMonth: 10,
         })
       );
     });
     expect(getHousing.mock.calls.length).toBeGreaterThanOrEqual(2);
     expect(getHousingCoverage.mock.calls.length).toBeGreaterThanOrEqual(2);
     expect(getHousingPayments.mock.calls.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("shows period in history and voids a payment with confirm copy", async () => {
+    const user = userEvent.setup();
+    getHousing.mockResolvedValue([apto]);
+    mockCoverageAndPayments({
+      "h-1": { coverage: coverageNormal, payments: [payment] },
+    });
+    voidHousingPayment.mockResolvedValue({
+      payment: { ...payment, voidedAt: "2026-09-11T12:00:00.000Z" },
+      remainingInstallments: 12,
+      isActive: true,
+    });
+    vi.stubGlobal("crypto", { randomUUID: () => "void-key-1" });
+
+    renderHousing();
+    expect(await screen.findByText("Octubre 2026")).toBeTruthy();
+    expect(screen.getByText(/Pagada el/)).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Anular registro" }));
+    expect(
+      screen.getByText("El registro original se conservará en el historial.")
+    ).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Confirmar anulación" }));
+
+    await waitFor(() => {
+      expect(voidHousingPayment).toHaveBeenCalledWith("h-1", "pay-1", {
+        idempotencyKey: "void-key-1",
+      });
+    });
   });
 
   it("shows a readable payment backend error", async () => {
@@ -457,15 +500,31 @@ describe("HousingPage", () => {
         coverage: coverageNormal,
         payments: [
           payment,
-          { ...payment, id: "pay-2", installmentNumber: null, amount: "400.00" },
+          {
+            ...payment,
+            id: "pay-2",
+            installmentNumber: null,
+            periodYear: null,
+            periodMonth: null,
+            amount: "400.00",
+          },
+          {
+            ...payment,
+            id: "pay-3",
+            installmentNumber: 5,
+            periodYear: null,
+            periodMonth: null,
+            amount: "300.00",
+          },
         ],
       },
     });
     renderHousing();
-    expect((await screen.findAllByText("15 ago 2026")).length).toBe(2);
+    expect((await screen.findAllByText(/Pagada el 15 ago 2026/)).length).toBe(3);
     expect(screen.getAllByText("USD 500,00").length).toBeGreaterThan(0);
-    expect(screen.getByText("Cuota 3")).toBeTruthy();
+    expect(screen.getByText("Octubre 2026")).toBeTruthy();
+    expect(screen.getByText("Cuota 5")).toBeTruthy();
     expect(screen.getByText("USD 400,00")).toBeTruthy();
-    expect(screen.getAllByText(/Cuota \d+/).length).toBe(1);
+    expect(screen.getAllByText(/^Cuota \d+$/).length).toBe(1);
   });
 });

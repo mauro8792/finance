@@ -38,6 +38,7 @@ import type {
   ConfirmRecurringChargeResult,
   RecurringChargeOutlook,
   RegisterHousingPaymentRequest,
+  VoidHousingPaymentRequest,
   RenewInvestmentRequest,
   RenewInvestmentResult,
   SimulationRequest,
@@ -352,6 +353,20 @@ export async function registerHousingPayment(
     method: "POST",
     body: JSON.stringify(payload),
   });
+}
+
+export async function voidHousingPayment(
+  obligationId: string,
+  paymentId: string,
+  payload: VoidHousingPaymentRequest
+): Promise<HousingPaymentResult> {
+  return requestJson<HousingPaymentResult>(
+    `/api/housing/${obligationId}/payments/${paymentId}/void`,
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }
+  );
 }
 
 export async function getInvestments(): Promise<Investment[]> {

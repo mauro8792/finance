@@ -13,6 +13,7 @@ export function createHousingRouter(controller: HousingController): Router {
   router.get("/:id/coverage", controller.getCoverage);
   router.get("/:id/payments", controller.listPayments);
   router.post("/:id/payments", controller.registerPayment);
+  router.post("/:id/payments/:paymentId/void", controller.voidPayment);
   router.get("/:id", controller.getById);
   router.patch("/:id", controller.update);
   return router;

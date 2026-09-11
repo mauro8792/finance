@@ -9,6 +9,16 @@ export const CREDIT_CARD_FEE_STATUSES = [
 
 export type CreditCardFeeStatus = (typeof CREDIT_CARD_FEE_STATUSES)[number];
 
+/** UX selector options. Custom brands are stored as free text (max 40). */
+export const CREDIT_CARD_BRANDS = [
+  "Visa",
+  "Mastercard",
+  "American Express",
+  "Otra",
+] as const;
+
+export type CreditCardBrandOption = (typeof CREDIT_CARD_BRANDS)[number];
+
 export type CreditCard = {
   id: string;
   userId: string;

@@ -1,7 +1,10 @@
 import { CURRENCIES } from "shared";
 import { z } from "zod";
 import { OptionalNullablePositiveMoneyAmountSchema } from "../../shared/money/amount-schema.js";
-import { CREDIT_CARD_FEE_STATUSES } from "./credit-card.types.js";
+import {
+  CREDIT_CARD_BRANDS,
+  CREDIT_CARD_FEE_STATUSES,
+} from "./credit-card.types.js";
 
 export const CurrencySchema = z.enum(CURRENCIES, {
   error: "La moneda debe ser ARS o USD.",
@@ -22,10 +25,27 @@ const NullableDayOfMonthSchema = z.union([DayOfMonthSchema, z.null()]);
 
 const FeeExpectedAmountSchema = OptionalNullablePositiveMoneyAmountSchema;
 
+const BrandSchema = z
+  .string()
+  .trim()
+  .min(1, "La marca es obligatoria.")
+  .max(40, "La marca no puede superar 40 caracteres.")
+  .refine(
+    (value) => {
+      const known = CREDIT_CARD_BRANDS.find(
+        (item) => item.toLowerCase() === value.toLowerCase()
+      );
+      return !(known === "Otra");
+    },
+    {
+      message: "Indicá el nombre de la marca cuando elegís Otra.",
+    }
+  );
+
 export const CreateCreditCardSchema = z.object({
   name: z.string().trim().min(1, "El nombre es obligatorio.").max(120),
   issuer: z.string().trim().min(1, "El banco/emisor es obligatorio.").max(120),
-  brand: z.string().trim().min(1, "La marca es obligatoria.").max(40),
+  brand: BrandSchema,
   currency: CurrencySchema,
   closingDay: NullableDayOfMonthSchema.optional(),
   dueDay: NullableDayOfMonthSchema.optional(),
@@ -44,7 +64,7 @@ export const UpdateCreditCardSchema = z
       .min(1, "El banco/emisor es obligatorio.")
       .max(120)
       .optional(),
-    brand: z.string().trim().min(1, "La marca es obligatoria.").max(40).optional(),
+    brand: BrandSchema.optional(),
     currency: CurrencySchema.optional(),
     closingDay: NullableDayOfMonthSchema.optional(),
     dueDay: NullableDayOfMonthSchema.optional(),

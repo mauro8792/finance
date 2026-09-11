@@ -14,7 +14,8 @@ import {
   recordCorrection,
 } from "../corrections/correction.repository.js";
 import {
-  computeCurrentCardDebt,
+  computeCurrentCardDebtByCurrency,
+  computeCurrentCardDebtForCurrency,
   deriveStatementPaymentStatus,
   statementTargetAmount,
 } from "../credit-cards/credit-card-debt.js";
@@ -163,14 +164,6 @@ export class PrismaCreditCardPaymentRepository
             400
           );
         }
-        if (account.currency !== card.currency) {
-          throw new AppError(
-            "VALIDATION_ERROR",
-            "La moneda de la cuenta debe coincidir con la de la tarjeta (sin FX en P0.10).",
-            400
-          );
-        }
-
         const debtRows = await tx.transaction.findMany({
           where: {
             userId: input.userId,
@@ -179,11 +172,27 @@ export class PrismaCreditCardPaymentRepository
             type: { in: ["EXPENSE", "CREDIT_CARD_PAYMENT", "REIMBURSEMENT"] },
           },
         });
-        const currentDebt = computeCurrentCardDebt(
-          debtRows.map((row) => toTransaction(row))
+        // P1.2: debt check is per payment currency (account currency). Never
+        // compare against a cross-currency aggregate. FX remains unsupported.
+        const mapped = debtRows.map((row) => toTransaction(row));
+        const currentDebt = computeCurrentCardDebtForCurrency(
+          mapped,
+          account.currency as Currency
         );
         const amountCents = toCents(input.amount);
         if (amountCents > toCents(currentDebt)) {
+          const otherDebt = computeCurrentCardDebtByCurrency(mapped).filter(
+            (item) => item.currency !== account.currency
+          );
+          if (toCents(currentDebt) <= 0n && otherDebt.length > 0) {
+            throw new AppError(
+              "CURRENCY_MISMATCH",
+              `Moneda incompatible: la cuenta es ${account.currency} pero la deuda de la tarjeta está en ${otherDebt
+                .map((item) => item.currency)
+                .join(", ")} (sin FX).`,
+              400
+            );
+          }
           throw new AppError(
             "VALIDATION_ERROR",
             `El pago supera la deuda actual (${currentDebt}).`,

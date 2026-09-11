@@ -48,6 +48,21 @@ export const HousingIdParamsSchema = z.object({
   id: z.string().uuid("El id debe ser un UUID."),
 });
 
+export const HousingPaymentIdParamsSchema = z.object({
+  id: z.string().uuid("El id debe ser un UUID."),
+  paymentId: z.string().uuid("El paymentId debe ser un UUID."),
+});
+
+export const VoidHousingPaymentSchema = z
+  .object({
+    idempotencyKey: z
+      .string()
+      .trim()
+      .min(8, { error: "idempotencyKey debe tener al menos 8 caracteres." })
+      .max(128, { error: "idempotencyKey demasiado largo." }),
+  })
+  .strict();
+
 export const RegisterHousingPaymentSchema = z
   .object({
     accountId: z.string().uuid("El accountId debe ser un UUID."),
@@ -58,6 +73,16 @@ export const RegisterHousingPaymentSchema = z
     installmentNumber: z
       .number({ error: "installmentNumber debe ser un entero." })
       .int("installmentNumber debe ser un entero.")
+      .nullable()
+      .optional(),
+    periodYear: z
+      .number({ error: "periodYear debe ser un entero." })
+      .int("periodYear debe ser un entero.")
+      .nullable()
+      .optional(),
+    periodMonth: z
+      .number({ error: "periodMonth debe ser un entero." })
+      .int("periodMonth debe ser un entero.")
       .nullable()
       .optional(),
   })

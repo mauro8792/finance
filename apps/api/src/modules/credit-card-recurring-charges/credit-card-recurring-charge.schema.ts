@@ -48,6 +48,7 @@ export const CreateCreditCardRecurringChargeSchema = z.object({
     .trim()
     .min(1, "description es obligatoria.")
     .max(255),
+  currency: z.enum(["ARS", "USD"]).optional(),
   expectedAmount: OptionalVariableAmountSchema,
   dayOfMonthHint: NullableDayOfMonthHintSchema.optional(),
   notes: z.string().max(5000).nullable().optional(),

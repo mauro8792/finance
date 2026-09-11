@@ -190,6 +190,10 @@ class MemoryHousingRepository implements HousingObligationRepository {
       const createdTx = await this.transactions.create(transaction);
       const createdPayment: HousingPayment = {
         ...payment,
+        periodYear: payment.periodYear ?? null,
+        periodMonth: payment.periodMonth ?? null,
+        voidedAt: null,
+        voidIdempotencyKey: null,
         createdAt: new Date(),
       };
       this.payments.set(createdPayment.id, createdPayment);
@@ -216,6 +220,10 @@ class MemoryHousingRepository implements HousingObligationRepository {
       this.transactions.items.splice(0, this.transactions.items.length, ...transactionSnapshot);
       throw error;
     }
+  }
+
+  async voidPaymentAtomic(): Promise<never> {
+    throw new Error("voidPaymentAtomic not used in this test double");
   }
 }
 
@@ -630,6 +638,8 @@ test("HousingService registerPayment rolls back when remaining cannot decrement"
           amount: "500.00",
           currency: "USD",
           installmentNumber: null,
+          periodYear: null,
+          periodMonth: null,
           paidAt: new Date(),
         },
         {
@@ -745,6 +755,8 @@ test("HousingService persists a fictional housing payment on PostgreSQL", async 
           amount: "500.00",
           currency: "USD",
           installmentNumber: null,
+          periodYear: null,
+          periodMonth: null,
           paidAt: new Date(),
         },
         {

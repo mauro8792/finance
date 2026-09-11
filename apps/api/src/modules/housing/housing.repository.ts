@@ -1,9 +1,17 @@
 import type {
   HousingObligation as PrismaHousingObligation,
   HousingPayment as PrismaHousingPayment,
+  Prisma,
 } from "@prisma/client";
 import type { Currency } from "shared";
 import { getPrismaClient } from "../../shared/db/prisma.js";
+import { AppError } from "../../shared/errors/app-error.js";
+import {
+  assertCorrectionTarget,
+  findCorrectionByKey,
+  isUniqueViolation,
+  recordCorrection,
+} from "../corrections/correction.repository.js";
 import { toCreateData, toTransaction } from "../transactions/transaction.repository.js";
 import type {
   CreateHousingObligationInput,
@@ -12,9 +20,24 @@ import type {
   HousingObligationRepository,
   HousingPayment,
   UpdateHousingObligationRecord,
+  VoidHousingPaymentAtomicResult,
+  VoidHousingPaymentInput,
 } from "./housing.types.js";
 import { RemainingInstallmentsConflictError } from "./housing.types.js";
 import type { CreateTransactionInput } from "../transactions/transaction.types.js";
+
+type LockedObligation = {
+  id: string;
+  user_id: string;
+  remaining_installments: number;
+};
+
+type LockedTx = {
+  id: string;
+  user_id: string;
+  type: string;
+  status: string;
+};
 
 export class PrismaHousingObligationRepository implements HousingObligationRepository {
   constructor(private readonly prisma = getPrismaClient()) {}
@@ -98,6 +121,8 @@ export class PrismaHousingObligationRepository implements HousingObligationRepos
           amount: payment.amount,
           currency: payment.currency,
           installmentNumber: payment.installmentNumber,
+          periodYear: payment.periodYear,
+          periodMonth: payment.periodMonth,
           paidAt: payment.paidAt,
         },
       });
@@ -120,6 +145,156 @@ export class PrismaHousingObligationRepository implements HousingObligationRepos
       obligation: toHousingObligation(records.obligation),
     };
   }
+
+  async voidPaymentAtomic(
+    input: VoidHousingPaymentInput
+  ): Promise<VoidHousingPaymentAtomicResult> {
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const replay = await findCorrectionByKey(
+          tx,
+          input.userId,
+          input.idempotencyKey
+        );
+        if (replay) {
+          assertCorrectionTarget(replay, "HOUSING_PAYMENT_VOID", input.paymentId);
+          return this.replayPaymentVoid(tx, input);
+        }
+
+        const obligations = await tx.$queryRaw<LockedObligation[]>`
+          SELECT id, user_id, remaining_installments
+          FROM housing_obligations
+          WHERE id = ${input.obligationId}::uuid
+          FOR UPDATE
+        `;
+        const obligationRow = obligations[0];
+        if (!obligationRow || obligationRow.user_id !== input.userId) {
+          throw new AppError("NOT_FOUND", "La obligación de vivienda no existe.", 404);
+        }
+
+        const payment = await tx.housingPayment.findUnique({
+          where: { id: input.paymentId },
+        });
+        if (
+          !payment ||
+          payment.housingObligationId !== input.obligationId
+        ) {
+          throw new AppError("NOT_FOUND", "Pago de vivienda no encontrado.", 404);
+        }
+
+        const txs = await tx.$queryRaw<LockedTx[]>`
+          SELECT id, user_id, type::text AS type, status::text AS status
+          FROM transactions
+          WHERE id = ${payment.transactionId}::uuid
+          FOR UPDATE
+        `;
+        const lockedTx = txs[0];
+        if (!lockedTx || lockedTx.user_id !== input.userId) {
+          throw new AppError("NOT_FOUND", "Pago de vivienda no encontrado.", 404);
+        }
+
+        if (payment.voidedAt != null || lockedTx.status !== "ACTIVE") {
+          // Concurrent same-key void: the winner already recorded the correction.
+          const lateReplay = await findCorrectionByKey(
+            tx,
+            input.userId,
+            input.idempotencyKey
+          );
+          if (lateReplay) {
+            assertCorrectionTarget(lateReplay, "HOUSING_PAYMENT_VOID", input.paymentId);
+            return this.replayPaymentVoid(tx, input);
+          }
+          throw new AppError(
+            "HOUSING_PAYMENT_ALREADY_VOIDED",
+            "El pago de vivienda ya está anulado.",
+            409
+          );
+        }
+
+        const reversedTx = await tx.transaction.update({
+          where: { id: payment.transactionId },
+          data: { status: "REVERSED" },
+        });
+
+        const voidedPayment = await tx.housingPayment.update({
+          where: { id: payment.id },
+          data: {
+            voidedAt: new Date(),
+            voidIdempotencyKey: input.idempotencyKey,
+          },
+        });
+
+        const obligation = await tx.housingObligation.update({
+          where: { id: input.obligationId },
+          data: { remainingInstallments: { increment: 1 } },
+        });
+
+        await recordCorrection(tx, {
+          userId: input.userId,
+          idempotencyKey: input.idempotencyKey,
+          kind: "HOUSING_PAYMENT_VOID",
+          targetId: input.paymentId,
+          resultStatus: "REVERSED",
+          result: {
+            paymentId: input.paymentId,
+            housingObligationId: input.obligationId,
+            transactionId: payment.transactionId,
+            status: "REVERSED",
+          },
+        });
+
+        return {
+          created: true,
+          payment: toHousingPayment(voidedPayment),
+          transaction: toTransaction(reversedTx),
+          obligation: toHousingObligation(obligation),
+        };
+      });
+    } catch (error) {
+      if (isUniqueViolation(error)) {
+        const replay = await findCorrectionByKey(
+          this.prisma,
+          input.userId,
+          input.idempotencyKey
+        );
+        if (replay) {
+          assertCorrectionTarget(replay, "HOUSING_PAYMENT_VOID", input.paymentId);
+          return this.replayPaymentVoid(this.prisma, input);
+        }
+      }
+      throw error;
+    }
+  }
+
+  private async replayPaymentVoid(
+    db: Prisma.TransactionClient | ReturnType<typeof getPrismaClient>,
+    input: VoidHousingPaymentInput
+  ): Promise<VoidHousingPaymentAtomicResult> {
+    const payment = await db.housingPayment.findUnique({
+      where: { id: input.paymentId },
+    });
+    if (
+      !payment ||
+      payment.housingObligationId !== input.obligationId
+    ) {
+      throw new AppError("NOT_FOUND", "Pago de vivienda no encontrado.", 404);
+    }
+    const reversedTx = await db.transaction.findUniqueOrThrow({
+      where: { id: payment.transactionId },
+    });
+    const obligation = await db.housingObligation.findUniqueOrThrow({
+      where: { id: input.obligationId },
+    });
+    if (obligation.userId !== input.userId) {
+      throw new AppError("NOT_FOUND", "La obligación de vivienda no existe.", 404);
+    }
+    return {
+      created: false,
+      payment: toHousingPayment(payment),
+      transaction: toTransaction(reversedTx),
+      obligation: toHousingObligation(obligation),
+    };
+  }
 }
 
 function toHousingPayment(record: PrismaHousingPayment): HousingPayment {
@@ -131,7 +306,11 @@ function toHousingPayment(record: PrismaHousingPayment): HousingPayment {
     amount: record.amount.toFixed(2),
     currency: record.currency as Currency,
     installmentNumber: record.installmentNumber,
+    periodYear: record.periodYear,
+    periodMonth: record.periodMonth,
     paidAt: record.paidAt,
+    voidedAt: record.voidedAt,
+    voidIdempotencyKey: record.voidIdempotencyKey,
     createdAt: record.createdAt,
   };
 }

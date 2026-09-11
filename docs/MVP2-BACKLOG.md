@@ -538,6 +538,27 @@ y Tarjetas.
 
 ---
 
+## P1.2 — REAL USAGE FIXES
+
+**Estado: DONE LIVE** (API + web + Neon migration aditiva; Render + Vercel).
+
+**Objetivo:** Corregir fricciones reales de uso móvil en tarjetas, QuickAdd crédito,
+deuda multi-moneda y void seguro de pagos de vivienda.
+
+**Entregado:**
+- Marca selector (Visa/MC/Amex/Otra) + editar tarjeta + `+ Agregar tarjeta` siempre
+- Hero de tarjeta sin duplicar deuda/cierre/vencimiento
+- QuickAdd crédito → `creditCardId` + `accountId=null` (infra P0.5)
+- Consumos ARS/USD en la misma tarjeta; `currentCardDebtByCurrency`; nunca sumar monedas
+- Recurrentes con moneda explícita (template sin impacto hasta confirm)
+- Housing: `periodYear`/`periodMonth` ≠ `paidAt`; void P0.15 (`HOUSING_PAYMENT_VOID`)
+
+**Migration:** `20260911120000_p12_housing_void_and_period` (aditiva).
+
+**No tocó:** cauciones/inversiones, Neon prod, deploys, datos productivos.
+
+---
+
 | ID | Ítem | Notas |
 |----|------|--------|
 | P1.1 | Tarjeta principal + matching IA/voz | §3.3; siempre confirmación — pendiente |

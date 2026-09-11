@@ -43,7 +43,11 @@ export type HousingPayment = {
   amount: string;
   currency: Currency;
   installmentNumber: number | null;
+  periodYear: number | null;
+  periodMonth: number | null;
   paidAt: Date;
+  voidedAt: Date | null;
+  voidIdempotencyKey: string | null;
   createdAt: Date;
 };
 
@@ -55,7 +59,23 @@ export type CreateHousingPaymentRecord = {
   amount: string;
   currency: Currency;
   installmentNumber: number | null;
+  periodYear: number | null;
+  periodMonth: number | null;
   paidAt: Date;
+};
+
+export type VoidHousingPaymentInput = {
+  userId: string;
+  obligationId: string;
+  paymentId: string;
+  idempotencyKey: string;
+};
+
+export type VoidHousingPaymentAtomicResult = {
+  created: boolean;
+  payment: HousingPayment;
+  transaction: Transaction;
+  obligation: HousingObligation;
 };
 
 export class RemainingInstallmentsConflictError extends Error {
@@ -80,4 +100,11 @@ export type HousingObligationRepository = {
     transaction: Transaction;
     obligation: HousingObligation;
   }>;
+  /**
+   * P1.2: reverses the HOUSING_PAYMENT leg, marks the payment voided and
+   * restores remainingInstallments. Reserve balance restores from ACTIVE txs.
+   */
+  voidPaymentAtomic(
+    input: VoidHousingPaymentInput
+  ): Promise<VoidHousingPaymentAtomicResult>;
 };

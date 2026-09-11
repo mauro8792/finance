@@ -618,17 +618,25 @@ test("P0.5 CASO E — reject missing / foreign / inactive / currency mismatch ca
       error instanceof AppError && error.code === "CREDIT_CARD_INACTIVE"
   );
 
-  await assert.rejects(
-    () =>
-      ctx.txService.createExpense(ctx.userId, {
-        amount: "10.00",
-        currency: "ARS",
-        creditCardId: usdCard.id,
-        categoryId: ctx.category.id,
-      }),
-    (error: unknown) =>
-      error instanceof AppError && error.code === "CURRENCY_MISMATCH"
+  // P1.2: ARS spend on a USD-primary card is allowed; debt is tracked per currency.
+  const cross = await ctx.txService.createExpense(ctx.userId, {
+    amount: "10.00",
+    currency: "ARS",
+    creditCardId: usdCard.id,
+    categoryId: ctx.category.id,
+  });
+  assert.equal(cross.currency, "ARS");
+  assert.equal(cross.creditCardId, usdCard.id);
+  assert.equal(cross.accountId, null);
+
+  const commitments = await ctx.cardService.getCommitments(
+    ctx.userId,
+    usdCard.id
   );
+  assert.equal(commitments.currentCardDebt, "0.00"); // primary USD lane empty
+  assert.deepEqual(commitments.currentCardDebtByCurrency, [
+    { currency: "ARS", amount: "10.00" },
+  ]);
 });
 
 test("P0.5 CASO F — MVP1 bank expense request still works", async () => {

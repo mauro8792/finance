@@ -10,10 +10,13 @@ import {
   getCreditCardCommitments,
   getCreditCards,
   getRecurringChargeOutlook,
+  updateCreditCard,
 } from "../lib/api";
 import {
+  CREDIT_CARD_BRAND_OPTIONS,
   FEE_STATUSES,
   RECURRING_CHARGE_KINDS,
+  brandOptionFromStored,
   creditCardFormError,
   feeStatusLabel,
   feeStatusTone,
@@ -22,6 +25,8 @@ import {
   nextDueDate,
   occurrenceKeyFor,
   recurringChargeKindLabel,
+  resolveBrandValue,
+  type CreditCardBrandOption,
 } from "../lib/credit-cards";
 import { currentYearMonth } from "../lib/format-money";
 import { isValidAmount, toApiAmount } from "../lib/quick-add";
@@ -31,6 +36,7 @@ import type {
   CreditCardFeeStatus,
   CreditCardRecurringChargeKind,
   Currency,
+  CurrencyAmount,
   RecurringChargeOutlookItem,
 } from "../lib/types";
 import { PrivacyToggle } from "./PrivacyToggle";
@@ -48,7 +54,7 @@ type ConfirmTarget = {
   card: CreditCard;
 };
 
-type Panel = "create-card" | "create-recurring" | null;
+type Panel = "create-card" | "create-recurring" | "edit-card" | null;
 
 export function CreditCardsPage() {
   const queryClient = useQueryClient();
@@ -124,7 +130,22 @@ export function CreditCardsPage() {
 
   return (
     <section className={styles.page} aria-label="Tarjetas">
-      <PageHeader kicker="Tarjetas" title="Tarjetas" actions={<PrivacyToggle />} />
+      <PageHeader
+        kicker="Tarjetas"
+        title="Tarjetas"
+        actions={
+          <div className={styles.headerActions}>
+            <button
+              type="button"
+              className={styles.headerCta}
+              onClick={() => setPanel("create-card")}
+            >
+              + Agregar tarjeta
+            </button>
+            <PrivacyToggle />
+          </div>
+        }
+      />
 
       {panel === "create-card" ? (
         <CreateCardForm
@@ -179,19 +200,30 @@ export function CreditCardsPage() {
 
           {selectedCard ? (
             <div className={styles.detail}>
-              <CardDetail
-                card={selectedCard}
-                commitments={commitmentsQuery.data?.[selectedCard.id] ?? null}
-                outlook={outlookQuery.data ?? null}
-                outlookLoading={outlookQuery.isPending}
-                outlookError={outlookQuery.isError}
-                categoryNames={Object.fromEntries(
-                  expenseCategories.map((category) => [category.id, category.name])
-                )}
-                onRetryOutlook={() => outlookQuery.refetch()}
-                onConfirm={(item) => setConfirmTarget({ item, card: selectedCard })}
-                onAddRecurring={() => setPanel("create-recurring")}
-              />
+              {panel === "edit-card" ? (
+                <EditCardForm
+                  card={selectedCard}
+                  onClose={() => setPanel(null)}
+                  onSaved={async () => {
+                    await refreshAll();
+                    setPanel(null);
+                  }}
+                />
+              ) : (
+                <CardDetail
+                  card={selectedCard}
+                  outlook={outlookQuery.data ?? null}
+                  outlookLoading={outlookQuery.isPending}
+                  outlookError={outlookQuery.isError}
+                  categoryNames={Object.fromEntries(
+                    expenseCategories.map((category) => [category.id, category.name])
+                  )}
+                  onRetryOutlook={() => outlookQuery.refetch()}
+                  onConfirm={(item) => setConfirmTarget({ item, card: selectedCard })}
+                  onAddRecurring={() => setPanel("create-recurring")}
+                  onEdit={() => setPanel("edit-card")}
+                />
+              )}
 
               {panel === "create-recurring" ? (
                 <CreateRecurringForm
@@ -224,6 +256,48 @@ export function CreditCardsPage() {
   );
 }
 
+function debtLines(
+  commitments: CreditCardCommitments | null,
+  cardCurrency: Currency
+): CurrencyAmount[] {
+  if (!commitments) {
+    return [];
+  }
+  const byCurrency = commitments.currentCardDebtByCurrency;
+  if (byCurrency && byCurrency.length > 0) {
+    return byCurrency;
+  }
+  return [{ currency: cardCurrency, amount: commitments.currentCardDebt }];
+}
+
+function CardDebtValue({
+  commitments,
+  currency,
+}: {
+  commitments: CreditCardCommitments | null;
+  currency: Currency;
+}) {
+  if (!commitments) {
+    return <>—</>;
+  }
+  const lines = debtLines(commitments, currency);
+  if (lines.length === 0) {
+    return <Money amount="0.00" currency={currency} />;
+  }
+  if (lines.length === 1) {
+    return <Money amount={lines[0]!.amount} currency={lines[0]!.currency} />;
+  }
+  return (
+    <span className={styles.debtStack}>
+      {lines.map((line) => (
+        <span key={line.currency}>
+          <Money amount={line.amount} currency={line.currency} />
+        </span>
+      ))}
+    </span>
+  );
+}
+
 function CardHero({
   card,
   commitments,
@@ -235,6 +309,8 @@ function CardHero({
   selected: boolean;
   onSelect: () => void;
 }) {
+  const incomplete =
+    !card.configComplete || card.closingDay == null || card.dueDay == null;
   const closingLabel = card.closingDay
     ? formatCalendarDate(nextClosingDate(card.closingDay))
     : "Sin configurar";
@@ -259,6 +335,9 @@ function CardHero({
         </div>
         <div className={styles.heroBadges}>
           {card.isPrimary ? <StatusBadge label="Principal" tone="primary" /> : null}
+          {incomplete ? (
+            <StatusBadge label="Configuración incompleta" tone="muted" />
+          ) : null}
           <StatusBadge
             label={feeStatusLabel(card.feeStatus)}
             tone={feeStatusTone(card.feeStatus)}
@@ -270,11 +349,7 @@ function CardHero({
         <div>
           <p className={styles.heroStatLabel}>Deuda actual</p>
           <p className={styles.heroStatValue}>
-            {commitments ? (
-              <Money amount={commitments.currentCardDebt} currency={card.currency} />
-            ) : (
-              "—"
-            )}
+            <CardDebtValue commitments={commitments} currency={card.currency} />
           </p>
         </div>
         <div>
@@ -292,7 +367,6 @@ function CardHero({
 
 function CardDetail({
   card,
-  commitments,
   outlook,
   outlookLoading,
   outlookError,
@@ -300,9 +374,9 @@ function CardDetail({
   onRetryOutlook,
   onConfirm,
   onAddRecurring,
+  onEdit,
 }: {
   card: CreditCard;
-  commitments: CreditCardCommitments | null;
   outlook: import("../lib/types").RecurringChargeOutlook | null;
   outlookLoading: boolean;
   outlookError: boolean;
@@ -310,15 +384,10 @@ function CardDetail({
   onRetryOutlook: () => void;
   onConfirm: (item: RecurringChargeOutlookItem) => void;
   onAddRecurring: () => void;
+  onEdit: () => void;
 }) {
-  const closingLabel = card.closingDay
-    ? formatCalendarDate(nextClosingDate(card.closingDay))
-    : "Sin configurar";
-  const dueLabel =
-    card.closingDay && card.dueDay
-      ? formatCalendarDate(nextDueDate(card.dueDay, nextClosingDate(card.closingDay)))
-      : "Sin configurar";
-
+  const incomplete =
+    !card.configComplete || card.closingDay == null || card.dueDay == null;
   const pendingHint =
     outlook && outlook.variableCountPending > 0
       ? `+ ${outlook.variableCountPending} variable${outlook.variableCountPending === 1 ? "" : "s"}`
@@ -329,19 +398,20 @@ function CardDetail({
       <SectionHeader
         title={card.name}
         description={`${card.issuer} · ${card.brand}`}
+        action={
+          <button type="button" className={styles.textBtn} onClick={onEdit}>
+            Editar tarjeta
+          </button>
+        }
       />
 
+      {incomplete ? (
+        <p className={styles.configHint}>
+          Configuración incompleta — completá cierre y vencimiento.
+        </p>
+      ) : null}
+
       <div className={styles.metrics}>
-        <Metric
-          label="Deuda actual"
-          value={
-            commitments ? (
-              <Money amount={commitments.currentCardDebt} currency={card.currency} />
-            ) : (
-              "—"
-            )
-          }
-        />
         <Metric
           label="Recurrentes estimados pendientes"
           value={
@@ -355,8 +425,6 @@ function CardDetail({
           }
           hint={pendingHint}
         />
-        <Metric label="Próximo cierre" value={closingLabel} compact />
-        <Metric label="Próximo vencimiento" value={dueLabel} compact />
       </div>
 
       <SectionHeader
@@ -561,6 +629,53 @@ function ConfirmChargeSheet({
   );
 }
 
+function BrandFields({
+  idPrefix,
+  brandOption,
+  customBrand,
+  onBrandOption,
+  onCustomBrand,
+}: {
+  idPrefix: string;
+  brandOption: CreditCardBrandOption;
+  customBrand: string;
+  onBrandOption: (value: CreditCardBrandOption) => void;
+  onCustomBrand: (value: string) => void;
+}) {
+  return (
+    <>
+      <div className={styles.field}>
+        <label htmlFor={`${idPrefix}-brand`}>Marca</label>
+        <select
+          id={`${idPrefix}-brand`}
+          value={brandOption}
+          onChange={(e) => onBrandOption(e.target.value as CreditCardBrandOption)}
+          required
+        >
+          {CREDIT_CARD_BRAND_OPTIONS.map((option) => (
+            <option key={option} value={option}>
+              {option}
+            </option>
+          ))}
+        </select>
+      </div>
+      {brandOption === "Otra" ? (
+        <div className={styles.field}>
+          <label htmlFor={`${idPrefix}-brand-custom`}>Nombre de marca</label>
+          <input
+            id={`${idPrefix}-brand-custom`}
+            value={customBrand}
+            onChange={(e) => onCustomBrand(e.target.value)}
+            required
+            maxLength={40}
+            placeholder="Ej. Naranja X"
+          />
+        </div>
+      ) : null}
+    </>
+  );
+}
+
 function CreateCardForm({
   onClose,
   onSaved,
@@ -570,7 +685,8 @@ function CreateCardForm({
 }) {
   const [name, setName] = useState("");
   const [issuer, setIssuer] = useState("");
-  const [brand, setBrand] = useState("");
+  const [brandOption, setBrandOption] = useState<CreditCardBrandOption>("Visa");
+  const [customBrand, setCustomBrand] = useState("");
   const [currency, setCurrency] = useState<Currency>("ARS");
   const [closingDay, setClosingDay] = useState("");
   const [dueDay, setDueDay] = useState("");
@@ -578,16 +694,21 @@ function CreateCardForm({
   const [error, setError] = useState<string | null>(null);
 
   const mutation = useMutation({
-    mutationFn: () =>
-      createCreditCard({
+    mutationFn: () => {
+      const brand = resolveBrandValue(brandOption, customBrand);
+      if (!brand) {
+        throw new Error("Indicá la marca de la tarjeta.");
+      }
+      return createCreditCard({
         name: name.trim(),
         issuer: issuer.trim(),
-        brand: brand.trim(),
+        brand,
         currency,
         closingDay: closingDay ? Number(closingDay) : null,
         dueDay: dueDay ? Number(dueDay) : null,
         feeStatus,
-      }),
+      });
+    },
     onSuccess: async () => {
       await onSaved();
     },
@@ -607,7 +728,13 @@ function CreateCardForm({
       <div className={styles.formGrid}>
         <div className={styles.field}>
           <label htmlFor="card-name">Nombre</label>
-          <input id="card-name" value={name} onChange={(e) => setName(e.target.value)} required />
+          <input
+            id="card-name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            required
+            placeholder="Visa Santander"
+          />
         </div>
         <div className={styles.field}>
           <label htmlFor="card-issuer">Emisor</label>
@@ -618,10 +745,13 @@ function CreateCardForm({
             required
           />
         </div>
-        <div className={styles.field}>
-          <label htmlFor="card-brand">Marca</label>
-          <input id="card-brand" value={brand} onChange={(e) => setBrand(e.target.value)} required />
-        </div>
+        <BrandFields
+          idPrefix="card"
+          brandOption={brandOption}
+          customBrand={customBrand}
+          onBrandOption={setBrandOption}
+          onCustomBrand={setCustomBrand}
+        />
         <div className={styles.field}>
           <label htmlFor="card-currency">Moneda</label>
           <select
@@ -685,6 +815,161 @@ function CreateCardForm({
   );
 }
 
+function EditCardForm({
+  card,
+  onClose,
+  onSaved,
+}: {
+  card: CreditCard;
+  onClose: () => void;
+  onSaved: () => Promise<void>;
+}) {
+  const initialBrand = brandOptionFromStored(card.brand);
+  const [name, setName] = useState(card.name);
+  const [issuer, setIssuer] = useState(card.issuer);
+  const [brandOption, setBrandOption] = useState<CreditCardBrandOption>(initialBrand.option);
+  const [customBrand, setCustomBrand] = useState(initialBrand.custom);
+  const [closingDay, setClosingDay] = useState(
+    card.closingDay == null ? "" : String(card.closingDay)
+  );
+  const [dueDay, setDueDay] = useState(card.dueDay == null ? "" : String(card.dueDay));
+  const [feeStatus, setFeeStatus] = useState<CreditCardFeeStatus>(card.feeStatus);
+  const [feeExpectedAmount, setFeeExpectedAmount] = useState(card.feeExpectedAmount ?? "");
+  const [feeNotes, setFeeNotes] = useState(card.feeNotes ?? "");
+  const [error, setError] = useState<string | null>(null);
+
+  const mutation = useMutation({
+    mutationFn: () => {
+      const brand = resolveBrandValue(brandOption, customBrand);
+      if (!brand) {
+        throw new Error("Indicá la marca de la tarjeta.");
+      }
+      return updateCreditCard(card.id, {
+        name: name.trim(),
+        issuer: issuer.trim(),
+        brand,
+        closingDay: closingDay ? Number(closingDay) : null,
+        dueDay: dueDay ? Number(dueDay) : null,
+        feeStatus,
+        feeExpectedAmount: feeExpectedAmount.trim() ? feeExpectedAmount.trim() : null,
+        feeNotes: feeNotes.trim() ? feeNotes.trim() : null,
+      });
+    },
+    onSuccess: async () => {
+      await onSaved();
+    },
+    onError: (err) => {
+      setError(creditCardFormError(err));
+    },
+  });
+
+  function handleSubmit(event: FormEvent) {
+    event.preventDefault();
+    mutation.mutate();
+  }
+
+  return (
+    <form className={styles.formPanel} onSubmit={handleSubmit}>
+      <h2 className={styles.formTitle}>Editar tarjeta</h2>
+      <p className={styles.formHint}>Moneda: {card.currency} (no editable)</p>
+      <div className={styles.formGrid}>
+        <div className={styles.field}>
+          <label htmlFor="edit-card-name">Nombre</label>
+          <input
+            id="edit-card-name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            required
+            placeholder="Visa Santander"
+          />
+        </div>
+        <div className={styles.field}>
+          <label htmlFor="edit-card-issuer">Emisor</label>
+          <input
+            id="edit-card-issuer"
+            value={issuer}
+            onChange={(e) => setIssuer(e.target.value)}
+            required
+          />
+        </div>
+        <BrandFields
+          idPrefix="edit-card"
+          brandOption={brandOption}
+          customBrand={customBrand}
+          onBrandOption={setBrandOption}
+          onCustomBrand={setCustomBrand}
+        />
+        <div className={styles.field}>
+          <label htmlFor="edit-card-closing">Día de cierre</label>
+          <input
+            id="edit-card-closing"
+            type="number"
+            min={1}
+            max={31}
+            value={closingDay}
+            onChange={(e) => setClosingDay(e.target.value)}
+            placeholder="Opcional"
+          />
+        </div>
+        <div className={styles.field}>
+          <label htmlFor="edit-card-due">Día de vencimiento</label>
+          <input
+            id="edit-card-due"
+            type="number"
+            min={1}
+            max={31}
+            value={dueDay}
+            onChange={(e) => setDueDay(e.target.value)}
+            placeholder="Opcional"
+          />
+        </div>
+        <div className={styles.field}>
+          <label htmlFor="edit-card-fee">Comisión</label>
+          <select
+            id="edit-card-fee"
+            value={feeStatus}
+            onChange={(e) => setFeeStatus(e.target.value as CreditCardFeeStatus)}
+          >
+            {FEE_STATUSES.map((status) => (
+              <option key={status} value={status}>
+                {feeStatusLabel(status)}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className={styles.field}>
+          <label htmlFor="edit-card-fee-amount">Monto de comisión</label>
+          <input
+            id="edit-card-fee-amount"
+            inputMode="decimal"
+            value={feeExpectedAmount}
+            onChange={(e) => setFeeExpectedAmount(e.target.value)}
+            placeholder="Opcional"
+          />
+        </div>
+        <div className={styles.field}>
+          <label htmlFor="edit-card-fee-notes">Notas de comisión</label>
+          <textarea
+            id="edit-card-fee-notes"
+            value={feeNotes}
+            onChange={(e) => setFeeNotes(e.target.value)}
+            placeholder="Opcional"
+          />
+        </div>
+      </div>
+      {error ? <p className={styles.formError}>{error}</p> : null}
+      <div className={styles.formActions}>
+        <button type="submit" className={styles.primaryCta} disabled={mutation.isPending}>
+          {mutation.isPending ? "Guardando…" : "Guardar cambios"}
+        </button>
+        <button type="button" className={styles.secondaryCta} onClick={onClose}>
+          Cancelar
+        </button>
+      </div>
+    </form>
+  );
+}
+
 function CreateRecurringForm({
   card,
   categories,
@@ -700,6 +985,7 @@ function CreateRecurringForm({
   const [categoryId, setCategoryId] = useState(categories[0]?.id ?? "");
   const [description, setDescription] = useState("");
   const [expectedAmount, setExpectedAmount] = useState("");
+  const [currency, setCurrency] = useState<Currency>(card.currency);
   const [notes, setNotes] = useState("");
   const [error, setError] = useState<string | null>(null);
 
@@ -711,6 +997,7 @@ function CreateRecurringForm({
         categoryId,
         description: description.trim(),
         expectedAmount: expectedAmount.trim() ? expectedAmount.trim() : null,
+        currency,
         notes: notes.trim() ? notes.trim() : null,
       }),
     onSuccess: async () => {
@@ -767,6 +1054,17 @@ function CreateRecurringForm({
             onChange={(e) => setDescription(e.target.value)}
             required
           />
+        </div>
+        <div className={styles.field}>
+          <label htmlFor="rec-currency">Moneda</label>
+          <select
+            id="rec-currency"
+            value={currency}
+            onChange={(e) => setCurrency(e.target.value as Currency)}
+          >
+            <option value="ARS">ARS</option>
+            <option value="USD">USD</option>
+          </select>
         </div>
         <div className={styles.field}>
           <label htmlFor="rec-amount">Monto estimado (opcional)</label>

@@ -7,8 +7,10 @@ import type { Transaction } from "../transactions/transaction.types.js";
 import {
   CreateHousingObligationSchema,
   HousingIdParamsSchema,
+  HousingPaymentIdParamsSchema,
   RegisterHousingPaymentSchema,
   UpdateHousingObligationSchema,
+  VoidHousingPaymentSchema,
 } from "./housing.schema.js";
 import type { HousingService } from "./housing.service.js";
 import type { HousingObligation, HousingPayment } from "./housing.types.js";
@@ -70,12 +72,30 @@ export class HousingController {
       amount: body.amount,
       occurredAt: body.occurredAt ? new Date(body.occurredAt) : undefined,
       installmentNumber: body.installmentNumber,
+      periodYear: body.periodYear,
+      periodMonth: body.periodMonth,
     });
     res.status(201).json({
       payment: toPaymentResponse(result.payment),
       transaction: toTransactionResponse(result.transaction),
       remainingInstallments: result.remainingInstallments,
       isActive: result.isActive,
+    });
+  };
+
+  voidPayment = async (req: Request, res: Response): Promise<void> => {
+    const userId = getAuthUserId(req);
+    const { id, paymentId } = parseValue(HousingPaymentIdParamsSchema, req.params);
+    const body = parseValue(VoidHousingPaymentSchema, req.body);
+    const result = await this.housing.voidPayment(userId, id, paymentId, {
+      idempotencyKey: body.idempotencyKey,
+    });
+    res.status(200).json({
+      created: result.created,
+      payment: toPaymentResponse(result.payment),
+      transaction: toTransactionResponse(result.transaction),
+      remainingInstallments: result.obligation.remainingInstallments,
+      isActive: result.obligation.isActive,
     });
   };
 }
@@ -118,7 +138,10 @@ function toPaymentListResponse(item: HousingPayment) {
     amount: item.amount,
     currency: item.currency,
     installmentNumber: item.installmentNumber,
+    periodYear: item.periodYear,
+    periodMonth: item.periodMonth,
     paidAt: item.paidAt.toISOString(),
+    voidedAt: item.voidedAt ? item.voidedAt.toISOString() : null,
   };
 }
 

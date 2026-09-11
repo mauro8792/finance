@@ -793,11 +793,25 @@ function CardsPreview({ cards }: { cards: CardsData }) {
                     </p>
                   </div>
                   {commitments ? (
-                    <Money
-                      amount={commitments.currentCardDebt}
-                      currency={card.currency}
-                      className={styles.rowAmount}
-                    />
+                    commitments.currentCardDebtByCurrency &&
+                    commitments.currentCardDebtByCurrency.length > 0 ? (
+                      <span className={styles.rowAmountStack}>
+                        {commitments.currentCardDebtByCurrency.map((line) => (
+                          <Money
+                            key={line.currency}
+                            amount={line.amount}
+                            currency={line.currency}
+                            className={styles.rowAmount}
+                          />
+                        ))}
+                      </span>
+                    ) : (
+                      <Money
+                        amount={commitments.currentCardDebt}
+                        currency={card.currency}
+                        className={styles.rowAmount}
+                      />
+                    )
                   ) : (
                     <span className={styles.rowMeta}>Sin datos de deuda</span>
                   )}
@@ -864,10 +878,22 @@ function useCreditCardsData(): CardsData {
     cards,
     commitments: byId,
     debtByCurrency: sumByCurrency(
-      cards.map((card) => ({
-        currency: card.currency,
-        amount: byId[card.id]?.currentCardDebt ?? "0.00",
-      }))
+      cards.flatMap((card) => {
+        const commitments = byId[card.id];
+        if (!commitments) {
+          return [];
+        }
+        const byCurrency = commitments.currentCardDebtByCurrency;
+        if (byCurrency && byCurrency.length > 0) {
+          return byCurrency;
+        }
+        return [
+          {
+            currency: card.currency,
+            amount: commitments.currentCardDebt,
+          },
+        ];
+      })
     ),
     query,
   };

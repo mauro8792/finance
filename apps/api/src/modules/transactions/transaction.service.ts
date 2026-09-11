@@ -83,7 +83,9 @@ export class TransactionService {
         userId,
         input.creditCardId!
       );
-      const currency = requireMatchingCurrency(input.currency, card.currency);
+      // P1.2: card purchases may be ARS or USD independently of card.currency
+      // (primary/billing currency). Debt is always reported per currency.
+      const currency = requireSupportedCurrency(input.currency);
       return this.transactions.create({
         userId,
         accountId: null,
@@ -682,6 +684,13 @@ function isCapitalIncome(transaction: Transaction): boolean {
   return (transaction.metadata as { incomeKind?: unknown }).incomeKind === "CAPITAL";
 }
 
+function requireSupportedCurrency(requested: Currency): Currency {
+  if (!(CURRENCIES as readonly string[]).includes(requested)) {
+    throw new AppError("VALIDATION_ERROR", "La moneda debe ser ARS o USD.", 400);
+  }
+  return requested;
+}
+
 function requireMatchingCurrency(
   requested: Currency,
   accountCurrency: Currency
@@ -693,7 +702,7 @@ function requireMatchingCurrency(
   if (requested !== accountCurrency) {
     throw new AppError(
       "CURRENCY_MISMATCH",
-      "La moneda del movimiento debe coincidir con la moneda de la cuenta o tarjeta.",
+      "La moneda del movimiento debe coincidir con la moneda de la cuenta.",
       400
     );
   }

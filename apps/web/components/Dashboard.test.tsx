@@ -131,6 +131,7 @@ const visa: CreditCard = {
 const visaCommitments: CreditCardCommitments = {
   creditCardId: "card-1",
   currentCardDebt: "125000.00",
+  currentCardDebtByCurrency: [{ currency: "ARS", amount: "125000.00" }],
   futureInstallmentCommitment: "75000.00",
   totalOutstandingCommitment: "200000.00",
 };
@@ -476,6 +477,24 @@ describe("Dashboard", () => {
     expect((await screen.findAllByText("$ 125.000,00")).length).toBeGreaterThan(0);
     expect(screen.getByText("Deuda tarjetas")).toBeTruthy();
     expect(screen.queryByText("No tenés tarjetas cargadas.")).toBeNull();
+  });
+
+  it("flattens multi-currency card debt without summing ARS+USD", async () => {
+    getFinancialSummary.mockResolvedValue(loaded);
+    getCreditCards.mockResolvedValue([visa]);
+    getCreditCardCommitments.mockResolvedValue({
+      ...visaCommitments,
+      currentCardDebt: "125000.00",
+      currentCardDebtByCurrency: [
+        { currency: "ARS", amount: "125000.00" },
+        { currency: "USD", amount: "80.00" },
+      ],
+    });
+    renderDashboard();
+
+    expect((await screen.findAllByText("$ 125.000,00")).length).toBeGreaterThan(0);
+    expect(screen.getAllByText("USD 80,00").length).toBeGreaterThan(0);
+    expect(screen.queryByText("$ 125.080,00")).toBeNull();
   });
 
   it("shows a soft empty state when there are no credit cards", async () => {

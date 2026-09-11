@@ -6,11 +6,17 @@ import {
   computeFutureInstallmentCommitment,
   computeTotalOutstandingCommitment,
 } from "./credit-card-commitment.js";
-import { computeCurrentCardDebt } from "./credit-card-debt.js";
 import {
+  computeCurrentCardDebtByCurrency,
+  computeCurrentCardDebtForCurrency,
+  type CurrencyAmount,
+} from "./credit-card-debt.js";
+import {
+  CREDIT_CARD_BRANDS,
   CREDIT_CARD_FEE_STATUSES,
   type CreateCreditCardInput,
   type CreditCard,
+  type CreditCardBrandOption,
   type CreditCardFeeStatus,
   type CreditCardRepository,
   type UpdateCreditCardInput,
@@ -18,9 +24,13 @@ import {
 
 export type CreditCardCommitments = {
   creditCardId: string;
+  /** Debt in the card's primary currency only — never a cross-currency sum. */
   currentCardDebt: string;
+  currentCardDebtByCurrency: CurrencyAmount[];
   futureInstallmentCommitment: string;
+  futureInstallmentCommitmentByCurrency: CurrencyAmount[];
   totalOutstandingCommitment: string;
+  totalOutstandingCommitmentByCurrency: CurrencyAmount[];
 };
 
 export class CreditCardService {
@@ -37,11 +47,16 @@ export class CreditCardService {
   async getCurrentCardDebt(
     userId: string,
     id: string
-  ): Promise<{ creditCardId: string; currentCardDebt: string }> {
+  ): Promise<{
+    creditCardId: string;
+    currentCardDebt: string;
+    currentCardDebtByCurrency: CurrencyAmount[];
+  }> {
     const commitments = await this.getCommitments(userId, id);
     return {
       creditCardId: commitments.creditCardId,
       currentCardDebt: commitments.currentCardDebt,
+      currentCardDebtByCurrency: commitments.currentCardDebtByCurrency,
     };
   }
 
@@ -61,8 +76,13 @@ export class CreditCardService {
       creditCardId: card.id,
       status: "ACTIVE",
     });
-    const currentCardDebt = computeCurrentCardDebt(movements);
+    const currentCardDebtByCurrency = computeCurrentCardDebtByCurrency(movements);
+    const currentCardDebt = computeCurrentCardDebtForCurrency(
+      movements,
+      card.currency
+    );
 
+    let futureInstallmentCommitmentByCurrency: CurrencyAmount[] = [];
     let futureInstallmentCommitment = "0.00";
     if (this.purchases) {
       const pending =
@@ -70,18 +90,42 @@ export class CreditCardService {
           userId,
           card.id
         );
+      const byCurrency = new Map<Currency, typeof pending>();
+      for (const row of pending) {
+        const currency = row.currency ?? card.currency;
+        const list = byCurrency.get(currency) ?? [];
+        list.push(row);
+        byCurrency.set(currency, list);
+      }
+      futureInstallmentCommitmentByCurrency = [...byCurrency.entries()]
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([currency, rows]) => ({
+          currency,
+          amount: computeFutureInstallmentCommitment(rows),
+        }))
+        .filter((item) => item.amount !== "0.00");
       futureInstallmentCommitment =
-        computeFutureInstallmentCommitment(pending);
+        futureInstallmentCommitmentByCurrency.find(
+          (item) => item.currency === card.currency
+        )?.amount ?? "0.00";
     }
+
+    const totalOutstandingCommitmentByCurrency = mergeCurrencyAmounts(
+      currentCardDebtByCurrency,
+      futureInstallmentCommitmentByCurrency
+    );
 
     return {
       creditCardId: card.id,
       currentCardDebt,
+      currentCardDebtByCurrency,
       futureInstallmentCommitment,
+      futureInstallmentCommitmentByCurrency,
       totalOutstandingCommitment: computeTotalOutstandingCommitment(
         currentCardDebt,
         futureInstallmentCommitment
       ),
+      totalOutstandingCommitmentByCurrency,
     };
   }
 
@@ -132,7 +176,7 @@ export class CreditCardService {
     id: string,
     input: UpdateCreditCardInput
   ): Promise<CreditCard> {
-    await this.requireOwned(userId, id);
+    const current = await this.requireOwned(userId, id);
     const patch: UpdateCreditCardInput = {};
 
     if (input.name !== undefined) {
@@ -145,7 +189,11 @@ export class CreditCardService {
       patch.brand = normalizeBrand(input.brand);
     }
     if (input.currency !== undefined) {
-      patch.currency = requireCurrency(input.currency);
+      const next = requireCurrency(input.currency);
+      if (next !== current.currency) {
+        await this.assertCurrencyChangeAllowed(userId, current.id);
+      }
+      patch.currency = next;
     }
     if (input.closingDay !== undefined) {
       patch.closingDay = normalizeDay(input.closingDay, "closingDay");
@@ -201,6 +249,25 @@ export class CreditCardService {
     return this.cards.setPrimary(userId, id);
   }
 
+  private async assertCurrencyChangeAllowed(
+    userId: string,
+    creditCardId: string
+  ): Promise<void> {
+    if (!this.transactions) {
+      return;
+    }
+    const movements = await this.transactions.findByUserId(userId, {
+      creditCardId,
+    });
+    if (movements.length > 0) {
+      throw new AppError(
+        "VALIDATION_ERROR",
+        "No se puede cambiar la moneda de una tarjeta con movimientos existentes.",
+        400
+      );
+    }
+  }
+
   private async requireOwned(userId: string, id: string): Promise<CreditCard> {
     const card = await this.cards.findById(id);
     if (!card || card.userId !== userId) {
@@ -208,6 +275,26 @@ export class CreditCardService {
     }
     return card;
   }
+}
+
+function mergeCurrencyAmounts(
+  a: CurrencyAmount[],
+  b: CurrencyAmount[]
+): CurrencyAmount[] {
+  const map = new Map<Currency, string>();
+  for (const item of [...a, ...b]) {
+    const prev = map.get(item.currency);
+    map.set(
+      item.currency,
+      prev
+        ? computeTotalOutstandingCommitment(prev, item.amount)
+        : item.amount
+    );
+  }
+  return [...map.entries()]
+    .sort(([x], [y]) => x.localeCompare(y))
+    .map(([currency, amount]) => ({ currency, amount }))
+    .filter((item) => item.amount !== "0.00");
 }
 
 function normalizeName(name: string, emptyMessage: string): string {
@@ -225,7 +312,7 @@ function normalizeName(name: string, emptyMessage: string): string {
   return value;
 }
 
-function normalizeBrand(brand: string): string {
+export function normalizeBrand(brand: string): string {
   const value = brand.trim();
   if (!value) {
     throw new AppError("VALIDATION_ERROR", "La marca es obligatoria.", 400);
@@ -237,7 +324,26 @@ function normalizeBrand(brand: string): string {
       400
     );
   }
+  const known = CREDIT_CARD_BRANDS.find(
+    (item) => item.toLowerCase() === value.toLowerCase()
+  );
+  if (known && known !== "Otra") {
+    return known;
+  }
+  if (value.toLowerCase() === "otra") {
+    throw new AppError(
+      "VALIDATION_ERROR",
+      "Indicá el nombre de la marca cuando elegís Otra.",
+      400
+    );
+  }
   return value;
+}
+
+export function isKnownBrandOption(
+  brand: string
+): brand is CreditCardBrandOption {
+  return (CREDIT_CARD_BRANDS as readonly string[]).includes(brand);
 }
 
 function normalizeDay(day: number | null, field: string): number | null {

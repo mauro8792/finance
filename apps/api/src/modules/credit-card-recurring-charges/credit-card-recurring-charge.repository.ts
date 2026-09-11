@@ -100,7 +100,7 @@ export class PrismaCreditCardRecurringChargeRepository
         categoryId: input.categoryId,
         description: input.description,
         expectedAmount: input.expectedAmount ?? null,
-        currency: card.currency,
+        currency: input.currency ?? card.currency,
         frequency: "MONTHLY",
         dayOfMonthHint:
           input.dayOfMonthHint === undefined ? null : input.dayOfMonthHint,

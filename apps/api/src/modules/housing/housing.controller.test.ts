@@ -575,7 +575,10 @@ test("GET /api/housing/:id/payments lists only that obligation newest first", as
     "id",
     "installmentNumber",
     "paidAt",
+    "periodMonth",
+    "periodYear",
     "transactionId",
+    "voidedAt",
   ]);
 
   const other = await request(app).post("/api/housing").send({

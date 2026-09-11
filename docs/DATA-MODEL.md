@@ -257,7 +257,7 @@ user_id       UUID FK users.id NOT NULL
 name          VARCHAR(120) NOT NULL
 issuer        VARCHAR(120) NOT NULL
 brand         VARCHAR(40) NOT NULL
-currency      currency_enum NOT NULL
+currency      currency_enum NOT NULL   -- moneda primaria (P1.2); no implica mono-moneda
 is_active     BOOLEAN NOT NULL DEFAULT true
 is_primary    BOOLEAN NOT NULL DEFAULT false
 closing_day   INTEGER NULL  -- CHECK 1..31
@@ -278,6 +278,8 @@ UNKNOWN
 ```
 
 `fee_status` / `fee_expected_amount` / `fee_notes` son **configuración**. No generan `Transaction` ni mueven deuda.
+
+**P1.2:** `CreditCard.currency` = primaria. `Transaction` / `CreditCardPurchase` / `CreditCardRecurringCharge` pueden tener `currency` distinta. Deuda y commitment se exponen `byCurrency`; nunca sumar monedas. `brand` es string UX (Visa/MC/Amex/Otra) — sin enum DB.
 
 ---
 
@@ -591,12 +593,14 @@ TRANSFER_VOID
 PAYMENT_VOID
 PURCHASE_VOID
 REFUND_ACCREDITATION_VOID
+HOUSING_PAYMENT_VOID          -- P1.2
 ```
 
 Es a la vez rastro de auditoría y unidad de idempotencia de toda anulación.
 `transfer_links`, `credit_card_payment_links` y
 `credit_card_refund_accreditations` agregan `voided_at` y
 `void_idempotency_key` (nullable, con unique parcial por usuario).
+`housing_payments` (P1.2): `voided_at` + `void_idempotency_key` nullable.
 
 ---
 
@@ -646,7 +650,7 @@ Regla de Service:
 
 ```text
 transaction.currency == account.currency   -- si accountId set
-transaction.currency == creditCard.currency -- si creditCardId set (P0.5)
+-- P1.2: con creditCardId, currency del movimiento puede ≠ currency primaria de la tarjeta
 ```
 
 excepto operaciones explícitas de cambio de moneda.
@@ -997,7 +1001,11 @@ amount                   NUMERIC(18,2) NOT NULL
 currency                 currency_enum NOT NULL
 
 installment_number       INTEGER NULL
+period_year              INTEGER NULL          -- P1.2; con period_month o ambos null
+period_month             INTEGER NULL          -- 1..12; independiente de paid_at
 paid_at                  TIMESTAMPTZ NOT NULL
+voided_at                TIMESTAMPTZ NULL      -- P1.2
+void_idempotency_key     VARCHAR(128) NULL     -- P1.2
 
 created_at               TIMESTAMPTZ NOT NULL
 ```
@@ -1017,6 +1025,8 @@ transaction_id UNIQUE
 `housing_payments` no tiene `user_id`. La pertenencia se valida vía `HousingObligation`.
 
 Un pago y su `Transaction` se persisten en la misma transacción PostgreSQL, junto con `remaining_installments - 1`.
+
+**P1.2:** `period_year`/`period_month` ≠ `paid_at` (prepago). Void → `HOUSING_PAYMENT_VOID`, pata `REVERSED`, restaura `remaining_installments`; sin ingreso.
 
 ---
 
@@ -1487,6 +1497,8 @@ credit_card_id destino
 ```
 
 Métricas: `currentCardDebt`, `futureInstallmentCommitment`, `totalOutstandingCommitment` — ver `MVP2-DECISIONES-P0.md`.
+
+**P1.2 read model:** también `currentCardDebtByCurrency` y `futureInstallmentCommitmentByCurrency`. Los scalars = lane de `CreditCard.currency` primaria. Nunca agregar monedas.
 
 Sin `closing_day`: proyección limitada (no “próximo resumen” cierto).
 

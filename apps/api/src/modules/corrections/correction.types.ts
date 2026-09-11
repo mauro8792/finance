@@ -6,6 +6,7 @@ export const CORRECTION_KINDS = [
   "PAYMENT_VOID",
   "PURCHASE_VOID",
   "REFUND_ACCREDITATION_VOID",
+  "HOUSING_PAYMENT_VOID",
 ] as const;
 
 export type CorrectionKind = (typeof CORRECTION_KINDS)[number];

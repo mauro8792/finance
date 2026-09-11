@@ -64,6 +64,8 @@ export type CreateCreditCardRecurringChargeInput = {
   kind: CreditCardRecurringChargeKind;
   categoryId: string;
   description: string;
+  /** P1.2: optional; defaults to card primary currency. */
+  currency?: Currency;
   expectedAmount?: string | null;
   dayOfMonthHint?: number | null;
   notes?: string | null;

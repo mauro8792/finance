@@ -7,6 +7,7 @@ import { QuickAddForm } from "./QuickAddForm";
 
 const getAccounts = vi.fn();
 const getCategories = vi.fn();
+const getCreditCards = vi.fn();
 const createTransaction = vi.fn();
 const createTransfer = vi.fn();
 
@@ -17,6 +18,7 @@ vi.mock("../lib/api", () => ({
   },
   getAccounts: () => getAccounts(),
   getCategories: () => getCategories(),
+  getCreditCards: () => getCreditCards(),
   createTransaction: (payload: unknown) => createTransaction(payload),
   createTransfer: (payload: unknown) => createTransfer(payload),
 }));
@@ -41,18 +43,37 @@ describe("QuickAddForm", () => {
       { id: "acc-2", name: "Reserva", currency: "USD", isActive: false },
       { id: "acc-3", name: "Caja", currency: "ARS", isActive: true },
     ]);
+    getCreditCards.mockResolvedValue([
+      {
+        id: "card-1",
+        name: "Visa Galicia",
+        currency: "ARS",
+        isActive: true,
+        brand: "Visa",
+        issuer: "Galicia",
+      },
+      {
+        id: "card-2",
+        name: "Amex vieja",
+        currency: "USD",
+        isActive: false,
+        brand: "American Express",
+        issuer: "Amex",
+      },
+    ]);
     getCategories.mockResolvedValue([
       { id: "cat-exp", name: "Comida", type: "EXPENSE", isActive: true },
       { id: "cat-inc", name: "Sueldo", type: "INCOME", isActive: true },
       { id: "cat-off", name: "Vieja", type: "EXPENSE", isActive: false },
     ]);
-    createTransaction.mockImplementation(async (payload: { type?: string; amount: string; currency: string; accountId: string; categoryId: string; incomeKind?: string }) => ({
+    createTransaction.mockImplementation(async (payload: { type?: string; amount: string; currency: string; accountId?: string; creditCardId?: string; categoryId: string; incomeKind?: string }) => ({
       id: "tx-1",
       type: payload.type === "INCOME" ? "INCOME" : "EXPENSE",
       status: "ACTIVE",
       amount: payload.amount,
       currency: payload.currency,
-      accountId: payload.accountId,
+      accountId: payload.accountId ?? null,
+      creditCardId: payload.creditCardId ?? null,
       categoryId: payload.categoryId,
       metadata: payload.incomeKind ? { incomeKind: payload.incomeKind } : null,
     }));
@@ -311,6 +332,7 @@ describe("QuickAddForm", () => {
   it("shows loading without empty or error", () => {
     getAccounts.mockReturnValue(new Promise(() => undefined));
     getCategories.mockReturnValue(new Promise(() => undefined));
+    getCreditCards.mockReturnValue(new Promise(() => undefined));
     renderForm();
     expect(screen.getByText("Cargando cuentas y categorías…")).toBeTruthy();
     expect(screen.queryByText("No hay cuentas activas. Creá una cuenta antes de registrar un movimiento.")).toBeNull();
@@ -340,6 +362,7 @@ describe("QuickAddForm", () => {
     getAccounts.mockResolvedValueOnce([
       { id: "acc-2", name: "Reserva", currency: "USD", isActive: false },
     ]);
+    getCreditCards.mockResolvedValueOnce([]);
     renderForm();
     expect(
       await screen.findByText("No hay cuentas activas. Creá una cuenta antes de registrar un movimiento.")
@@ -347,6 +370,49 @@ describe("QuickAddForm", () => {
     expect(screen.queryByRole("alert")).toBeNull();
     expect(screen.getByRole("link", { name: "Ir a Cuentas" }).getAttribute("href")).toBe(
       "/accounts"
+    );
+  });
+
+  it("submits a credit-card expense with creditCardId and no accountId", async () => {
+    const user = userEvent.setup();
+    renderForm();
+    await screen.findByRole("button", { name: "Guardar" });
+    await user.type(screen.getByPlaceholderText("0,00"), "90");
+    await user.selectOptions(screen.getByLabelText("Categoría"), "cat-exp");
+    await user.selectOptions(screen.getByLabelText("Medio de pago"), "CREDIT_CARD");
+    expect(await screen.findByLabelText("Tarjeta")).toBeTruthy();
+    expect(screen.queryByLabelText("Cuenta")).toBeNull();
+    expect((screen.getByLabelText("Tarjeta") as HTMLSelectElement).value).toBe("card-1");
+    expect((screen.getByLabelText("Moneda") as HTMLSelectElement).value).toBe("ARS");
+    await user.selectOptions(screen.getByLabelText("Moneda"), "USD");
+    await user.click(screen.getByRole("button", { name: "Guardar" }));
+    await waitFor(() =>
+      expect(createTransaction).toHaveBeenCalledWith(
+        expect.objectContaining({
+          amount: "90.00",
+          currency: "USD",
+          creditCardId: "card-1",
+          categoryId: "cat-exp",
+          paymentMethod: "CREDIT_CARD",
+        })
+      )
+    );
+    const payload = createTransaction.mock.calls.at(-1)?.[0] as Record<string, unknown>;
+    expect(payload.accountId).toBeUndefined();
+  });
+
+  it("blocks submit and links to /cards when there are no active cards", async () => {
+    getCreditCards.mockResolvedValueOnce([]);
+    const user = userEvent.setup();
+    renderForm();
+    await screen.findByRole("button", { name: "Guardar" });
+    await user.selectOptions(screen.getByLabelText("Medio de pago"), "CREDIT_CARD");
+    expect(await screen.findByText(/No tenés tarjetas activas/)).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Agregar tarjeta" }).getAttribute("href")).toBe(
+      "/cards"
+    );
+    expect((screen.getByRole("button", { name: "Guardar" }) as HTMLButtonElement).disabled).toBe(
+      true
     );
   });
 

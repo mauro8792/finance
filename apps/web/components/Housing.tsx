@@ -10,8 +10,9 @@ import {
   getHousingPayments,
   registerHousingPayment,
   updateHousing,
+  voidHousingPayment,
 } from "../lib/api";
-import { formatCoveredInstallments, formatPaidAt } from "../lib/format-money";
+import { formatCoveredInstallments, formatMonthLabel, formatPaidAt } from "../lib/format-money";
 import {
   accountsForHousingCurrency,
   coverageBarWidth,
@@ -295,10 +296,23 @@ function CoverageBody({ coverage }: { coverage: HousingCoverage }) {
 }
 
 function HousingPaymentHistory({ obligationId }: { obligationId: string }) {
+  const queryClient = useQueryClient();
   const query = useQuery({
     queryKey: ["housing", obligationId, "payments"],
     queryFn: () => getHousingPayments(obligationId),
   });
+
+  async function refreshAfterVoid() {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["housing"] }),
+      queryClient.invalidateQueries({
+        queryKey: ["housing", obligationId, "coverage"],
+      }),
+      queryClient.invalidateQueries({
+        queryKey: ["housing", obligationId, "payments"],
+      }),
+    ]);
+  }
 
   if (query.isPending) {
     return (
@@ -335,7 +349,11 @@ function HousingPaymentHistory({ obligationId }: { obligationId: string }) {
         <ul className={styles.paymentList}>
           {payments.map((payment) => (
             <li key={payment.id} className={styles.paymentItem}>
-              <PaymentRow payment={payment} />
+              <PaymentRow
+                obligationId={obligationId}
+                payment={payment}
+                onVoided={refreshAfterVoid}
+              />
             </li>
           ))}
         </ul>
@@ -344,19 +362,94 @@ function HousingPaymentHistory({ obligationId }: { obligationId: string }) {
   );
 }
 
-function PaymentRow({ payment }: { payment: HousingPayment }) {
+function paymentPeriodLabel(payment: HousingPayment): string {
+  if (payment.periodYear != null && payment.periodMonth != null) {
+    return formatMonthLabel(payment.periodYear, payment.periodMonth);
+  }
+  if (payment.installmentNumber != null) {
+    return `Cuota ${payment.installmentNumber}`;
+  }
+  return "Sin período";
+}
+
+function PaymentRow({
+  obligationId,
+  payment,
+  onVoided,
+}: {
+  obligationId: string;
+  payment: HousingPayment;
+  onVoided: () => Promise<void>;
+}) {
+  const [confirming, setConfirming] = useState(false);
+  const isVoided = payment.voidedAt != null;
+
+  const voidMutation = useMutation({
+    mutationFn: () =>
+      voidHousingPayment(obligationId, payment.id, {
+        idempotencyKey: crypto.randomUUID(),
+      }),
+    onSuccess: async () => {
+      setConfirming(false);
+      await onVoided();
+    },
+  });
+
   return (
     <>
-      <time className={styles.paymentDate} dateTime={payment.paidAt}>
-        {formatPaidAt(payment.paidAt)}
-      </time>
+      <div className={styles.paymentMain}>
+        <p className={styles.paymentPeriod}>{paymentPeriodLabel(payment)}</p>
+        <time className={styles.paymentDate} dateTime={payment.paidAt}>
+          Pagada el {formatPaidAt(payment.paidAt)}
+        </time>
+        {isVoided ? (
+          <StatusBadge label="Anulada" tone="muted" />
+        ) : null}
+      </div>
       <Money
         amount={payment.amount}
         currency={payment.currency}
         className={styles.paymentAmount}
       />
-      {payment.installmentNumber !== null ? (
-        <span className={styles.paymentInstallment}>Cuota {payment.installmentNumber}</span>
+      {!isVoided ? (
+        <div className={styles.paymentActions}>
+          {confirming ? (
+            <>
+              <p className={styles.voidHint}>
+                El registro original se conservará en el historial.
+              </p>
+              <button
+                type="button"
+                className={styles.linkStrong}
+                disabled={voidMutation.isPending}
+                onClick={() => voidMutation.mutate()}
+              >
+                {voidMutation.isPending ? "Anulando…" : "Confirmar anulación"}
+              </button>
+              <button
+                type="button"
+                className={styles.linkAction}
+                disabled={voidMutation.isPending}
+                onClick={() => setConfirming(false)}
+              >
+                Cancelar
+              </button>
+            </>
+          ) : (
+            <button
+              type="button"
+              className={styles.linkAction}
+              onClick={() => setConfirming(true)}
+            >
+              Anular registro
+            </button>
+          )}
+          {voidMutation.isError ? (
+            <p className={styles.formError} role="alert">
+              {housingPaymentError(voidMutation.error)}
+            </p>
+          ) : null}
+        </div>
       ) : null}
     </>
   );
@@ -575,27 +668,38 @@ function HousingPaymentForm({
 }) {
   const queryClient = useQueryClient();
   const options = paymentAccountsForHousing(accounts, obligation.currency);
+  const now = new Date();
   const [accountId, setAccountId] = useState(options[0]?.id ?? "");
   const [amount, setAmount] = useState(obligation.installmentAmount);
   const [occurredAt, setOccurredAt] = useState(toLocalDateTimeInput(new Date()));
+  const [periodYear, setPeriodYear] = useState(String(now.getFullYear()));
+  const [periodMonth, setPeriodMonth] = useState(String(now.getMonth() + 1));
   const [installmentNumber, setInstallmentNumber] = useState("");
 
   const installmentParsed = parseOptionalInteger(installmentNumber, 0);
+  const yearParsed = parseRequiredInteger(periodYear, 2000);
+  const monthParsed = parseRequiredInteger(periodMonth, 1);
+  const monthOk =
+    monthParsed !== "invalid" && monthParsed >= 1 && monthParsed <= 12;
   const canSubmit =
     accountId !== "" &&
     isValidAmount(amount) &&
     occurredAt.trim().length > 0 &&
+    yearParsed !== "invalid" &&
+    monthOk &&
     installmentParsed !== "invalid";
 
   const mutation = useMutation({
     mutationFn: () => {
-      if (installmentParsed === "invalid") {
-        throw new Error("Revisá el número de cuota.");
+      if (installmentParsed === "invalid" || yearParsed === "invalid" || !monthOk) {
+        throw new Error("Revisá el período o el número de cuota.");
       }
       return registerHousingPayment(obligation.id, {
         accountId,
         amount: toApiAmount(amount),
         occurredAt: localDateTimeToIso(occurredAt),
+        periodYear: yearParsed,
+        periodMonth: monthParsed as number,
         ...(installmentParsed === null ? {} : { installmentNumber: installmentParsed }),
       });
     },
@@ -646,12 +750,45 @@ function HousingPaymentForm({
         />
       </label>
 
+      <div className={styles.periodRow}>
+        <label className={styles.field}>
+          Período / cuota — Año
+          <input
+            inputMode="numeric"
+            value={periodYear}
+            onChange={(event) => setPeriodYear(event.target.value)}
+            aria-label="Año del período"
+          />
+        </label>
+        <label className={styles.field}>
+          Mes
+          <select
+            value={periodMonth}
+            onChange={(event) => setPeriodMonth(event.target.value)}
+            aria-label="Mes del período"
+          >
+            {Array.from({ length: 12 }, (_, index) => {
+              const month = index + 1;
+              return (
+                <option key={month} value={String(month)}>
+                  {formatMonthLabel(2000, month).replace(" 2000", "")}
+                </option>
+              );
+            })}
+          </select>
+        </label>
+      </div>
+      <p className={styles.formHint}>
+        Período/cuota es el mes que cubre el pago; la fecha de pago puede ser otra.
+      </p>
+
       <label className={styles.field}>
-        Fecha
+        Fecha de pago
         <input
           type="datetime-local"
           value={occurredAt}
           onChange={(event) => setOccurredAt(event.target.value)}
+          aria-label="Fecha de pago"
         />
       </label>
 
@@ -662,6 +799,7 @@ function HousingPaymentForm({
           value={installmentNumber}
           onChange={(event) => setInstallmentNumber(event.target.value)}
           placeholder="Opcional"
+          aria-label="Número de cuota"
         />
       </label>
 

@@ -13,6 +13,7 @@ vi.mock("../lib/api", () => ({
     Promise.resolve([{ id: "acc-1", name: "Santander", currency: "ARS", isActive: true }]),
   getCategories: () =>
     Promise.resolve([{ id: "cat-exp", name: "Comida", type: "EXPENSE", isActive: true }]),
+  getCreditCards: () => Promise.resolve([]),
   createTransaction: vi.fn(),
   createTransfer: vi.fn(),
   parseTransaction: vi.fn(),

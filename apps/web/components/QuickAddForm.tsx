@@ -1,9 +1,16 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import Link from "next/link";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { AI_QUERY_INVALIDATIONS } from "../lib/ai-quick-input";
-import { createTransaction, createTransfer, getAccounts, getCategories } from "../lib/api";
+import {
+  createTransaction,
+  createTransfer,
+  getAccounts,
+  getCategories,
+  getCreditCards,
+} from "../lib/api";
 import { getDefaultAccountId, setDefaultAccountId } from "../lib/default-account";
 import {
   LAST_PAYMENT_KEY,
@@ -18,7 +25,13 @@ import {
   toLocalDateTimeInput,
 } from "../lib/quick-add";
 import { destinationAccountsForTransfer } from "../lib/transfers";
-import type { Currency, IncomeKind, MovementKind, PaymentMethod } from "../lib/types";
+import type {
+  CreateExpenseRequest,
+  Currency,
+  IncomeKind,
+  MovementKind,
+  PaymentMethod,
+} from "../lib/types";
 import { EmptyState, ErrorState, LoadingState } from "./QueryStatus";
 import styles from "./QuickAddForm.module.css";
 
@@ -56,11 +69,17 @@ export function QuickAddForm({ initialValues, onSaved }: QuickAddFormProps = {})
     queryKey: ["categories"],
     queryFn: getCategories,
   });
+  const cardsQuery = useQuery({
+    queryKey: ["credit-cards"],
+    queryFn: getCreditCards,
+  });
   const aiMode = Boolean(initialValues);
 
   const [kind, setKind] = useState<MovementKind>(initialValues?.kind ?? "EXPENSE");
   const [amount, setAmount] = useState(initialValues?.amount ?? "");
   const [accountId, setAccountId] = useState(initialValues?.accountId ?? "");
+  const [creditCardId, setCreditCardId] = useState("");
+  const [currency, setCurrency] = useState<Currency>("ARS");
   const [destinationAccountId, setDestinationAccountId] = useState("");
   const [categoryId, setCategoryId] = useState(initialValues?.categoryId ?? "");
   const [description, setDescription] = useState(initialValues?.description ?? "");
@@ -87,7 +106,13 @@ export function QuickAddForm({ initialValues, onSaved }: QuickAddFormProps = {})
     () => filterCategoriesForType(categoriesQuery.data ?? [], kind),
     [categoriesQuery.data, kind]
   );
+  const activeCards = useMemo(
+    () => (cardsQuery.data ?? []).filter((card) => card.isActive),
+    [cardsQuery.data]
+  );
   const selectedAccount = accounts.find((account) => account.id === accountId);
+  const selectedCard = activeCards.find((card) => card.id === creditCardId);
+  const isCreditExpense = kind === "EXPENSE" && paymentMethod === "CREDIT_CARD";
   const transferDestinations = useMemo(
     () => destinationAccountsForTransfer(accountsQuery.data ?? [], accountId),
     [accountsQuery.data, accountId]
@@ -130,6 +155,25 @@ export function QuickAddForm({ initialValues, onSaved }: QuickAddFormProps = {})
     );
   }, [categories]);
 
+  useEffect(() => {
+    if (!isCreditExpense) {
+      return;
+    }
+    setCreditCardId((current) => {
+      if (activeCards.some((card) => card.id === current)) {
+        return current;
+      }
+      return activeCards[0]?.id ?? "";
+    });
+  }, [isCreditExpense, activeCards]);
+
+  useEffect(() => {
+    if (!isCreditExpense || !selectedCard) {
+      return;
+    }
+    setCurrency(selectedCard.currency);
+  }, [isCreditExpense, selectedCard?.id, selectedCard?.currency]);
+
   // En transferencias el destino nunca se preselecciona: elegirlo mal es caro,
   // así que se pide siempre de forma explícita.
   useEffect(() => {
@@ -144,7 +188,7 @@ export function QuickAddForm({ initialValues, onSaved }: QuickAddFormProps = {})
   const transactionMutation = useMutation({
     mutationFn: createTransaction,
     onSuccess: async (created) => {
-      if (accountId) {
+      if (!isCreditExpense && accountId) {
         setDefaultAccountId(accountId);
       }
       if (kind === "EXPENSE") {
@@ -182,27 +226,37 @@ export function QuickAddForm({ initialValues, onSaved }: QuickAddFormProps = {})
       ? "No pudimos guardar el movimiento. Intentá nuevamente."
       : null;
 
-  const loading = accountsQuery.isPending || categoriesQuery.isPending;
-  const loadError = accountsQuery.isError || categoriesQuery.isError;
+  const loading =
+    accountsQuery.isPending || categoriesQuery.isPending || cardsQuery.isPending;
+  const loadError =
+    accountsQuery.isError || categoriesQuery.isError || cardsQuery.isError;
   const categoryRequired = isCategoryRequired(kind, incomeKind);
   const isTransfer = kind === "TRANSFER";
+  const noActiveCards = isCreditExpense && activeCards.length === 0;
+  const displayCurrency = isCreditExpense
+    ? currency
+    : (selectedAccount?.currency ?? "—");
+
   const canSubmit =
     !saving &&
-    Boolean(accountId && selectedAccount && isValidAmount(amount)) &&
+    !noActiveCards &&
+    Boolean(isValidAmount(amount)) &&
     (isTransfer
-      ? Boolean(destinationAccountId && selectedDestination)
-      : !categoryRequired || Boolean(categoryId));
+      ? Boolean(accountId && selectedAccount && destinationAccountId && selectedDestination)
+      : isCreditExpense
+        ? Boolean(creditCardId && selectedCard && (!categoryRequired || categoryId))
+        : Boolean(accountId && selectedAccount && (!categoryRequired || categoryId)));
 
   function onSubmit(event: FormEvent) {
     event.preventDefault();
     setSuccess(null);
 
-    if (!selectedAccount || !isValidAmount(amount)) {
+    if (!isValidAmount(amount)) {
       return;
     }
 
     if (kind === "TRANSFER") {
-      if (!destinationAccountId || !selectedDestination) {
+      if (!selectedAccount || !destinationAccountId || !selectedDestination) {
         return;
       }
       transferMutation.mutate({
@@ -220,29 +274,54 @@ export function QuickAddForm({ initialValues, onSaved }: QuickAddFormProps = {})
       return;
     }
 
-    const shared = {
-      amount: toApiAmount(amount),
-      currency: selectedAccount.currency,
-      accountId: selectedAccount.id,
-      ...(description.trim() ? { description: description.trim() } : {}),
-      ...(occurredAt ? { occurredAt: localDateTimeToIso(occurredAt) } : {}),
-    };
-
     if (kind === "INCOME") {
+      if (!selectedAccount) {
+        return;
+      }
       transactionMutation.mutate({
-        ...shared,
+        amount: toApiAmount(amount),
+        currency: selectedAccount.currency,
+        accountId: selectedAccount.id,
         ...(categoryId ? { categoryId } : {}),
+        ...(description.trim() ? { description: description.trim() } : {}),
+        ...(occurredAt ? { occurredAt: localDateTimeToIso(occurredAt) } : {}),
         type: "INCOME",
         incomeKind,
       });
       return;
     }
 
+    if (isCreditExpense) {
+      if (!selectedCard || noActiveCards) {
+        return;
+      }
+      const payload: CreateExpenseRequest = {
+        amount: toApiAmount(amount),
+        currency,
+        creditCardId: selectedCard.id,
+        categoryId,
+        paymentMethod: "CREDIT_CARD",
+        isFixed,
+        ...(description.trim() ? { description: description.trim() } : {}),
+        ...(occurredAt ? { occurredAt: localDateTimeToIso(occurredAt) } : {}),
+      };
+      transactionMutation.mutate(payload);
+      return;
+    }
+
+    if (!selectedAccount) {
+      return;
+    }
+
     transactionMutation.mutate({
-      ...shared,
+      amount: toApiAmount(amount),
+      currency: selectedAccount.currency,
+      accountId: selectedAccount.id,
       categoryId,
       paymentMethod,
       isFixed,
+      ...(description.trim() ? { description: description.trim() } : {}),
+      ...(occurredAt ? { occurredAt: localDateTimeToIso(occurredAt) } : {}),
     });
   }
 
@@ -257,12 +336,13 @@ export function QuickAddForm({ initialValues, onSaved }: QuickAddFormProps = {})
         onRetry={() => {
           void accountsQuery.refetch();
           void categoriesQuery.refetch();
+          void cardsQuery.refetch();
         }}
       />
     );
   }
 
-  if (accounts.length === 0) {
+  if (accounts.length === 0 && activeCards.length === 0) {
     return (
       <EmptyState
         message="No hay cuentas activas. Creá una cuenta antes de registrar un movimiento."
@@ -272,7 +352,12 @@ export function QuickAddForm({ initialValues, onSaved }: QuickAddFormProps = {})
   }
 
   return (
-    <form className={styles.form} onSubmit={onSubmit} noValidate aria-label={aiMode ? "Revisar movimiento interpretado" : "Registrar movimiento"}>
+    <form
+      className={styles.form}
+      onSubmit={onSubmit}
+      noValidate
+      aria-label={aiMode ? "Revisar movimiento interpretado" : "Registrar movimiento"}
+    >
       <fieldset className={aiMode ? styles.kind : `${styles.kind} ${styles.kindThree}`}>
         <legend className={styles.srOnly}>Tipo de movimiento</legend>
         <button
@@ -306,7 +391,20 @@ export function QuickAddForm({ initialValues, onSaved }: QuickAddFormProps = {})
       <label className={styles.amountLabel} htmlFor="quick-add-amount">
         Monto
         <span className={styles.amountRow}>
-          <span className={styles.currency}>{selectedAccount?.currency ?? "—"}</span>
+          {isCreditExpense ? (
+            <select
+              id="quick-add-currency"
+              className={styles.currencySelect}
+              aria-label="Moneda"
+              value={currency}
+              onChange={(event) => setCurrency(event.target.value as Currency)}
+            >
+              <option value="ARS">ARS</option>
+              <option value="USD">USD</option>
+            </select>
+          ) : (
+            <span className={styles.currency}>{displayCurrency}</span>
+          )}
           <input
             id="quick-add-amount"
             className={styles.amount}
@@ -393,25 +491,68 @@ export function QuickAddForm({ initialValues, onSaved }: QuickAddFormProps = {})
         </fieldset>
       ) : null}
 
-      <div className={isTransfer ? styles.pair : undefined}>
-        <label className={styles.field} htmlFor="quick-add-account">
-          {isTransfer ? "Desde" : "Cuenta"}
+      {kind === "EXPENSE" ? (
+        <label className={styles.field} htmlFor="quick-add-payment">
+          Medio de pago
           <select
-            id="quick-add-account"
-            value={accountId}
-            onChange={(event) => setAccountId(event.target.value)}
-            required
+            id="quick-add-payment"
+            value={paymentMethod}
+            onChange={(event) =>
+              setPaymentMethod(event.target.value as PaymentMethod)
+            }
           >
-            {aiMode ? <option value="">Elegí una cuenta</option> : null}
-            {accounts.map((account) => (
-              <option key={account.id} value={account.id}>
-                {account.name} — {account.currency}
+            {PAYMENT_METHODS.map((method) => (
+              <option key={method} value={method}>
+                {PAYMENT_METHOD_LABELS[method]}
               </option>
             ))}
           </select>
         </label>
+      ) : null}
 
-        {isTransfer ? (
+      {isCreditExpense ? (
+        noActiveCards ? (
+          <p className={styles.status} role="status">
+            No tenés tarjetas activas.{" "}
+            <Link href="/cards" className={styles.inlineLink}>
+              Agregar tarjeta
+            </Link>
+          </p>
+        ) : (
+          <label className={styles.field} htmlFor="quick-add-card">
+            Tarjeta
+            <select
+              id="quick-add-card"
+              value={creditCardId}
+              onChange={(event) => setCreditCardId(event.target.value)}
+              required
+            >
+              {activeCards.map((card) => (
+                <option key={card.id} value={card.id}>
+                  {card.name} — {card.currency}
+                </option>
+              ))}
+            </select>
+          </label>
+        )
+      ) : isTransfer ? (
+        <div className={styles.pair}>
+          <label className={styles.field} htmlFor="quick-add-account">
+            Desde
+            <select
+              id="quick-add-account"
+              value={accountId}
+              onChange={(event) => setAccountId(event.target.value)}
+              required
+            >
+              {aiMode ? <option value="">Elegí una cuenta</option> : null}
+              {accounts.map((account) => (
+                <option key={account.id} value={account.id}>
+                  {account.name} — {account.currency}
+                </option>
+              ))}
+            </select>
+          </label>
           <label className={styles.field} htmlFor="quick-add-destination">
             Hacia
             <select
@@ -436,39 +577,35 @@ export function QuickAddForm({ initialValues, onSaved }: QuickAddFormProps = {})
               )}
             </select>
           </label>
-        ) : null}
-      </div>
-
-      <div className={kind === "EXPENSE" ? styles.pair : undefined}>
-        <label className={styles.field} htmlFor="quick-add-occurred-at">
-          Fecha
-          <input
-            id="quick-add-occurred-at"
-            type="datetime-local"
-            value={occurredAt}
-            onChange={(event) => setOccurredAt(event.target.value)}
-          />
+        </div>
+      ) : (
+        <label className={styles.field} htmlFor="quick-add-account">
+          Cuenta
+          <select
+            id="quick-add-account"
+            value={accountId}
+            onChange={(event) => setAccountId(event.target.value)}
+            required
+          >
+            {aiMode ? <option value="">Elegí una cuenta</option> : null}
+            {accounts.map((account) => (
+              <option key={account.id} value={account.id}>
+                {account.name} — {account.currency}
+              </option>
+            ))}
+          </select>
         </label>
+      )}
 
-        {kind === "EXPENSE" ? (
-          <label className={styles.field} htmlFor="quick-add-payment">
-            Medio de pago
-            <select
-              id="quick-add-payment"
-              value={paymentMethod}
-              onChange={(event) =>
-                setPaymentMethod(event.target.value as PaymentMethod)
-              }
-            >
-              {PAYMENT_METHODS.map((method) => (
-                <option key={method} value={method}>
-                  {PAYMENT_METHOD_LABELS[method]}
-                </option>
-              ))}
-            </select>
-          </label>
-        ) : null}
-      </div>
+      <label className={styles.field} htmlFor="quick-add-occurred-at">
+        Fecha
+        <input
+          id="quick-add-occurred-at"
+          type="datetime-local"
+          value={occurredAt}
+          onChange={(event) => setOccurredAt(event.target.value)}
+        />
+      </label>
 
       {kind === "EXPENSE" ? (
         <label className={styles.check}>

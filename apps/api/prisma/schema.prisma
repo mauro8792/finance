@@ -67,6 +67,7 @@ enum CorrectionKind {
   PAYMENT_VOID
   PURCHASE_VOID
   REFUND_ACCREDITATION_VOID
+  HOUSING_PAYMENT_VOID
 
   @@map("correction_kind_enum")
 }
@@ -440,7 +441,12 @@ model HousingPayment {
   amount              Decimal           @db.Decimal(18, 2)
   currency            Currency
   installmentNumber   Int?              @map("installment_number")
+  /// Calendar period this installment covers (independent from paidAt).
+  periodYear          Int?              @map("period_year")
+  periodMonth         Int?              @map("period_month")
   paidAt              DateTime          @map("paid_at") @db.Timestamptz
+  voidedAt            DateTime?         @map("voided_at") @db.Timestamptz
+  voidIdempotencyKey  String?           @map("void_idempotency_key") @db.VarChar(128)
   createdAt           DateTime          @default(now()) @map("created_at") @db.Timestamptz
   housingObligation   HousingObligation @relation(fields: [housingObligationId], references: [id], onDelete: Restrict)
   transaction         Transaction       @relation(fields: [transactionId], references: [id], onDelete: Restrict)

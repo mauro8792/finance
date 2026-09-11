@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { CURRENCIES, type Currency } from "shared";
 import { AppError } from "../../shared/errors/app-error.js";
 import type { AccountRepository } from "../accounts/account.types.js";
+import { requireIdempotencyKey } from "../corrections/correction.repository.js";
 import { divideRoundHalfUp } from "../currency-exchanges/currency-exchange.math.js";
 import { computeBalance, fromCents, toCents } from "../transactions/transaction-balance.js";
 import { parsePositiveAmount } from "../transactions/transaction.service.js";
@@ -14,6 +15,7 @@ import type {
   HousingObligationRepository,
   HousingPayment,
   UpdateHousingObligationRecord,
+  VoidHousingPaymentAtomicResult,
 } from "./housing.types.js";
 import { RemainingInstallmentsConflictError } from "./housing.types.js";
 
@@ -40,6 +42,8 @@ export type RegisterHousingPaymentRequest = {
   amount?: string;
   occurredAt?: Date;
   installmentNumber?: number | null;
+  periodYear?: number | null;
+  periodMonth?: number | null;
 };
 
 export type RegisterHousingPaymentResult = {
@@ -239,6 +243,10 @@ export class HousingService {
 
     const amount = parsePositiveAmount(input.amount ?? obligation.installmentAmount);
     const installmentNumber = requireInstallmentNumber(input.installmentNumber);
+    const { periodYear, periodMonth } = requirePeriod(
+      input.periodYear,
+      input.periodMonth
+    );
     const paidAt = input.occurredAt ?? new Date();
     const movements = await this.transactions.findByUserId(userId, {
       accountId: account.id,
@@ -266,6 +274,8 @@ export class HousingService {
           amount,
           currency: obligation.currency,
           installmentNumber,
+          periodYear,
+          periodMonth,
           paidAt,
         },
         {
@@ -304,6 +314,23 @@ export class HousingService {
       }
       throw error;
     }
+  }
+
+  /** P1.2: dedicated housing payment void; restores reserve via REVERSED status. */
+  async voidPayment(
+    userId: string,
+    obligationId: string,
+    paymentId: string,
+    input: { idempotencyKey: string }
+  ): Promise<VoidHousingPaymentAtomicResult> {
+    const idempotencyKey = requireIdempotencyKey(input?.idempotencyKey);
+    await this.requireOwned(userId, obligationId);
+    return this.housing.voidPaymentAtomic({
+      userId,
+      obligationId,
+      paymentId,
+      idempotencyKey,
+    });
   }
 
   private async requireOwned(userId: string, id: string): Promise<HousingObligation> {
@@ -375,6 +402,48 @@ function requireInstallmentNumber(value: number | null | undefined): number | nu
     );
   }
   return value;
+}
+
+const MIN_PERIOD_YEAR = 1970;
+const MAX_PERIOD_YEAR = 2100;
+
+/** Both null, or both set with month 1–12 and a reasonable year. */
+function requirePeriod(
+  periodYear: number | null | undefined,
+  periodMonth: number | null | undefined
+): { periodYear: number | null; periodMonth: number | null } {
+  const yearUnset = periodYear === undefined || periodYear === null;
+  const monthUnset = periodMonth === undefined || periodMonth === null;
+
+  if (yearUnset && monthUnset) {
+    return { periodYear: null, periodMonth: null };
+  }
+
+  if (yearUnset || monthUnset) {
+    throw new AppError(
+      "VALIDATION_ERROR",
+      "periodYear y periodMonth deben enviarse juntos o ambos omitirse.",
+      400
+    );
+  }
+
+  if (!Number.isInteger(periodYear) || periodYear < MIN_PERIOD_YEAR || periodYear > MAX_PERIOD_YEAR) {
+    throw new AppError(
+      "VALIDATION_ERROR",
+      `periodYear debe ser un entero entre ${MIN_PERIOD_YEAR} y ${MAX_PERIOD_YEAR}.`,
+      400
+    );
+  }
+
+  if (!Number.isInteger(periodMonth) || periodMonth < 1 || periodMonth > 12) {
+    throw new AppError(
+      "VALIDATION_ERROR",
+      "periodMonth debe estar entre 1 y 12.",
+      400
+    );
+  }
+
+  return { periodYear, periodMonth };
 }
 
 function normalizeName(name: string): string {

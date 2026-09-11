@@ -261,6 +261,19 @@ Después de un pago válido: `remainingInstallments - 1`, nunca menor a 0. Si qu
 
 `PATCH /api/transactions/:id` y `POST /api/transactions/:id/void` rechazan `HOUSING_PAYMENT` con `HOUSING_PAYMENT_IMMUTABLE`.
 
+### P1.2 — Período vs pago + void vivienda
+
+`paidAt` / `occurredAt` = cuándo salió el dinero.  
+`periodYear` / `periodMonth` = período de cuota que cubre (prepago permitido). Son independientes; ambos null = legacy sin período explícito.
+
+Void dedicado (no el void genérico de Transaction):
+
+- `POST /api/housing/:id/payments/:paymentId/void` → `CorrectionKind = HOUSING_PAYMENT_VOID`;
+- pata `HOUSING_PAYMENT` → `REVERSED` (no `INCOME` compensatorio);
+- restaura `remainingInstallments + 1`;
+- marca `HousingPayment.voidedAt`; el historial se conserva;
+- idempotente por `idempotencyKey` (replay / conflicto igual que P0.15).
+
 ---
 
 # 14. Runway
@@ -586,6 +599,22 @@ Sin `closingDay`: proyección limitada; no afirmar “próximo resumen” cierto
 
 **P0.13 DONE definitivo LIVE:** plantillas `CreditCardRecurringCharge` no mueven dinero. Confirmación explícita → `EXPENSE` tarjeta (`accountId` null) → `currentCardDebt`+ / gross+ / budget+ / banco 0. `feeStatus` nunca genera movimientos. Estimado ≠ confirmado; estimado fuera de deuda.
 
+### P1.2 — Multi-moneda en una tarjeta + QuickAdd crédito
+
+Una misma `CreditCard` puede tener consumos ARS y USD. `CreditCard.currency` es la moneda **primaria** (UX / scalar legacy); la deuda real se lee por moneda:
+
+- `currentCardDebtByCurrency` / `futureInstallmentCommitmentByCurrency`;
+- **nunca** sumar ARS + USD (ni FX implícito);
+- el scalar `currentCardDebt` = solo la lane de la moneda primaria.
+
+Purchase / EXPENSE / plantilla recurrente pueden usar moneda distinta de la primaria. La moneda del recurrente es independiente de `CreditCard.currency` hasta la confirmación.
+
+**F3 intacto:** `CREDIT_CARD_PAYMENT` sigue sin FX. El pago reduce deuda **solo** en la moneda de la cuenta origen (matching de lane). No se puede pagar deuda USD con cuenta ARS ni viceversa vía conversión silenciosa.
+
+**F6 intacto:** reintegros banco vs tarjeta sin cambio de semántica; acreditación a tarjeta reduce la lane de esa moneda.
+
+**QuickAdd (P1.2):** si el usuario elige método Crédito y selecciona tarjeta → path P0.5/F1 (`creditCardId` set, `accountId` null). No debita banco.
+
 ## 23.2 Legacy MVP1
 
 Movimientos con `paymentMethod = CREDIT_CARD` **sin** el modelo de entidad tarjeta (típicamente con `accountId` y sin `creditCardId` MVP2):
@@ -593,6 +622,8 @@ Movimientos con `paymentMethod = CREDIT_CARD` **sin** el modelo de entidad tarje
 - conservan semántica MVP1 (gasto que debita la cuenta);
 - no se migran, no se recalculan, no se reinterpretan en P0 (LEAVE);
 - no forman `currentCardDebt` del modelo nuevo.
+
+**F4 clarificado (P1.2):** legacy `paymentMethod=CREDIT_CARD` **sin** `creditCardId` sigue el path banco (LEAVE). QuickAdd **nuevo** con Crédito + tarjeta elegida **no** usa ese path: prefiere F1/P0.5. No reinterpretar filas históricas.
 
 El pago del resumen **nunca** debe registrarse otra vez como `EXPENSE` (ni en legacy ni en MVP2).
 
@@ -854,7 +885,11 @@ Caminos, uno por tipo de operación:
   `POST /api/credit-card-refunds/accreditations/:id/void`; recalcula el estado
   de la expectativa (`EXPECTED` / `PARTIALLY_ACCREDITED` / `ACCREDITED`) desde
   las acreditaciones `ACTIVE` restantes, y una expectativa cerrada por
-  cancelación nunca se reabre.
+  cancelación nunca se reabre;
+- pago de vivienda (P1.2) → `POST /api/housing/:id/payments/:paymentId/void`
+  (`HOUSING_PAYMENT_VOID`); `REVERSED` + restaura `remainingInstallments`;
+  sin ingreso; el void genérico de Transaction sigue rechazado
+  (`HOUSING_PAYMENT_IMMUTABLE`).
 
 Las inversiones siguen **inmutables**: no hay camino de void.
 

@@ -81,6 +81,25 @@
   font-weight: 750;
 }
 
+.currencySelect {
+  min-width: 4.25rem;
+  border: 0;
+  border-right: 1px solid var(--pf-border-strong);
+  background: var(--pf-primary-soft);
+  color: var(--pf-primary);
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 750;
+  padding: 0 0.45rem;
+  cursor: pointer;
+}
+
+.inlineLink {
+  color: var(--pf-primary);
+  font-weight: 700;
+  text-decoration: underline;
+}
+
 /* El monto es el protagonista del alta: se mantiene grande a propósito. */
 .amount {
   flex: 1;

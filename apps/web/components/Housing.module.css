@@ -238,15 +238,29 @@
 .paymentItem {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  align-items: baseline;
-  gap: 0 var(--pf-space-2);
+  align-items: start;
+  gap: 0.2rem var(--pf-space-2);
   min-width: 0;
   font-size: 0.82rem;
   overflow-wrap: anywhere;
 }
 
-.paymentDate {
+.paymentMain {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.paymentPeriod {
+  margin: 0;
   color: var(--pf-text-strong);
+  font-weight: 700;
+}
+
+.paymentDate {
+  color: var(--pf-text-muted);
+  font-size: 0.78rem;
 }
 
 .paymentAmount {
@@ -254,6 +268,27 @@
   grid-row: 1;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
+}
+
+.paymentActions {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 0.75rem;
+}
+
+.voidHint {
+  margin: 0;
+  width: 100%;
+  color: var(--pf-text-muted);
+  font-size: 0.78rem;
+}
+
+.periodRow {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--pf-space-2);
 }
 
 .paymentInstallment {

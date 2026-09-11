@@ -57,7 +57,10 @@ export type MovementKind = "EXPENSE" | "INCOME" | "TRANSFER";
 export type CreateExpenseRequest = {
   amount: string;
   currency: Currency;
-  accountId: string;
+  /** XOR with creditCardId: bank expense uses accountId. */
+  accountId?: string;
+  /** XOR with accountId: card expense uses creditCardId (no bank impact). */
+  creditCardId?: string;
   categoryId: string;
   description?: string;
   occurredAt?: string;
@@ -272,7 +275,10 @@ export type HousingPayment = {
   amount: string;
   currency: Currency;
   installmentNumber: number | null;
+  periodYear: number | null;
+  periodMonth: number | null;
   paidAt: string;
+  voidedAt: string | null;
 };
 
 export type CreateHousingRequest = {
@@ -298,6 +304,12 @@ export type RegisterHousingPaymentRequest = {
   amount?: string;
   occurredAt?: string;
   installmentNumber?: number | null;
+  periodYear?: number | null;
+  periodMonth?: number | null;
+};
+
+export type VoidHousingPaymentRequest = {
+  idempotencyKey: string;
 };
 
 export type HousingPaymentResult = {
@@ -579,11 +591,20 @@ export type CreditCard = {
   updatedAt: string;
 };
 
+export type CurrencyAmount = {
+  currency: Currency;
+  amount: string;
+};
+
 export type CreditCardCommitments = {
   creditCardId: string;
+  /** Debt in the card's primary currency only — never a cross-currency sum. */
   currentCardDebt: string;
+  currentCardDebtByCurrency?: CurrencyAmount[];
   futureInstallmentCommitment: string;
+  futureInstallmentCommitmentByCurrency?: CurrencyAmount[];
   totalOutstandingCommitment: string;
+  totalOutstandingCommitmentByCurrency?: CurrencyAmount[];
 };
 
 export type CreditCardRecurringChargeKind =
@@ -671,6 +692,8 @@ export type CreateRecurringChargeRequest = {
   categoryId: string;
   description: string;
   expectedAmount?: string | null;
+  /** Optional; defaults to card primary currency on the API. */
+  currency?: Currency;
   dayOfMonthHint?: number | null;
   notes?: string | null;
   isActive?: boolean;

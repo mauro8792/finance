@@ -142,7 +142,13 @@ export class PrismaCreditCardPurchaseRepository
   async findPendingInstallmentAmountsByCreditCardId(
     userId: string,
     creditCardId: string
-  ): Promise<Array<{ amount: string; status: CreditCardInstallmentStatus }>> {
+  ): Promise<
+    Array<{
+      amount: string;
+      status: CreditCardInstallmentStatus;
+      currency: import("shared").Currency;
+    }>
+  > {
     const rows = await this.prisma.creditCardInstallment.findMany({
       where: {
         status: "PENDING",
@@ -152,11 +158,16 @@ export class PrismaCreditCardPurchaseRepository
           status: "ACTIVE",
         },
       },
-      select: { amount: true, status: true },
+      select: {
+        amount: true,
+        status: true,
+        purchase: { select: { currency: true } },
+      },
     });
     return rows.map((row) => ({
       amount: row.amount.toFixed(2),
       status: row.status as CreditCardInstallmentStatus,
+      currency: row.purchase.currency as import("shared").Currency,
     }));
   }
 

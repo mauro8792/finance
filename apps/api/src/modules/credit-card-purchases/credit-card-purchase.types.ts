@@ -108,7 +108,13 @@ export interface CreditCardPurchaseRepository {
   findPendingInstallmentAmountsByCreditCardId(
     userId: string,
     creditCardId: string
-  ): Promise<Array<{ amount: string; status: CreditCardInstallmentStatus }>>;
+  ): Promise<
+    Array<{
+      amount: string;
+      status: CreditCardInstallmentStatus;
+      currency: import("shared").Currency;
+    }>
+  >;
   findDueInstallmentCandidates(
     asOf: Date,
     userId?: string

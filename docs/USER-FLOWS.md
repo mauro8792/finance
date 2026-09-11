@@ -440,6 +440,17 @@ isFixed = false
 Reintegrable = false
 ```
 
+### P1.2 — QuickAdd crédito → tarjeta
+
+En Gasto, si método = **Crédito** y el usuario elige una tarjeta:
+
+- persiste `creditCardId` + **sin** `accountId` (path P0.5 / F1);
+- no debita banco;
+- selector de tarjeta (no cuenta bancaria).
+
+Si no hay tarjetas activas, bloquear el submit de ese path.  
+Legacy `paymentMethod=CREDIT_CARD` **sin** `creditCardId` (flujo banco) sigue LEAVE (F4); QuickAdd nuevo no lo usa cuando hay tarjeta elegida.
+
 ---
 
 # 13. Registrar gasto — flujo completo
@@ -1039,6 +1050,15 @@ Ruta:
 - “Registrar este mes” → confirm explícito → `EXPENSE` tarjeta.
 - Sin PAN/CVV. Sin auto-posting.
 
+### P1.2 — Editar / agregar / marca / multi-moneda UX
+
+- Editar tarjeta (nombre, emisor, marca, días, fee hints) desde `/cards`.
+- `+ Agregar tarjeta` siempre visible (aunque ya haya tarjetas).
+- Marca: selector Visa / Mastercard / Amex / Otra (string UX; sin enum DB).
+- Hero sin duplicar deuda/cierre/vencimiento.
+- Deuda mostrada por moneda cuando hay lanes ARS y USD; no sumar monedas.
+- Recurrente: moneda explícita independiente de la primaria de la tarjeta.
+
 Ejemplo contado:
 
 ```text
@@ -1567,13 +1587,17 @@ Body HTTP (`POST /api/housing/:id/payments`):
 ```text
 accountId
 amount (opcional; default installmentAmount)
-occurredAt (opcional)
+occurredAt (opcional)          -- fecha de pago (paidAt)
+periodYear + periodMonth (opcionales; ambos o ninguno)  -- P1.2 período cubierto
 installmentNumber (opcional)
 ```
 
 El backend deriva `currency`, `type`, `status`, `categoryId`, `metadata`, ids y pertenencia.
 
 No aceptar `userId`, `currency`, `type`, `status`, `metadata`, `housingPaymentId` ni `housingObligationId` en el body.
+
+**P1.2 UI:** período de cuota (mes/año) separado de la fecha de pago — permite prepago.  
+Anular pago: acción en historial → `POST .../payments/:paymentId/void` (confirma; no crea ingreso).
 
 ---
 
@@ -1622,6 +1646,8 @@ Si falla cualquiera: rollback total.
 No desactivar automáticamente la obligación cuando `remainingInstallments` llega a 0.
 
 `HOUSING_PAYMENT` no se edita ni anula con endpoints genéricos de Transaction (`HOUSING_PAYMENT_IMMUTABLE`).
+
+**P1.2 void:** `POST /api/housing/:id/payments/:paymentId/void` → `REVERSED` + `remainingInstallments + 1` + `voidedAt`; historial conservado; idempotente.
 
 Resultado:
 

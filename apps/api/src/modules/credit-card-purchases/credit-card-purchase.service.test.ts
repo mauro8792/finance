@@ -338,9 +338,15 @@ class MemoryPurchaseRepository implements CreditCardPurchaseRepository {
           item.purchase.creditCardId === creditCardId &&
           item.purchase.status === "ACTIVE"
       )
-      .flatMap((item) => item.installments)
-      .filter((row) => row.status === "PENDING")
-      .map((row) => ({ amount: row.amount, status: row.status }));
+      .flatMap((item) =>
+        item.installments
+          .filter((row) => row.status === "PENDING")
+          .map((row) => ({
+            amount: row.amount,
+            status: row.status,
+            currency: item.purchase.currency,
+          }))
+      );
   }
 
   async findDueInstallmentCandidates(asOf: Date, userId?: string) {
@@ -942,7 +948,7 @@ test("P0.7 O — inactive card rejects new purchase", async () => {
   );
 });
 
-test("P0.7 — liquidity unchanged; currency mismatch still rejected", async () => {
+test("P1.2 — purchase currency may differ from card primary; liquidity unchanged", async () => {
   const ctx = await setup();
   await ctx.purchaseService.create(ctx.userId, {
     creditCardId: ctx.card.id,
@@ -955,17 +961,26 @@ test("P0.7 — liquidity unchanged; currency mismatch still rejected", async () 
   const available = await ctx.financial.getTotalAvailableARS(ctx.userId);
   assert.equal(available, "100000.00");
 
-  await assert.rejects(
-    () =>
-      ctx.purchaseService.create(ctx.userId, {
-        creditCardId: ctx.card.id,
-        categoryId: ctx.category.id,
-        currency: "USD",
-        totalAmount: "10.00",
-        purchaseDate: "2026-09-07",
-        installmentsCount: 2,
-      }),
-    (e: unknown) => e instanceof AppError && e.code === "CURRENCY_MISMATCH"
+  const usdPurchase = await ctx.purchaseService.create(ctx.userId, {
+    creditCardId: ctx.card.id,
+    categoryId: ctx.category.id,
+    currency: "USD",
+    totalAmount: "20.00",
+    purchaseDate: "2026-09-07",
+    installmentsCount: 1,
+  });
+  assert.equal(usdPurchase.purchase.currency, "USD");
+  const commitments = await ctx.cardService.getCommitments(
+    ctx.userId,
+    ctx.card.id
+  );
+  assert.ok(
+    commitments.currentCardDebtByCurrency.some(
+      (item) => item.currency === "USD" && item.amount === "20.00"
+    )
+  );
+  assert.ok(
+    commitments.currentCardDebtByCurrency.some((item) => item.currency === "ARS")
   );
 });
 

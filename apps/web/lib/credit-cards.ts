@@ -35,6 +35,40 @@ export const FEE_STATUSES: CreditCardFeeStatus[] = [
   "UNKNOWN",
 ];
 
+/** UX brand options; "Otra" stores a custom free-text brand. */
+export const CREDIT_CARD_BRAND_OPTIONS = [
+  "Visa",
+  "Mastercard",
+  "American Express",
+  "Otra",
+] as const;
+
+export type CreditCardBrandOption = (typeof CREDIT_CARD_BRAND_OPTIONS)[number];
+
+export function brandOptionFromStored(brand: string): {
+  option: CreditCardBrandOption;
+  custom: string;
+} {
+  if (
+    brand === "Visa" ||
+    brand === "Mastercard" ||
+    brand === "American Express"
+  ) {
+    return { option: brand, custom: "" };
+  }
+  return { option: "Otra", custom: brand };
+}
+
+export function resolveBrandValue(
+  option: CreditCardBrandOption,
+  custom: string
+): string {
+  if (option === "Otra") {
+    return custom.trim();
+  }
+  return option;
+}
+
 const CARD_ERRORS: Record<string, string> = {
   VALIDATION_ERROR: "Revisá los datos ingresados.",
   NOT_FOUND: "No encontramos ese recurso.",

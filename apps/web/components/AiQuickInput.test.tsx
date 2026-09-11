@@ -8,6 +8,7 @@ import type { AIParsedTransaction } from "../lib/types";
 
 const getAccounts = vi.fn();
 const getCategories = vi.fn();
+const getCreditCards = vi.fn();
 const createTransaction = vi.fn();
 const createTransfer = vi.fn();
 const parseTransaction = vi.fn();
@@ -27,6 +28,7 @@ vi.mock("../lib/api", () => {
     ApiClientError: MockApiClientError,
     getAccounts: () => getAccounts(),
     getCategories: () => getCategories(),
+    getCreditCards: () => getCreditCards(),
     createTransaction: (payload: unknown) => createTransaction(payload),
     createTransfer: (payload: unknown) => createTransfer(payload),
     parseTransaction: (payload: unknown) => parseTransaction(payload),
@@ -86,12 +88,14 @@ describe("AiQuickInput", () => {
   beforeEach(() => {
     getAccounts.mockReset();
     getCategories.mockReset();
+    getCreditCards.mockReset();
     createTransaction.mockReset();
     parseTransaction.mockReset();
     getAccounts.mockResolvedValue([
       { id: "acc-ars", name: "Santander", currency: "ARS", isActive: true },
       { id: "acc-usd", name: "Caja USD", currency: "USD", isActive: true },
     ]);
+    getCreditCards.mockResolvedValue([]);
     getCategories.mockResolvedValue([
       { id: "cat-super", name: "Supermercado", type: "EXPENSE", isActive: true },
       { id: "cat-comida", name: "Comida", type: "EXPENSE", isActive: true },

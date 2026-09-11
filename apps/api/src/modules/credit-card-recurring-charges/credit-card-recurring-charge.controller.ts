@@ -31,6 +31,7 @@ export class CreditCardRecurringChargeController {
       kind: body.kind,
       categoryId: body.categoryId,
       description: body.description,
+      currency: body.currency,
       expectedAmount: body.expectedAmount,
       dayOfMonthHint: body.dayOfMonthHint,
       notes: body.notes,

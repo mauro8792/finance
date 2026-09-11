@@ -396,7 +396,7 @@ apps/api/
 │   │   │   ├── credit-card.repository.ts
 │   │   │   ├── credit-card.routes.ts
 │   │   │   ├── credit-card.schema.ts
-│   │   │   ├── credit-card-debt.ts
+│   │   │   ├── credit-card-debt.ts   # P1.2: byCurrency; never sum ARS+USD
 │   │   │   └── credit-card.types.ts
 │   │   ├── credit-card-purchases/ # MVP2 P0.6–P0.8 — Purchase + N Installments; recognizeDue CLI
 │   │   ├── credit-card-statements/ # MVP2 P0.9 — Statement cycle projection/close (F9 ≠ debt)
@@ -831,6 +831,7 @@ POST   /api/housing
 GET    /api/housing/:id/coverage
 GET    /api/housing/:id/payments
 POST   /api/housing/:id/payments
+POST   /api/housing/:id/payments/:paymentId/void   -- P1.2 HOUSING_PAYMENT_VOID
 
 GET    /api/investments
 POST   /api/investments
@@ -1107,6 +1108,8 @@ Signo: débito por tipo. Metadata no determina el signo.
 `HOUSING_PAYMENT` no entra en métricas operativas ni budgets.
 
 `PATCH /api/transactions/:id` y `POST /api/transactions/:id/void` rechazan este tipo (`HOUSING_PAYMENT_IMMUTABLE`).
+
+**P1.2 void path:** `HousingController` → `HousingService.voidPayment` → `voidPaymentAtomic` (`HOUSING_PAYMENT_VOID`, pata `REVERSED`, `remainingInstallments + 1`). Idempotencia vía `correction_operations`. Sin movimiento de ingreso.
 
 ---
 

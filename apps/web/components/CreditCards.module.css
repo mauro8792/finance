@@ -6,6 +6,57 @@
   min-width: 0;
 }
 
+.headerActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+.headerCta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--pf-touch-target, 2.75rem);
+  padding: 0 0.9rem;
+  border: 0;
+  border-radius: 0.75rem;
+  background: #0f766e;
+  color: #fff;
+  font: inherit;
+  font-size: 0.88rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.headerCta:hover {
+  background: #0d6660;
+}
+
+.headerCta:focus-visible {
+  outline: 2px solid #0f766e;
+  outline-offset: 2px;
+}
+
+.debtStack {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.configHint {
+  margin: 0;
+  color: var(--pf-text-subtle, #78716c);
+  font-size: 0.88rem;
+}
+
+.formHint {
+  margin: 0;
+  color: #57534e;
+  font-size: 0.88rem;
+}
+
 .layout {
   display: flex;
   flex-direction: column;

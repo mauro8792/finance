@@ -194,7 +194,8 @@ export class CreditCardPurchaseService {
 
     const totalAmount = parsePositiveAmount(String(input.totalAmount));
     const card = await this.requireActiveOwnedCard(userId, input.creditCardId);
-    const currency = requireMatchingCurrency(input.currency, card.currency);
+    // P1.2: purchase currency may differ from card primary currency.
+    const currency = requireSupportedCurrency(input.currency);
     const category = await this.requireActiveExpenseCategory(
       userId,
       input.categoryId
@@ -297,21 +298,11 @@ export class CreditCardPurchaseService {
   }
 }
 
-function requireMatchingCurrency(
-  requested: Currency,
-  cardCurrency: Currency
-): Currency {
+function requireSupportedCurrency(requested: Currency): Currency {
   if (!(CURRENCIES as readonly string[]).includes(requested)) {
     throw new AppError("VALIDATION_ERROR", "La moneda debe ser ARS o USD.", 400);
   }
-  if (requested !== cardCurrency) {
-    throw new AppError(
-      "CURRENCY_MISMATCH",
-      "La moneda de la compra debe coincidir con la moneda de la tarjeta.",
-      400
-    );
-  }
-  return cardCurrency;
+  return requested;
 }
 
 function parsePurchaseDate(raw: string): Date {
